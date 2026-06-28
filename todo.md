@@ -18,8 +18,8 @@
 - [x] Configurar Tailwind CSS con paleta de colores refinada
 
 ## Mapa Interactivo y GPS
-- [ ] Integrar Leaflet con OpenStreetMap
-- [ ] Implementar geolocalización del pasajero
+- [x] Integrar Leaflet con OpenStreetMap
+- [x] Implementar geolocalización del pasajero
 - [ ] Mostrar posición de taxis disponibles en tiempo real
 - [ ] Crear sistema de geofencing para zonas de cola
 - [ ] Implementar seguimiento en tiempo real de taxi asignado
@@ -32,33 +32,33 @@
 - [ ] Crear procedimiento para asignar siguiente servicio de la cola
 
 ## Sistema de Reserva (2 Clics)
-- [ ] Crear interfaz de reserva con selección de origen y destino
+- [x] Crear interfaz de reserva con selección de origen y destino
 - [ ] Implementar búsqueda automática del taxi más cercano
 - [ ] Crear lógica de asignación automática
 - [ ] Implementar confirmación de reserva
 - [ ] Crear notificación al conductor
 
 ## Panel del Conductor
-- [ ] Mostrar servicios asignados pendientes
-- [ ] Implementar botones de aceptar/rechazar servicio
-- [ ] Crear selector de estado (disponible, ocupado, fuera de servicio)
-- [ ] Mostrar posición actual en la cola
+- [x] Mostrar servicios asignados pendientes
+- [x] Implementar botones de aceptar/rechazar servicio
+- [x] Crear selector de estado (disponible, ocupado, fuera de servicio)
+- [x] Mostrar posición actual en la cola
 - [ ] Implementar actualización de posición GPS en tiempo real
 - [ ] Crear historial de servicios del día
 
 ## Panel del Pasajero
-- [ ] Crear interfaz de reserva en 2 clics
+- [x] Crear interfaz de reserva en 2 clics
 - [ ] Mostrar seguimiento en tiempo real del taxi
 - [ ] Implementar historial de viajes
 - [ ] Crear sistema de valoración de servicios (1-5 estrellas)
 - [ ] Mostrar información del conductor (nombre, foto, calificación)
 
 ## Panel de Administración
-- [ ] Crear dashboard con estadísticas globales
-- [ ] Implementar mapa con todos los taxis activos
-- [ ] Crear tabla de gestión de usuarios (pasajeros y conductores)
-- [ ] Implementar gestión de flota (taxis, matrículas, estado)
-- [ ] Crear gráficos de servicios completados, ingresos, etc.
+- [x] Crear dashboard con estadísticas globales
+- [x] Implementar mapa con todos los taxis activos
+- [x] Crear tabla de gestión de usuarios (pasajeros y conductores)
+- [x] Implementar gestión de flota (taxis, matrículas, estado)
+- [x] Crear gráficos de servicios completados, ingresos, etc.
 - [ ] Implementar filtros por fecha, zona y estado
 
 ## Soporte Multilingüe

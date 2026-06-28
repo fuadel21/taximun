@@ -7,6 +7,8 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
 import Auth from "./pages/Auth";
 import PassengerPanel from "./pages/PassengerPanel";
+import DriverPanel from "./pages/DriverPanel";
+import AdminPanel from "./pages/AdminPanel";
 
 function Router() {
   return (
@@ -18,11 +20,11 @@ function Router() {
       <Route path={"/passenger/rides"} component={() => <div>My Rides - Coming Soon</div>} />
       <Route path={"/passenger/book"} component={() => <div>Book Taxi - Coming Soon</div>} />
       {/* Driver routes */}
-      <Route path={"/driver"} component={() => <div>Driver Panel - Coming Soon</div>} />
+      <Route path={"/driver"} component={DriverPanel} />
       <Route path={"/driver/queue"} component={() => <div>Queue Position - Coming Soon</div>} />
       <Route path={"/driver/earnings"} component={() => <div>Earnings - Coming Soon</div>} />
       {/* Admin routes */}
-      <Route path={"/admin"} component={() => <div>Admin Panel - Coming Soon</div>} />
+      <Route path={"/admin"} component={AdminPanel} />
       <Route path={"/admin/dashboard"} component={() => <div>Dashboard - Coming Soon</div>} />
       <Route path={"/admin/users"} component={() => <div>Users Management - Coming Soon</div>} />
       <Route path={"/404"} component={NotFound} />
