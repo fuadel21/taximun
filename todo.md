@@ -9,7 +9,7 @@
 - [x] Sistema de autenticación con tres roles: pasajero, conductor, administrador
 - [x] Extender schema de usuarios con campos específicos por rol
 - [x] Crear procedimientos protegidos por rol (pasajero, conductor, admin)
-- [ ] Implementar lógica de asignación de rol en registro
+- [x] Implementar lógica de asignación de rol en registro
 
 ## Componentes Base y Estructura
 - [x] Crear sistema de internacionalización (i18n) con soporte ES/CA/EN
@@ -33,9 +33,9 @@
 
 ## Sistema de Reserva (2 Clics)
 - [x] Crear interfaz de reserva con selección de origen y destino
-- [ ] Implementar búsqueda automática del taxi más cercano
-- [ ] Crear lógica de asignación automática
-- [ ] Implementar confirmación de reserva
+- [x] Implementar búsqueda automática del taxi más cercano
+- [x] Crear lógica de asignación automática
+- [x] Implementar confirmación de reserva
 - [ ] Crear notificación al conductor
 
 ## Panel del Conductor
@@ -43,15 +43,15 @@
 - [x] Implementar botones de aceptar/rechazar servicio
 - [x] Crear selector de estado (disponible, ocupado, fuera de servicio)
 - [x] Mostrar posición actual en la cola
-- [ ] Implementar actualización de posición GPS en tiempo real
-- [ ] Crear historial de servicios del día
+- [x] Implementar actualización de posición GPS en tiempo real
+- [x] Crear historial de servicios del día
 
 ## Panel del Pasajero
 - [x] Crear interfaz de reserva en 2 clics
-- [ ] Mostrar seguimiento en tiempo real del taxi
-- [ ] Implementar historial de viajes
-- [ ] Crear sistema de valoración de servicios (1-5 estrellas)
-- [ ] Mostrar información del conductor (nombre, foto, calificación)
+- [x] Mostrar seguimiento en tiempo real del taxi
+- [x] Implementar historial de viajes
+- [x] Crear sistema de valoración de servicios (1-5 estrellas)
+- [x] Mostrar información del conductor (nombre, foto, calificación)
 
 ## Panel de Administración
 - [x] Crear dashboard con estadísticas globales
@@ -59,7 +59,7 @@
 - [x] Crear tabla de gestión de usuarios (pasajeros y conductores)
 - [x] Implementar gestión de flota (taxis, matrículas, estado)
 - [x] Crear gráficos de servicios completados, ingresos, etc.
-- [ ] Implementar filtros por fecha, zona y estado
+- [x] Implementar filtros por fecha, zona y estado
 
 ## Soporte Multilingüe
 - [ ] Configurar librería i18n (react-i18next o similar)

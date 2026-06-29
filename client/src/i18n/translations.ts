@@ -48,6 +48,7 @@ export const translations = {
       minutes: "minutos",
       cancel: "Cancelar",
       cancelReason: "Motivo de la Cancelación",
+      rideConfirmed: "Viaje Confirmado",
     },
     // Driver Panel
     driver: {
@@ -92,6 +93,11 @@ export const translations = {
       removeFavorite: "Eliminar Favorito",
       homeAddress: "Dirección de Casa",
       workAddress: "Dirección de Trabajo",
+      trackingRide: "Rastreando Viaje",
+      trackingDriver: "Rastreando Conductor",
+      rideDetails: "Detalles del Viaje",
+      driver: "Conductor",
+      waitingForDriver: "Esperando al Conductor",
     },
     // Admin Panel
     admin: {
@@ -237,6 +243,7 @@ export const translations = {
       minutes: "minuts",
       cancel: "Cancel·lar",
       cancelReason: "Motiu de la Cancel·lació",
+      rideConfirmed: "Viatge Confirmat",
     },
     // Driver Panel
     driver: {
@@ -281,6 +288,11 @@ export const translations = {
       removeFavorite: "Eliminar Favorit",
       homeAddress: "Adreça de Casa",
       workAddress: "Adreça de Treball",
+      trackingRide: "Rastrejar Viatge",
+      trackingDriver: "Rastrejar Conductor",
+      rideDetails: "Detalls del Viatge",
+      driver: "Conductor",
+      waitingForDriver: "Esperant el Conductor",
     },
     // Admin Panel
     admin: {
@@ -426,6 +438,7 @@ export const translations = {
       minutes: "minutes",
       cancel: "Cancel",
       cancelReason: "Cancellation Reason",
+      rideConfirmed: "Ride Confirmed",
     },
     // Driver Panel
     driver: {
@@ -470,6 +483,11 @@ export const translations = {
       removeFavorite: "Remove Favorite",
       homeAddress: "Home Address",
       workAddress: "Work Address",
+      trackingRide: "Tracking Ride",
+      trackingDriver: "Tracking Driver",
+      rideDetails: "Ride Details",
+      driver: "Driver",
+      waitingForDriver: "Waiting for Driver",
     },
     // Admin Panel
     admin: {
