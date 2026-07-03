@@ -1,5 +1,6 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -58,7 +59,7 @@ type RideStatus = "in_progress" | "completed" | "assigned" | "cancelled";
 type IncidentLevel = "low" | "medium" | "high";
 
 type Driver = {
-  id: number;
+  id: string;
   name: string;
   taxi: string;
   zone: string;
@@ -69,6 +70,7 @@ type Driver = {
 };
 
 type Taxi = {
+  id: string;
   plate: string;
   taxi: string;
   driver: string;
@@ -97,7 +99,7 @@ type Incident = {
 };
 
 type ActivityLog = {
-  id: number;
+  id: string;
   text: string;
   time: string;
 };
@@ -113,18 +115,18 @@ const weeklyData = [
 ];
 
 const initialDrivers: Driver[] = [
-  { id: 1, name: "Juan García", taxi: "TX-102", zone: "Centro", status: "available", rating: 4.9, rides: 18, wait: "3 min" },
-  { id: 2, name: "Marta Soler", taxi: "TX-118", zone: "Estación", status: "busy", rating: 4.8, rides: 15, wait: "En viaje" },
-  { id: 3, name: "Karim Haddad", taxi: "TX-130", zone: "Hospital", status: "available", rating: 4.7, rides: 12, wait: "5 min" },
-  { id: 4, name: "Laura Pérez", taxi: "TX-141", zone: "Ayuntamiento", status: "pause", rating: 4.6, rides: 9, wait: "Pausa" },
-  { id: 5, name: "Said Amrani", taxi: "TX-154", zone: "Costa", status: "offline", rating: 4.9, rides: 21, wait: "Offline" },
+  { id: "demo-driver-1", name: "Juan García", taxi: "TX-102", zone: "Centro", status: "available", rating: 4.9, rides: 18, wait: "3 min" },
+  { id: "demo-driver-2", name: "Marta Soler", taxi: "TX-118", zone: "Estación", status: "busy", rating: 4.8, rides: 15, wait: "En viaje" },
+  { id: "demo-driver-3", name: "Karim Haddad", taxi: "TX-130", zone: "Hospital", status: "available", rating: 4.7, rides: 12, wait: "5 min" },
+  { id: "demo-driver-4", name: "Laura Pérez", taxi: "TX-141", zone: "Ayuntamiento", status: "pause", rating: 4.6, rides: 9, wait: "Pausa" },
+  { id: "demo-driver-5", name: "Said Amrani", taxi: "TX-154", zone: "Costa", status: "offline", rating: 4.9, rides: 21, wait: "Offline" },
 ];
 
 const initialFleet: Taxi[] = [
-  { plate: "1234-LTX", taxi: "TX-102", driver: "Juan García", model: "Toyota Corolla", status: "available", inspection: "2026-10-14" },
-  { plate: "9912-MDC", taxi: "TX-118", driver: "Marta Soler", model: "Hyundai Ioniq", status: "busy", inspection: "2026-09-02" },
-  { plate: "7720-KRM", taxi: "TX-130", driver: "Karim Haddad", model: "Skoda Octavia", status: "available", inspection: "2026-12-20" },
-  { plate: "5529-BLC", taxi: "TX-141", driver: "Laura Pérez", model: "Mercedes Vito", status: "maintenance", inspection: "2026-08-11" },
+  { id: "demo-taxi-1", plate: "1234-LTX", taxi: "TX-102", driver: "Juan García", model: "Toyota Corolla", status: "available", inspection: "2026-10-14" },
+  { id: "demo-taxi-2", plate: "9912-MDC", taxi: "TX-118", driver: "Marta Soler", model: "Hyundai Ioniq", status: "busy", inspection: "2026-09-02" },
+  { id: "demo-taxi-3", plate: "7720-KRM", taxi: "TX-130", driver: "Karim Haddad", model: "Skoda Octavia", status: "available", inspection: "2026-12-20" },
+  { id: "demo-taxi-4", plate: "5529-BLC", taxi: "TX-141", driver: "Laura Pérez", model: "Mercedes Vito", status: "maintenance", inspection: "2026-08-11" },
 ];
 
 const initialRides: Ride[] = [
@@ -135,9 +137,9 @@ const initialRides: Ride[] = [
 ];
 
 const initialIncidents: Incident[] = [
-  { id: "I-88", type: "Retraso", text: "Conductor TX-141 acumula 12 min de demora", level: "medium", time: "Hace 8 min" },
-  { id: "I-87", type: "Pago", text: "Pago pendiente en viaje R-2038", level: "low", time: "Hace 22 min" },
-  { id: "I-86", type: "Soporte", text: "Pasajero solicita llamada de asistencia", level: "high", time: "Hace 31 min" },
+  { id: "demo-incident-1", type: "Retraso", text: "Conductor TX-141 acumula 12 min de demora", level: "medium", time: "Hace 8 min" },
+  { id: "demo-incident-2", type: "Pago", text: "Pago pendiente en viaje R-2038", level: "low", time: "Hace 22 min" },
+  { id: "demo-incident-3", type: "Soporte", text: "Pasajero solicita llamada de asistencia", level: "high", time: "Hace 31 min" },
 ];
 
 const cityZones = [
@@ -163,6 +165,13 @@ const nextTaxiStatus: Record<TaxiStatus, TaxiStatus> = {
 
 function nowLabel() {
   return new Date().toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
+}
+
+function formatDateTime(value: unknown) {
+  if (typeof value !== "string") return "Ahora";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Ahora";
+  return date.toLocaleString("es-ES", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" });
 }
 
 function statusBadge(status: string) {
@@ -215,18 +224,97 @@ function PanelCard({ icon: Icon, title, description, children }: { icon: LucideI
 
 export default function AdminPanel() {
   const { user, logout, isGuest } = useAuth() as any;
-  const [drivers, setDrivers] = useState<Driver[]>(initialDrivers);
-  const [fleet, setFleet] = useState<Taxi[]>(initialFleet);
+  const utils = trpc.useUtils();
+  const isRealAdmin = !isGuest && user?.role === "admin";
+
+  const snapshotQuery = trpc.system.adminControl.getSnapshot.useQuery(undefined, {
+    enabled: isRealAdmin,
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+
+  const invalidateSnapshot = () => utils.system.adminControl.getSnapshot.invalidate();
+
+  const createDriverMutation = trpc.system.adminControl.createDriver.useMutation({ onSuccess: invalidateSnapshot });
+  const updateDriverStatusMutation = trpc.system.adminControl.updateDriverStatus.useMutation({ onSuccess: invalidateSnapshot });
+  const createTaxiMutation = trpc.system.adminControl.createTaxi.useMutation({ onSuccess: invalidateSnapshot });
+  const updateTaxiStatusMutation = trpc.system.adminControl.updateTaxiStatus.useMutation({ onSuccess: invalidateSnapshot });
+  const createIncidentMutation = trpc.system.adminControl.createIncident.useMutation({ onSuccess: invalidateSnapshot });
+  const resolveIncidentMutation = trpc.system.adminControl.resolveIncident.useMutation({ onSuccess: invalidateSnapshot });
+  const createLogMutation = trpc.system.adminControl.createLog.useMutation({ onSuccess: invalidateSnapshot });
+
+  const [localDrivers, setLocalDrivers] = useState<Driver[]>(initialDrivers);
+  const [localFleet, setLocalFleet] = useState<Taxi[]>(initialFleet);
   const [rides] = useState<Ride[]>(initialRides);
-  const [incidents, setIncidents] = useState<Incident[]>(initialIncidents);
+  const [localIncidents, setLocalIncidents] = useState<Incident[]>(initialIncidents);
   const [searchTerm, setSearchTerm] = useState("");
-  const [logs, setLogs] = useState<ActivityLog[]>([
-    { id: 1, text: "Panel admin cargado en modo prueba", time: nowLabel() },
+  const [localLogs, setLocalLogs] = useState<ActivityLog[]>([
+    { id: "demo-log-1", text: "Panel admin cargado en modo prueba", time: nowLabel() },
   ]);
   const [serviceMode, setServiceMode] = useState("Piloto municipal");
 
+  const realDrivers: Driver[] = useMemo(
+    () =>
+      (snapshotQuery.data?.drivers ?? []).map((driver: any) => ({
+        id: String(driver.id),
+        name: String(driver.name ?? "Conductor"),
+        taxi: String(driver.taxi_code ?? "TX"),
+        zone: String(driver.zone ?? "Centro"),
+        status: (driver.status ?? "available") as DriverStatus,
+        rating: Number(driver.rating ?? 5),
+        rides: Number(driver.rides_today ?? 0),
+        wait: String(driver.wait_label ?? "Nuevo"),
+      })),
+    [snapshotQuery.data]
+  );
+
+  const realFleet: Taxi[] = useMemo(
+    () =>
+      (snapshotQuery.data?.taxis ?? []).map((taxi: any) => ({
+        id: String(taxi.id),
+        plate: String(taxi.plate ?? "TMP"),
+        taxi: String(taxi.taxi_code ?? "TX"),
+        driver: String(taxi.driver_name ?? "Sin asignar"),
+        model: String(taxi.model ?? "Vehículo pendiente"),
+        status: (taxi.status ?? "available") as TaxiStatus,
+        inspection: String(taxi.inspection_date ?? "2026-12-31"),
+      })),
+    [snapshotQuery.data]
+  );
+
+  const realIncidents: Incident[] = useMemo(
+    () =>
+      (snapshotQuery.data?.incidents ?? []).map((incident: any) => ({
+        id: String(incident.id),
+        type: String(incident.type ?? "Incidencia"),
+        text: String(incident.body ?? "Sin descripción"),
+        level: (incident.level ?? "medium") as IncidentLevel,
+        time: formatDateTime(incident.created_at),
+      })),
+    [snapshotQuery.data]
+  );
+
+  const realLogs: ActivityLog[] = useMemo(
+    () =>
+      (snapshotQuery.data?.logs ?? []).map((log: any) => ({
+        id: String(log.id),
+        text: String(log.message ?? "Acción registrada"),
+        time: formatDateTime(log.created_at),
+      })),
+    [snapshotQuery.data]
+  );
+
+  const drivers = isRealAdmin ? realDrivers : localDrivers;
+  const fleet = isRealAdmin ? realFleet : localFleet;
+  const incidents = isRealAdmin ? realIncidents : localIncidents;
+  const logs = isRealAdmin ? realLogs : localLogs;
+
   const addLog = (text: string) => {
-    setLogs((current) => [{ id: Date.now(), text, time: nowLabel() }, ...current].slice(0, 6));
+    if (isRealAdmin) {
+      createLogMutation.mutate({ message: text });
+      return;
+    }
+    setLocalLogs((current) => [{ id: String(Date.now()), text, time: nowLabel() }, ...current].slice(0, 6));
   };
 
   const filteredDrivers = useMemo(() => {
@@ -254,39 +342,69 @@ export default function AdminPanel() {
 
   const addDriver = () => {
     const nextId = drivers.length + 1;
+    const name = `Nuevo conductor ${nextId}`;
+    const taxiCode = `TX-${160 + nextId}`;
+
+    if (isRealAdmin) {
+      createDriverMutation.mutate({ name, taxiCode, zone: "Centro" });
+      return;
+    }
+
     const newDriver: Driver = {
-      id: Date.now(),
-      name: `Nuevo conductor ${nextId}`,
-      taxi: `TX-${160 + nextId}`,
+      id: String(Date.now()),
+      name,
+      taxi: taxiCode,
       zone: "Centro",
       status: "available",
       rating: 5,
       rides: 0,
       wait: "Nuevo",
     };
-    setDrivers((current) => [newDriver, ...current]);
+    setLocalDrivers((current) => [newDriver, ...current]);
     addLog(`Alta creada: ${newDriver.name}`);
   };
 
   const addTaxi = () => {
     const nextId = fleet.length + 1;
+    const taxiCode = `TX-${200 + nextId}`;
+    const plate = `${7000 + nextId}-TMP`;
+
+    if (isRealAdmin) {
+      createTaxiMutation.mutate({ taxiCode, plate, driverName: "Sin asignar", model: "Vehículo pendiente" });
+      return;
+    }
+
     const newTaxi: Taxi = {
-      plate: `${7000 + nextId}-TMP`,
-      taxi: `TX-${200 + nextId}`,
+      id: String(Date.now()),
+      plate,
+      taxi: taxiCode,
       driver: "Sin asignar",
       model: "Vehículo pendiente",
       status: "available",
       inspection: "2026-12-31",
     };
-    setFleet((current) => [newTaxi, ...current]);
+    setLocalFleet((current) => [newTaxi, ...current]);
     addLog(`Taxi añadido: ${newTaxi.taxi}`);
   };
 
-  const changeDriverStatus = (id: number) => {
-    setDrivers((current) =>
+  const changeDriverStatus = (id: string) => {
+    const target = drivers.find((driver) => driver.id === id);
+    if (!target) return;
+    const nextStatus = nextDriverStatus[target.status];
+
+    if (isRealAdmin) {
+      updateDriverStatusMutation.mutate({ id, status: nextStatus });
+      return;
+    }
+
+    setLocalDrivers((current) =>
       current.map((driver) =>
         driver.id === id
-          ? { ...driver, status: nextDriverStatus[driver.status], wait: nextDriverStatus[driver.status] === "available" ? "2 min" : nextDriverStatus[driver.status] === "busy" ? "En viaje" : nextDriverStatus[driver.status] === "pause" ? "Pausa" : "Offline" }
+          ? {
+              ...driver,
+              status: nextStatus,
+              wait: nextStatus === "available" ? "2 min" : nextStatus === "busy" ? "En viaje" : nextStatus === "pause" ? "Pausa" : "Offline",
+            }
           : driver
       )
     );
@@ -294,35 +412,53 @@ export default function AdminPanel() {
   };
 
   const changeTaxiStatus = (taxiId: string) => {
-    setFleet((current) =>
-      current.map((taxi) =>
-        taxi.taxi === taxiId ? { ...taxi, status: nextTaxiStatus[taxi.status] } : taxi
-      )
+    const target = fleet.find((taxi) => taxi.id === taxiId);
+    if (!target) return;
+    const nextStatus = nextTaxiStatus[target.status];
+
+    if (isRealAdmin) {
+      updateTaxiStatusMutation.mutate({ id: taxiId, status: nextStatus });
+      return;
+    }
+
+    setLocalFleet((current) =>
+      current.map((taxi) => (taxi.id === taxiId ? { ...taxi, status: nextStatus } : taxi))
     );
-    addLog(`Estado actualizado para ${taxiId}`);
+    addLog(`Estado actualizado para ${target.taxi}`);
   };
 
   const addIncident = () => {
+    if (isRealAdmin) {
+      createIncidentMutation.mutate({ type: "Operación", body: "Nueva incidencia creada desde el panel", level: "medium" });
+      return;
+    }
+
     const incident: Incident = {
-      id: `I-${90 + incidents.length}`,
+      id: String(Date.now()),
       type: "Operación",
       text: "Nueva incidencia demo creada desde el panel",
       level: "medium",
       time: "Ahora",
     };
-    setIncidents((current) => [incident, ...current]);
-    addLog(`Incidencia creada: ${incident.id}`);
+    setLocalIncidents((current) => [incident, ...current]);
+    addLog("Incidencia creada");
   };
 
   const resolveIncident = (id: string) => {
-    setIncidents((current) => current.filter((incident) => incident.id !== id));
-    addLog(`Incidencia resuelta: ${id}`);
+    if (isRealAdmin) {
+      resolveIncidentMutation.mutate({ id });
+      return;
+    }
+
+    setLocalIncidents((current) => current.filter((incident) => incident.id !== id));
+    addLog("Incidencia resuelta");
   };
 
   const exportReport = () => {
     const report = {
       generatedAt: new Date().toISOString(),
       mode: serviceMode,
+      source: isRealAdmin ? "supabase" : "guest-local",
       activeRides,
       drivers: drivers.length,
       availableDrivers,
@@ -342,6 +478,14 @@ export default function AdminPanel() {
   const sendBroadcast = () => addLog("Aviso enviado a todos los conductores conectados");
   const runSecurityCheck = () => addLog("Revisión de seguridad completada sin bloqueos críticos");
   const generateDailyReport = () => addLog("Informe diario preparado para descarga");
+  const isSaving =
+    createDriverMutation.isPending ||
+    updateDriverStatusMutation.isPending ||
+    createTaxiMutation.isPending ||
+    updateTaxiStatusMutation.isPending ||
+    createIncidentMutation.isPending ||
+    resolveIncidentMutation.isPending ||
+    createLogMutation.isPending;
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.18),_transparent_30%),linear-gradient(180deg,_#f8fbff_0%,_#eef6ff_45%,_#ffffff_100%)] text-slate-950">
@@ -358,6 +502,8 @@ export default function AdminPanel() {
           </div>
           <div className="flex items-center gap-2">
             {isGuest && <Badge className="hidden bg-amber-100 text-amber-800 hover:bg-amber-100 sm:inline-flex">Modo prueba</Badge>}
+            {isRealAdmin && <Badge className="hidden bg-emerald-100 text-emerald-800 hover:bg-emerald-100 sm:inline-flex">Supabase activo</Badge>}
+            {isSaving && <Badge variant="outline" className="hidden sm:inline-flex">Guardando...</Badge>}
             <Button variant="outline" onClick={logout} className="rounded-2xl bg-white/80">
               <LogOut className="mr-2 h-4 w-4" />
               Salir
@@ -367,6 +513,12 @@ export default function AdminPanel() {
       </header>
 
       <main className="mx-auto max-w-7xl space-y-6 px-4 py-6">
+        {snapshotQuery.error && isRealAdmin && (
+          <div className="rounded-3xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-800">
+            Error al conectar con Supabase: {snapshotQuery.error.message}
+          </div>
+        )}
+
         <section className="overflow-hidden rounded-[2rem] bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 p-5 text-white shadow-[0_24px_80px_rgba(15,23,42,0.24)] sm:p-7">
           <div className="grid gap-6 lg:grid-cols-[1.25fr_0.75fr] lg:items-center">
             <div>
@@ -379,7 +531,7 @@ export default function AdminPanel() {
                 Supervisa demanda, conductores, flota, viajes, incidencias y rendimiento desde una sola pantalla. Usuario actual: {user?.name ?? "Invitado Admin"}.
               </p>
               <div className="mt-5 flex flex-wrap gap-3">
-                <Button onClick={addDriver} className="rounded-2xl bg-cyan-500 font-black text-white hover:bg-cyan-400">
+                <Button onClick={addDriver} disabled={isSaving} className="rounded-2xl bg-cyan-500 font-black text-white hover:bg-cyan-400">
                   <Plus className="mr-2 h-4 w-4" />
                   Alta conductor
                 </Button>
@@ -409,7 +561,7 @@ export default function AdminPanel() {
           <StatCard icon={Car} title="Viajes activos" value={String(activeRides)} note="Asignados o en servicio" />
           <StatCard icon={Users} title="Conductores" value={String(drivers.length)} note={`${availableDrivers} libres ahora`} />
           <StatCard icon={CircleDollarSign} title="Ingresos hoy" value="946 €" note="Objetivo diario 78%" />
-          <StatCard icon={Star} title="Valoración media" value={avgRating} note="Según conductores demo" />
+          <StatCard icon={Star} title="Valoración media" value={avgRating} note={isRealAdmin ? "Datos Supabase" : "Según conductores demo"} />
         </section>
 
         <Tabs defaultValue="resumen" className="space-y-5">
@@ -526,7 +678,7 @@ export default function AdminPanel() {
                   <Input placeholder="Buscar conductor..." value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} className="rounded-2xl bg-white pl-9" />
                 </div>
                 <Button variant="outline" className="rounded-2xl"><Filter className="mr-2 h-4 w-4" /> Filtro</Button>
-                <Button onClick={addDriver} className="rounded-2xl bg-slate-950 font-black text-white hover:bg-slate-800"><Plus className="mr-2 h-4 w-4" /> Nuevo</Button>
+                <Button onClick={addDriver} disabled={isSaving} className="rounded-2xl bg-slate-950 font-black text-white hover:bg-slate-800"><Plus className="mr-2 h-4 w-4" /> Nuevo</Button>
               </div>
               <div className="overflow-x-auto">
                 <Table>
@@ -549,12 +701,17 @@ export default function AdminPanel() {
                         <TableCell>{statusBadge(driver.status)}</TableCell>
                         <TableCell>⭐ {driver.rating}</TableCell>
                         <TableCell className="text-right">
-                          <Button size="sm" variant="outline" onClick={() => changeDriverStatus(driver.id)} className="rounded-xl">
+                          <Button size="sm" variant="outline" disabled={isSaving} onClick={() => changeDriverStatus(driver.id)} className="rounded-xl">
                             <RefreshCw className="mr-2 h-3.5 w-3.5" /> Estado
                           </Button>
                         </TableCell>
                       </TableRow>
                     ))}
+                    {filteredDrivers.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={6} className="py-8 text-center text-slate-500">No hay conductores todavía.</TableCell>
+                      </TableRow>
+                    )}
                   </TableBody>
                 </Table>
               </div>
@@ -564,7 +721,7 @@ export default function AdminPanel() {
           <TabsContent value="flota" className="space-y-5">
             <PanelCard icon={Wrench} title="Flota" description="Vehículos, licencias, revisiones y disponibilidad">
               <div className="mb-4 flex justify-end">
-                <Button onClick={addTaxi} className="rounded-2xl bg-slate-950 font-black text-white hover:bg-slate-800"><Plus className="mr-2 h-4 w-4" /> Añadir taxi</Button>
+                <Button onClick={addTaxi} disabled={isSaving} className="rounded-2xl bg-slate-950 font-black text-white hover:bg-slate-800"><Plus className="mr-2 h-4 w-4" /> Añadir taxi</Button>
               </div>
               <div className="overflow-x-auto">
                 <Table>
@@ -580,19 +737,24 @@ export default function AdminPanel() {
                   </TableHeader>
                   <TableBody>
                     {fleet.map((taxi) => (
-                      <TableRow key={taxi.taxi}>
+                      <TableRow key={taxi.id}>
                         <TableCell className="font-mono font-black">{taxi.taxi}</TableCell>
                         <TableCell>{taxi.plate}</TableCell>
                         <TableCell>{taxi.model}</TableCell>
                         <TableCell>{taxi.driver}</TableCell>
                         <TableCell>{statusBadge(taxi.status)}</TableCell>
                         <TableCell className="text-right">
-                          <Button size="sm" variant="outline" onClick={() => changeTaxiStatus(taxi.taxi)} className="rounded-xl">
+                          <Button size="sm" variant="outline" disabled={isSaving} onClick={() => changeTaxiStatus(taxi.id)} className="rounded-xl">
                             <RefreshCw className="mr-2 h-3.5 w-3.5" /> Estado
                           </Button>
                         </TableCell>
                       </TableRow>
                     ))}
+                    {fleet.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={6} className="py-8 text-center text-slate-500">No hay taxis todavía.</TableCell>
+                      </TableRow>
+                    )}
                   </TableBody>
                 </Table>
               </div>
@@ -602,7 +764,7 @@ export default function AdminPanel() {
           <TabsContent value="incidencias" className="grid gap-5 lg:grid-cols-[1fr_0.9fr]">
             <PanelCard icon={MessageSquareWarning} title="Incidencias abiertas" description="Alertas y soporte operativo">
               <div className="mb-4 flex justify-end">
-                <Button onClick={addIncident} className="rounded-2xl bg-red-600 font-black text-white hover:bg-red-500"><Plus className="mr-2 h-4 w-4" /> Nueva incidencia</Button>
+                <Button onClick={addIncident} disabled={isSaving} className="rounded-2xl bg-red-600 font-black text-white hover:bg-red-500"><Plus className="mr-2 h-4 w-4" /> Nueva incidencia</Button>
               </div>
               <div className="space-y-3">
                 {incidents.length === 0 && (
@@ -619,7 +781,7 @@ export default function AdminPanel() {
                       </div>
                       <Badge className={incident.level === "high" ? "bg-red-100 text-red-800 hover:bg-red-100" : incident.level === "medium" ? "bg-amber-100 text-amber-800 hover:bg-amber-100" : "bg-slate-100 text-slate-800 hover:bg-slate-100"}>{incident.time}</Badge>
                     </div>
-                    <Button size="sm" variant="outline" onClick={() => resolveIncident(incident.id)} className="mt-3 rounded-xl">
+                    <Button size="sm" variant="outline" disabled={isSaving} onClick={() => resolveIncident(incident.id)} className="mt-3 rounded-xl">
                       <CheckCircle2 className="mr-2 h-4 w-4" /> Resolver
                     </Button>
                   </div>
@@ -629,9 +791,9 @@ export default function AdminPanel() {
 
             <PanelCard icon={LifeBuoy} title="Acciones rápidas" description="Herramientas para el operador">
               <div className="grid gap-3">
-                <Button onClick={sendBroadcast} variant="outline" className="justify-start rounded-2xl bg-white py-6 font-black"><Bell className="mr-3 h-5 w-5 text-cyan-600" /> Enviar aviso a conductores</Button>
-                <Button onClick={runSecurityCheck} variant="outline" className="justify-start rounded-2xl bg-white py-6 font-black"><ShieldCheck className="mr-3 h-5 w-5 text-emerald-600" /> Revisar seguridad</Button>
-                <Button onClick={generateDailyReport} variant="outline" className="justify-start rounded-2xl bg-white py-6 font-black"><FileText className="mr-3 h-5 w-5 text-indigo-600" /> Generar informe diario</Button>
+                <Button onClick={sendBroadcast} disabled={isSaving} variant="outline" className="justify-start rounded-2xl bg-white py-6 font-black"><Bell className="mr-3 h-5 w-5 text-cyan-600" /> Enviar aviso a conductores</Button>
+                <Button onClick={runSecurityCheck} disabled={isSaving} variant="outline" className="justify-start rounded-2xl bg-white py-6 font-black"><ShieldCheck className="mr-3 h-5 w-5 text-emerald-600" /> Revisar seguridad</Button>
+                <Button onClick={generateDailyReport} disabled={isSaving} variant="outline" className="justify-start rounded-2xl bg-white py-6 font-black"><FileText className="mr-3 h-5 w-5 text-indigo-600" /> Generar informe diario</Button>
               </div>
             </PanelCard>
           </TabsContent>
@@ -647,12 +809,12 @@ export default function AdminPanel() {
               </div>
               <div className="mt-5 grid gap-3 sm:grid-cols-3">
                 <div className="rounded-3xl border border-slate-100 bg-white p-4">
-                  <p className="text-sm font-bold text-slate-500">Radio operativo</p>
-                  <p className="mt-2 text-2xl font-black">8 km</p>
+                  <p className="text-sm font-bold text-slate-500">Fuente de datos</p>
+                  <p className="mt-2 text-2xl font-black">{isRealAdmin ? "Supabase" : "Local"}</p>
                 </div>
                 <div className="rounded-3xl border border-slate-100 bg-white p-4">
-                  <p className="text-sm font-bold text-slate-500">Comisión demo</p>
-                  <p className="mt-2 text-2xl font-black">12%</p>
+                  <p className="text-sm font-bold text-slate-500">Radio operativo</p>
+                  <p className="mt-2 text-2xl font-black">8 km</p>
                 </div>
                 <div className="rounded-3xl border border-slate-100 bg-white p-4">
                   <p className="text-sm font-bold text-slate-500">Espera máxima</p>
@@ -661,8 +823,9 @@ export default function AdminPanel() {
               </div>
             </PanelCard>
 
-            <PanelCard icon={Activity} title="Registro de actividad" description="Últimas acciones hechas en modo prueba">
+            <PanelCard icon={Activity} title="Registro de actividad" description="Últimas acciones hechas en el panel">
               <div className="space-y-3">
+                {logs.length === 0 && <p className="text-sm text-slate-500">Aún no hay actividad registrada.</p>}
                 {logs.map((log) => (
                   <div key={log.id} className="rounded-2xl border border-slate-100 bg-white p-3">
                     <p className="font-bold text-slate-900">{log.text}</p>
