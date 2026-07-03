@@ -4,6 +4,26 @@ import { useI18n } from "@/i18n/useI18n";
 import { useLocation } from "wouter";
 import { Loader2 } from "lucide-react";
 
+const REDIRECT_PATH_KEY = "taximun_redirect_path";
+
+const readPendingRedirectPath = () => {
+  try {
+    const path = sessionStorage.getItem(REDIRECT_PATH_KEY);
+    sessionStorage.removeItem(REDIRECT_PATH_KEY);
+    if (
+      path === "/auth" ||
+      path === "/passenger" ||
+      path === "/driver" ||
+      path === "/admin"
+    ) {
+      return path;
+    }
+  } catch {
+    // Ignore storage errors.
+  }
+  return null;
+};
+
 export default function Home() {
   const { user, loading, isAuthenticated } = useAuth();
   const { t } = useI18n();
@@ -11,6 +31,12 @@ export default function Home() {
 
   useEffect(() => {
     if (loading) return;
+
+    const pendingRedirectPath = readPendingRedirectPath();
+    if (pendingRedirectPath) {
+      setLocation(pendingRedirectPath);
+      return;
+    }
 
     if (!isAuthenticated) {
       setLocation("/auth");
