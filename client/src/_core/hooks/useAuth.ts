@@ -2,19 +2,54 @@ import { trpc } from "@/lib/trpc";
 import { TRPCClientError } from "@trpc/client";
 import { useCallback, useEffect, useMemo } from "react";
 
+const GUEST_ROLE_KEY = "taximun_guest_role";
+
 type UseAuthOptions = {
   redirectOnUnauthenticated?: boolean;
   redirectPath?: string;
 };
 
+function readGuestRole() {
+  try {
+    const role = localStorage.getItem(GUEST_ROLE_KEY);
+    if (role === "passenger" || role === "driver" || role === "admin") {
+      return role;
+    }
+  } catch {}
+  return null;
+}
+
+function createGuestUser(role: "passenger" | "driver" | "admin") {
+  const now = new Date();
+  return {
+    id: role === "admin" ? -3 : role === "driver" ? -2 : -1,
+    openId: `guest:${role}`,
+    name: `Invitado ${role}`,
+    email: `guest-${role}@taximun.local`,
+    phone: null,
+    loginMethod: "guest",
+    role,
+    language: "es",
+    profilePicture: null,
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+    lastSignedIn: now,
+    isGuest: true,
+  } as any;
+}
+
 export function useAuth(options?: UseAuthOptions) {
   const { redirectOnUnauthenticated = false, redirectPath = "/auth" } =
     options ?? {};
   const utils = trpc.useUtils();
+  const guestRole = typeof window !== "undefined" ? readGuestRole() : null;
+  const guestUser = guestRole ? createGuestUser(guestRole) : null;
 
   const meQuery = trpc.auth.me.useQuery(undefined, {
     retry: false,
     refetchOnWindowFocus: false,
+    enabled: !guestUser,
   });
 
   const logoutMutation = trpc.auth.logout.useMutation({
@@ -24,6 +59,10 @@ export function useAuth(options?: UseAuthOptions) {
   });
 
   const logout = useCallback(async () => {
+    try {
+      localStorage.removeItem(GUEST_ROLE_KEY);
+    } catch {}
+
     try {
       await logoutMutation.mutateAsync();
     } catch (error: unknown) {
@@ -47,17 +86,20 @@ export function useAuth(options?: UseAuthOptions) {
   }, [logoutMutation, utils]);
 
   const state = useMemo(() => {
+    const user = guestUser ?? meQuery.data ?? null;
     localStorage.setItem(
       "manus-runtime-user-info",
-      JSON.stringify(meQuery.data)
+      JSON.stringify(user)
     );
     return {
-      user: meQuery.data ?? null,
-      loading: meQuery.isLoading || logoutMutation.isPending,
-      error: meQuery.error ?? logoutMutation.error ?? null,
-      isAuthenticated: Boolean(meQuery.data),
+      user,
+      loading: guestUser ? false : meQuery.isLoading || logoutMutation.isPending,
+      error: guestUser ? null : meQuery.error ?? logoutMutation.error ?? null,
+      isAuthenticated: Boolean(user),
+      isGuest: Boolean(guestUser),
     };
   }, [
+    guestUser,
     meQuery.data,
     meQuery.error,
     meQuery.isLoading,
