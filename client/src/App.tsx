@@ -6,6 +6,7 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
 import Auth from "./pages/Auth";
+import TestHub from "./pages/TestHub";
 import PassengerPanel from "./pages/PassengerPanel";
 import DriverPanel from "./pages/DriverPanel";
 import AdminPanel from "./pages/AdminPanel";
@@ -15,18 +16,19 @@ function Router() {
     <Switch>
       <Route path={"/"} component={Home} />
       <Route path={"/auth"} component={Auth} />
+      <Route path={"/test"} component={TestHub} />
       {/* Passenger routes */}
       <Route path={"/passenger"} component={PassengerPanel} />
-      <Route path={"/passenger/rides"} component={() => <div>My Rides - Coming Soon</div>} />
-      <Route path={"/passenger/book"} component={() => <div>Book Taxi - Coming Soon</div>} />
+      <Route path={"/passenger/rides"} component={PassengerPanel} />
+      <Route path={"/passenger/book"} component={PassengerPanel} />
       {/* Driver routes */}
       <Route path={"/driver"} component={DriverPanel} />
-      <Route path={"/driver/queue"} component={() => <div>Queue Position - Coming Soon</div>} />
-      <Route path={"/driver/earnings"} component={() => <div>Earnings - Coming Soon</div>} />
+      <Route path={"/driver/queue"} component={DriverPanel} />
+      <Route path={"/driver/earnings"} component={DriverPanel} />
       {/* Admin routes */}
       <Route path={"/admin"} component={AdminPanel} />
-      <Route path={"/admin/dashboard"} component={() => <div>Dashboard - Coming Soon</div>} />
-      <Route path={"/admin/users"} component={() => <div>Users Management - Coming Soon</div>} />
+      <Route path={"/admin/dashboard"} component={AdminPanel} />
+      <Route path={"/admin/users"} component={AdminPanel} />
       <Route path={"/404"} component={NotFound} />
       {/* Final fallback route */}
       <Route component={NotFound} />
