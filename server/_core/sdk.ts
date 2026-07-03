@@ -277,6 +277,11 @@ class SDKServer {
     }
 
     const metadata = supabaseUser.user_metadata ?? {};
+    const metadataRole = typeof metadata.role === "string" ? metadata.role : null;
+    const safeRole =
+      metadataRole === "passenger" || metadataRole === "driver"
+        ? metadataRole
+        : undefined;
     const name =
       typeof metadata.name === "string"
         ? metadata.name
@@ -290,6 +295,7 @@ class SDKServer {
       name,
       email: supabaseUser.email ?? null,
       loginMethod: "supabase",
+      role: safeRole,
       lastSignedIn: signedInAt,
     });
 
