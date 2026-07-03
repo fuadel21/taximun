@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,7 +10,7 @@ import {
   Area,
   AreaChart,
   Bar,
-  BarChart,
+  BarChart as RechartsBarChart,
   CartesianGrid,
   Cell,
   Pie,
@@ -40,6 +40,7 @@ import {
   MapPin,
   MessageSquareWarning,
   Plus,
+  RefreshCw,
   Search,
   Settings,
   ShieldCheck,
@@ -48,7 +49,58 @@ import {
   UserCheck,
   Users,
   Wrench,
+  type LucideIcon,
 } from "lucide-react";
+
+type DriverStatus = "available" | "busy" | "pause" | "offline";
+type TaxiStatus = "available" | "busy" | "maintenance" | "offline";
+type RideStatus = "in_progress" | "completed" | "assigned" | "cancelled";
+type IncidentLevel = "low" | "medium" | "high";
+
+type Driver = {
+  id: number;
+  name: string;
+  taxi: string;
+  zone: string;
+  status: DriverStatus;
+  rating: number;
+  rides: number;
+  wait: string;
+};
+
+type Taxi = {
+  plate: string;
+  taxi: string;
+  driver: string;
+  model: string;
+  status: TaxiStatus;
+  inspection: string;
+};
+
+type Ride = {
+  id: string;
+  passenger: string;
+  driver: string;
+  from: string;
+  to: string;
+  status: RideStatus;
+  price: string;
+  time: string;
+};
+
+type Incident = {
+  id: string;
+  type: string;
+  text: string;
+  level: IncidentLevel;
+  time: string;
+};
+
+type ActivityLog = {
+  id: number;
+  text: string;
+  time: string;
+};
 
 const weeklyData = [
   { day: "Lun", viajes: 38, ingresos: 418, espera: 5 },
@@ -60,14 +112,7 @@ const weeklyData = [
   { day: "Dom", viajes: 64, ingresos: 704, espera: 6 },
 ];
 
-const statusData = [
-  { name: "Libres", value: 18, color: "#06b6d4" },
-  { name: "Ocupados", value: 11, color: "#2563eb" },
-  { name: "Pausa", value: 5, color: "#f59e0b" },
-  { name: "Offline", value: 7, color: "#94a3b8" },
-];
-
-const drivers = [
+const initialDrivers: Driver[] = [
   { id: 1, name: "Juan García", taxi: "TX-102", zone: "Centro", status: "available", rating: 4.9, rides: 18, wait: "3 min" },
   { id: 2, name: "Marta Soler", taxi: "TX-118", zone: "Estación", status: "busy", rating: 4.8, rides: 15, wait: "En viaje" },
   { id: 3, name: "Karim Haddad", taxi: "TX-130", zone: "Hospital", status: "available", rating: 4.7, rides: 12, wait: "5 min" },
@@ -75,32 +120,50 @@ const drivers = [
   { id: 5, name: "Said Amrani", taxi: "TX-154", zone: "Costa", status: "offline", rating: 4.9, rides: 21, wait: "Offline" },
 ];
 
-const fleet = [
+const initialFleet: Taxi[] = [
   { plate: "1234-LTX", taxi: "TX-102", driver: "Juan García", model: "Toyota Corolla", status: "available", inspection: "2026-10-14" },
   { plate: "9912-MDC", taxi: "TX-118", driver: "Marta Soler", model: "Hyundai Ioniq", status: "busy", inspection: "2026-09-02" },
   { plate: "7720-KRM", taxi: "TX-130", driver: "Karim Haddad", model: "Skoda Octavia", status: "available", inspection: "2026-12-20" },
   { plate: "5529-BLC", taxi: "TX-141", driver: "Laura Pérez", model: "Mercedes Vito", status: "maintenance", inspection: "2026-08-11" },
 ];
 
-const rides = [
+const initialRides: Ride[] = [
   { id: "R-2041", passenger: "Ana M.", driver: "Marta Soler", from: "Estación", to: "Hospital", status: "in_progress", price: "12,80 €", time: "09:42" },
   { id: "R-2040", passenger: "Carlos R.", driver: "Juan García", from: "Centro", to: "Costa", status: "completed", price: "16,20 €", time: "09:29" },
   { id: "R-2039", passenger: "Nora L.", driver: "Karim Haddad", from: "Ayuntamiento", to: "Estación", status: "assigned", price: "8,90 €", time: "09:16" },
   { id: "R-2038", passenger: "Mohamed A.", driver: "Laura Pérez", from: "Mercado", to: "Centro", status: "cancelled", price: "0,00 €", time: "08:58" },
 ];
 
-const incidents = [
+const initialIncidents: Incident[] = [
   { id: "I-88", type: "Retraso", text: "Conductor TX-141 acumula 12 min de demora", level: "medium", time: "Hace 8 min" },
   { id: "I-87", type: "Pago", text: "Pago pendiente en viaje R-2038", level: "low", time: "Hace 22 min" },
   { id: "I-86", type: "Soporte", text: "Pasajero solicita llamada de asistencia", level: "high", time: "Hace 31 min" },
 ];
 
 const cityZones = [
-  { name: "Centro", drivers: 7, demand: "Alta", eta: "3 min" },
-  { name: "Estación", drivers: 5, demand: "Media", eta: "4 min" },
-  { name: "Hospital", drivers: 3, demand: "Alta", eta: "5 min" },
-  { name: "Costa", drivers: 4, demand: "Baja", eta: "7 min" },
+  { name: "Centro", demand: "Alta", eta: "3 min" },
+  { name: "Estación", demand: "Media", eta: "4 min" },
+  { name: "Hospital", demand: "Alta", eta: "5 min" },
+  { name: "Costa", demand: "Baja", eta: "7 min" },
 ];
+
+const nextDriverStatus: Record<DriverStatus, DriverStatus> = {
+  available: "busy",
+  busy: "pause",
+  pause: "offline",
+  offline: "available",
+};
+
+const nextTaxiStatus: Record<TaxiStatus, TaxiStatus> = {
+  available: "busy",
+  busy: "maintenance",
+  maintenance: "offline",
+  offline: "available",
+};
+
+function nowLabel() {
+  return new Date().toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
+}
 
 function statusBadge(status: string) {
   if (status === "available") return <Badge className="bg-cyan-100 text-cyan-800 hover:bg-cyan-100">Libre</Badge>;
@@ -113,7 +176,7 @@ function statusBadge(status: string) {
   return <Badge variant="outline">Offline</Badge>;
 }
 
-function StatCard({ icon: Icon, title, value, note }: { icon: any; title: string; value: string; note: string }) {
+function StatCard({ icon: Icon, title, value, note }: { icon: LucideIcon; title: string; value: string; note: string }) {
   return (
     <Card className="overflow-hidden border-white/70 bg-white/85 shadow-[0_18px_50px_rgba(15,23,42,0.08)] backdrop-blur-xl">
       <CardContent className="p-5">
@@ -135,9 +198,36 @@ function StatCard({ icon: Icon, title, value, note }: { icon: any; title: string
   );
 }
 
+function PanelCard({ icon: Icon, title, description, children }: { icon: LucideIcon; title: string; description: string; children: ReactNode }) {
+  return (
+    <Card className="border-white/70 bg-white/85 shadow-xl backdrop-blur-xl">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-xl font-black">
+          <Icon className="h-5 w-5 text-cyan-600" />
+          {title}
+        </CardTitle>
+        <CardDescription>{description}</CardDescription>
+      </CardHeader>
+      <CardContent>{children}</CardContent>
+    </Card>
+  );
+}
+
 export default function AdminPanel() {
   const { user, logout, isGuest } = useAuth() as any;
+  const [drivers, setDrivers] = useState<Driver[]>(initialDrivers);
+  const [fleet, setFleet] = useState<Taxi[]>(initialFleet);
+  const [rides] = useState<Ride[]>(initialRides);
+  const [incidents, setIncidents] = useState<Incident[]>(initialIncidents);
   const [searchTerm, setSearchTerm] = useState("");
+  const [logs, setLogs] = useState<ActivityLog[]>([
+    { id: 1, text: "Panel admin cargado en modo prueba", time: nowLabel() },
+  ]);
+  const [serviceMode, setServiceMode] = useState("Piloto municipal");
+
+  const addLog = (text: string) => {
+    setLogs((current) => [{ id: Date.now(), text, time: nowLabel() }, ...current].slice(0, 6));
+  };
 
   const filteredDrivers = useMemo(() => {
     const query = searchTerm.toLowerCase();
@@ -147,7 +237,111 @@ export default function AdminPanel() {
         driver.taxi.toLowerCase().includes(query) ||
         driver.zone.toLowerCase().includes(query)
     );
-  }, [searchTerm]);
+  }, [drivers, searchTerm]);
+
+  const availableDrivers = drivers.filter((driver) => driver.status === "available").length;
+  const activeRides = rides.filter((ride) => ride.status === "in_progress" || ride.status === "assigned").length;
+  const avgRating = drivers.length
+    ? (drivers.reduce((sum, driver) => sum + driver.rating, 0) / drivers.length).toFixed(1).replace(".", ",")
+    : "0";
+
+  const statusData = [
+    { name: "Libres", value: drivers.filter((driver) => driver.status === "available").length, color: "#06b6d4" },
+    { name: "Ocupados", value: drivers.filter((driver) => driver.status === "busy").length, color: "#2563eb" },
+    { name: "Pausa", value: drivers.filter((driver) => driver.status === "pause").length, color: "#f59e0b" },
+    { name: "Offline", value: drivers.filter((driver) => driver.status === "offline").length, color: "#94a3b8" },
+  ];
+
+  const addDriver = () => {
+    const nextId = drivers.length + 1;
+    const newDriver: Driver = {
+      id: Date.now(),
+      name: `Nuevo conductor ${nextId}`,
+      taxi: `TX-${160 + nextId}`,
+      zone: "Centro",
+      status: "available",
+      rating: 5,
+      rides: 0,
+      wait: "Nuevo",
+    };
+    setDrivers((current) => [newDriver, ...current]);
+    addLog(`Alta creada: ${newDriver.name}`);
+  };
+
+  const addTaxi = () => {
+    const nextId = fleet.length + 1;
+    const newTaxi: Taxi = {
+      plate: `${7000 + nextId}-TMP`,
+      taxi: `TX-${200 + nextId}`,
+      driver: "Sin asignar",
+      model: "Vehículo pendiente",
+      status: "available",
+      inspection: "2026-12-31",
+    };
+    setFleet((current) => [newTaxi, ...current]);
+    addLog(`Taxi añadido: ${newTaxi.taxi}`);
+  };
+
+  const changeDriverStatus = (id: number) => {
+    setDrivers((current) =>
+      current.map((driver) =>
+        driver.id === id
+          ? { ...driver, status: nextDriverStatus[driver.status], wait: nextDriverStatus[driver.status] === "available" ? "2 min" : nextDriverStatus[driver.status] === "busy" ? "En viaje" : nextDriverStatus[driver.status] === "pause" ? "Pausa" : "Offline" }
+          : driver
+      )
+    );
+    addLog("Estado de conductor actualizado");
+  };
+
+  const changeTaxiStatus = (taxiId: string) => {
+    setFleet((current) =>
+      current.map((taxi) =>
+        taxi.taxi === taxiId ? { ...taxi, status: nextTaxiStatus[taxi.status] } : taxi
+      )
+    );
+    addLog(`Estado actualizado para ${taxiId}`);
+  };
+
+  const addIncident = () => {
+    const incident: Incident = {
+      id: `I-${90 + incidents.length}`,
+      type: "Operación",
+      text: "Nueva incidencia demo creada desde el panel",
+      level: "medium",
+      time: "Ahora",
+    };
+    setIncidents((current) => [incident, ...current]);
+    addLog(`Incidencia creada: ${incident.id}`);
+  };
+
+  const resolveIncident = (id: string) => {
+    setIncidents((current) => current.filter((incident) => incident.id !== id));
+    addLog(`Incidencia resuelta: ${id}`);
+  };
+
+  const exportReport = () => {
+    const report = {
+      generatedAt: new Date().toISOString(),
+      mode: serviceMode,
+      activeRides,
+      drivers: drivers.length,
+      availableDrivers,
+      fleet: fleet.length,
+      incidents: incidents.length,
+    };
+    const blob = new Blob([JSON.stringify(report, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "taximun-admin-report.json";
+    link.click();
+    URL.revokeObjectURL(url);
+    addLog("Informe JSON exportado");
+  };
+
+  const sendBroadcast = () => addLog("Aviso enviado a todos los conductores conectados");
+  const runSecurityCheck = () => addLog("Revisión de seguridad completada sin bloqueos críticos");
+  const generateDailyReport = () => addLog("Informe diario preparado para descarga");
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.18),_transparent_30%),linear-gradient(180deg,_#f8fbff_0%,_#eef6ff_45%,_#ffffff_100%)] text-slate-950">
@@ -174,45 +368,48 @@ export default function AdminPanel() {
 
       <main className="mx-auto max-w-7xl space-y-6 px-4 py-6">
         <section className="overflow-hidden rounded-[2rem] bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 p-5 text-white shadow-[0_24px_80px_rgba(15,23,42,0.24)] sm:p-7">
-          <div className="grid gap-6 lg:grid-cols-[1.3fr_0.7fr] lg:items-center">
+          <div className="grid gap-6 lg:grid-cols-[1.25fr_0.75fr] lg:items-center">
             <div>
               <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-sm font-bold text-cyan-100 ring-1 ring-white/15">
                 <Sparkles className="h-4 w-4" />
-                Centro de control municipal
+                Centro de control municipal · {serviceMode}
               </div>
               <h2 className="text-3xl font-black tracking-tight sm:text-4xl">Operación en tiempo real</h2>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300 sm:text-base">
                 Supervisa demanda, conductores, flota, viajes, incidencias y rendimiento desde una sola pantalla. Usuario actual: {user?.name ?? "Invitado Admin"}.
               </p>
               <div className="mt-5 flex flex-wrap gap-3">
-                <Button className="rounded-2xl bg-cyan-500 font-black text-white hover:bg-cyan-400">
+                <Button onClick={addDriver} className="rounded-2xl bg-cyan-500 font-black text-white hover:bg-cyan-400">
                   <Plus className="mr-2 h-4 w-4" />
                   Alta conductor
                 </Button>
-                <Button variant="outline" className="rounded-2xl border-white/20 bg-white/10 font-black text-white hover:bg-white/20">
+                <Button onClick={exportReport} variant="outline" className="rounded-2xl border-white/20 bg-white/10 font-black text-white hover:bg-white/20">
                   <Download className="mr-2 h-4 w-4" />
                   Exportar informe
                 </Button>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              {cityZones.map((zone) => (
-                <div key={zone.name} className="rounded-3xl bg-white/10 p-4 ring-1 ring-white/15">
-                  <p className="text-sm font-black">{zone.name}</p>
-                  <p className="mt-2 text-2xl font-black">{zone.drivers}</p>
-                  <p className="text-xs text-slate-300">taxis · ETA {zone.eta}</p>
-                  <Badge className="mt-3 bg-white/15 text-white hover:bg-white/15">Demanda {zone.demand}</Badge>
-                </div>
-              ))}
+              {cityZones.map((zone) => {
+                const zoneDrivers = drivers.filter((driver) => driver.zone === zone.name).length;
+                return (
+                  <div key={zone.name} className="rounded-3xl bg-white/10 p-4 ring-1 ring-white/15">
+                    <p className="text-sm font-black">{zone.name}</p>
+                    <p className="mt-2 text-2xl font-black">{zoneDrivers}</p>
+                    <p className="text-xs text-slate-300">taxis · ETA {zone.eta}</p>
+                    <Badge className="mt-3 bg-white/15 text-white hover:bg-white/15">Demanda {zone.demand}</Badge>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </section>
 
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard icon={Car} title="Viajes activos" value="24" note="+12% frente a ayer" />
-          <StatCard icon={Users} title="Conductores conectados" value="41" note="18 libres ahora" />
+          <StatCard icon={Car} title="Viajes activos" value={String(activeRides)} note="Asignados o en servicio" />
+          <StatCard icon={Users} title="Conductores" value={String(drivers.length)} note={`${availableDrivers} libres ahora`} />
           <StatCard icon={CircleDollarSign} title="Ingresos hoy" value="946 €" note="Objetivo diario 78%" />
-          <StatCard icon={Star} title="Valoración media" value="4,8" note="Últimos 7 días" />
+          <StatCard icon={Star} title="Valoración media" value={avgRating} note="Según conductores demo" />
         </section>
 
         <Tabs defaultValue="resumen" className="space-y-5">
@@ -227,12 +424,8 @@ export default function AdminPanel() {
 
           <TabsContent value="resumen" className="space-y-5">
             <div className="grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
-              <Card className="border-white/70 bg-white/85 shadow-xl backdrop-blur-xl">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-xl font-black"><Activity className="h-5 w-5 text-cyan-600" /> Viajes e ingresos</CardTitle>
-                  <CardDescription>Semana actual · datos demo para validar diseño</CardDescription>
-                </CardHeader>
-                <CardContent className="h-80">
+              <PanelCard icon={Activity} title="Viajes e ingresos" description="Semana actual · datos demo para validar diseño">
+                <div className="h-80">
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={weeklyData}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -243,15 +436,11 @@ export default function AdminPanel() {
                       <Area type="monotone" dataKey="viajes" stroke="#06b6d4" fill="#cffafe" strokeWidth={3} />
                     </AreaChart>
                   </ResponsiveContainer>
-                </CardContent>
-              </Card>
+                </div>
+              </PanelCard>
 
-              <Card className="border-white/70 bg-white/85 shadow-xl backdrop-blur-xl">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-xl font-black"><Gauge className="h-5 w-5 text-blue-600" /> Estado de flota</CardTitle>
-                  <CardDescription>Distribución actual por estado</CardDescription>
-                </CardHeader>
-                <CardContent className="h-80">
+              <PanelCard icon={Gauge} title="Estado de flota" description="Distribución actual por estado">
+                <div className="h-80">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie data={statusData} dataKey="value" nameKey="name" innerRadius={56} outerRadius={92} paddingAngle={4}>
@@ -262,16 +451,12 @@ export default function AdminPanel() {
                       <Tooltip />
                     </PieChart>
                   </ResponsiveContainer>
-                </CardContent>
-              </Card>
+                </div>
+              </PanelCard>
             </div>
 
-            <Card className="border-white/70 bg-white/85 shadow-xl backdrop-blur-xl">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-xl font-black"><CalendarClock className="h-5 w-5 text-indigo-600" /> Últimos viajes</CardTitle>
-                <CardDescription>Servicios recientes de la ciudad</CardDescription>
-              </CardHeader>
-              <CardContent className="overflow-x-auto">
+            <PanelCard icon={CalendarClock} title="Últimos viajes" description="Servicios recientes de la ciudad">
+              <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -296,17 +481,13 @@ export default function AdminPanel() {
                     ))}
                   </TableBody>
                 </Table>
-              </CardContent>
-            </Card>
+              </div>
+            </PanelCard>
           </TabsContent>
 
           <TabsContent value="operacion" className="grid gap-5 lg:grid-cols-[0.8fr_1.2fr]">
-            <Card className="border-white/70 bg-white/85 shadow-xl backdrop-blur-xl">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-xl font-black"><MapPin className="h-5 w-5 text-cyan-600" /> Zonas de demanda</CardTitle>
-                <CardDescription>Estado operativo por zona</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
+            <PanelCard icon={MapPin} title="Zonas de demanda" description="Estado operativo por zona">
+              <div className="space-y-3">
                 {cityZones.map((zone) => (
                   <div key={zone.name} className="rounded-3xl border border-slate-100 bg-slate-50/80 p-4">
                     <div className="flex items-center justify-between">
@@ -314,49 +495,40 @@ export default function AdminPanel() {
                       <Badge variant="outline">ETA {zone.eta}</Badge>
                     </div>
                     <div className="mt-3 flex items-center justify-between text-sm text-slate-600">
-                      <span>{zone.drivers} conductores cerca</span>
+                      <span>{drivers.filter((driver) => driver.zone === zone.name).length} conductores cerca</span>
                       <span>Demanda {zone.demand}</span>
                     </div>
                   </div>
                 ))}
-              </CardContent>
-            </Card>
+              </div>
+            </PanelCard>
 
-            <Card className="border-white/70 bg-white/85 shadow-xl backdrop-blur-xl">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-xl font-black"><BarChart className="h-5 w-5 text-blue-600" /> Tiempo de espera</CardTitle>
-                <CardDescription>Minutos medios por día</CardDescription>
-              </CardHeader>
-              <CardContent className="h-80">
+            <PanelCard icon={Clock3} title="Tiempo de espera" description="Minutos medios por día">
+              <div className="h-80">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={weeklyData}>
+                  <RechartsBarChart data={weeklyData}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
                     <XAxis dataKey="day" />
                     <YAxis />
                     <Tooltip />
                     <Bar dataKey="espera" radius={[10, 10, 0, 0]} fill="#06b6d4" />
-                  </BarChart>
+                  </RechartsBarChart>
                 </ResponsiveContainer>
-              </CardContent>
-            </Card>
+              </div>
+            </PanelCard>
           </TabsContent>
 
           <TabsContent value="conductores" className="space-y-5">
-            <Card className="border-white/70 bg-white/85 shadow-xl backdrop-blur-xl">
-              <CardHeader className="gap-4 lg:flex lg:flex-row lg:items-center lg:justify-between">
-                <div>
-                  <CardTitle className="flex items-center gap-2 text-xl font-black"><UserCheck className="h-5 w-5 text-cyan-600" /> Conductores</CardTitle>
-                  <CardDescription>Control de estado, zona, viajes y rendimiento</CardDescription>
+            <PanelCard icon={UserCheck} title="Conductores" description="Control de estado, zona, viajes y rendimiento">
+              <div className="mb-4 flex flex-col gap-2 sm:flex-row">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <Input placeholder="Buscar conductor..." value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} className="rounded-2xl bg-white pl-9" />
                 </div>
-                <div className="flex gap-2">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                    <Input placeholder="Buscar conductor..." value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} className="rounded-2xl bg-white pl-9" />
-                  </div>
-                  <Button variant="outline" className="rounded-2xl"><Filter className="mr-2 h-4 w-4" /> Filtro</Button>
-                </div>
-              </CardHeader>
-              <CardContent className="overflow-x-auto">
+                <Button variant="outline" className="rounded-2xl"><Filter className="mr-2 h-4 w-4" /> Filtro</Button>
+                <Button onClick={addDriver} className="rounded-2xl bg-slate-950 font-black text-white hover:bg-slate-800"><Plus className="mr-2 h-4 w-4" /> Nuevo</Button>
+              </div>
+              <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -365,7 +537,7 @@ export default function AdminPanel() {
                       <TableHead>Zona</TableHead>
                       <TableHead>Estado</TableHead>
                       <TableHead>Rating</TableHead>
-                      <TableHead className="text-right">Viajes hoy</TableHead>
+                      <TableHead className="text-right">Acción</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -376,25 +548,25 @@ export default function AdminPanel() {
                         <TableCell>{driver.zone}</TableCell>
                         <TableCell>{statusBadge(driver.status)}</TableCell>
                         <TableCell>⭐ {driver.rating}</TableCell>
-                        <TableCell className="text-right font-black">{driver.rides}</TableCell>
+                        <TableCell className="text-right">
+                          <Button size="sm" variant="outline" onClick={() => changeDriverStatus(driver.id)} className="rounded-xl">
+                            <RefreshCw className="mr-2 h-3.5 w-3.5" /> Estado
+                          </Button>
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
-              </CardContent>
-            </Card>
+              </div>
+            </PanelCard>
           </TabsContent>
 
           <TabsContent value="flota" className="space-y-5">
-            <Card className="border-white/70 bg-white/85 shadow-xl backdrop-blur-xl">
-              <CardHeader className="gap-4 lg:flex lg:flex-row lg:items-center lg:justify-between">
-                <div>
-                  <CardTitle className="flex items-center gap-2 text-xl font-black"><Wrench className="h-5 w-5 text-amber-600" /> Flota</CardTitle>
-                  <CardDescription>Vehículos, licencias, revisiones y disponibilidad</CardDescription>
-                </div>
-                <Button className="rounded-2xl bg-slate-950 font-black text-white hover:bg-slate-800"><Plus className="mr-2 h-4 w-4" /> Añadir taxi</Button>
-              </CardHeader>
-              <CardContent className="overflow-x-auto">
+            <PanelCard icon={Wrench} title="Flota" description="Vehículos, licencias, revisiones y disponibilidad">
+              <div className="mb-4 flex justify-end">
+                <Button onClick={addTaxi} className="rounded-2xl bg-slate-950 font-black text-white hover:bg-slate-800"><Plus className="mr-2 h-4 w-4" /> Añadir taxi</Button>
+              </div>
+              <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -403,7 +575,7 @@ export default function AdminPanel() {
                       <TableHead>Modelo</TableHead>
                       <TableHead>Conductor</TableHead>
                       <TableHead>Estado</TableHead>
-                      <TableHead>Inspección</TableHead>
+                      <TableHead className="text-right">Acción</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -414,22 +586,30 @@ export default function AdminPanel() {
                         <TableCell>{taxi.model}</TableCell>
                         <TableCell>{taxi.driver}</TableCell>
                         <TableCell>{statusBadge(taxi.status)}</TableCell>
-                        <TableCell>{taxi.inspection}</TableCell>
+                        <TableCell className="text-right">
+                          <Button size="sm" variant="outline" onClick={() => changeTaxiStatus(taxi.taxi)} className="rounded-xl">
+                            <RefreshCw className="mr-2 h-3.5 w-3.5" /> Estado
+                          </Button>
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
-              </CardContent>
-            </Card>
+              </div>
+            </PanelCard>
           </TabsContent>
 
           <TabsContent value="incidencias" className="grid gap-5 lg:grid-cols-[1fr_0.9fr]">
-            <Card className="border-white/70 bg-white/85 shadow-xl backdrop-blur-xl">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-xl font-black"><MessageSquareWarning className="h-5 w-5 text-red-600" /> Incidencias abiertas</CardTitle>
-                <CardDescription>Alertas y soporte operativo</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
+            <PanelCard icon={MessageSquareWarning} title="Incidencias abiertas" description="Alertas y soporte operativo">
+              <div className="mb-4 flex justify-end">
+                <Button onClick={addIncident} className="rounded-2xl bg-red-600 font-black text-white hover:bg-red-500"><Plus className="mr-2 h-4 w-4" /> Nueva incidencia</Button>
+              </div>
+              <div className="space-y-3">
+                {incidents.length === 0 && (
+                  <div className="rounded-3xl border border-emerald-100 bg-emerald-50 p-4 text-sm font-bold text-emerald-800">
+                    No hay incidencias abiertas.
+                  </div>
+                )}
                 {incidents.map((incident) => (
                   <div key={incident.id} className="rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
                     <div className="flex items-start justify-between gap-3">
@@ -439,46 +619,58 @@ export default function AdminPanel() {
                       </div>
                       <Badge className={incident.level === "high" ? "bg-red-100 text-red-800 hover:bg-red-100" : incident.level === "medium" ? "bg-amber-100 text-amber-800 hover:bg-amber-100" : "bg-slate-100 text-slate-800 hover:bg-slate-100"}>{incident.time}</Badge>
                     </div>
+                    <Button size="sm" variant="outline" onClick={() => resolveIncident(incident.id)} className="mt-3 rounded-xl">
+                      <CheckCircle2 className="mr-2 h-4 w-4" /> Resolver
+                    </Button>
                   </div>
                 ))}
-              </CardContent>
-            </Card>
+              </div>
+            </PanelCard>
 
-            <Card className="border-white/70 bg-white/85 shadow-xl backdrop-blur-xl">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-xl font-black"><LifeBuoy className="h-5 w-5 text-cyan-600" /> Acciones rápidas</CardTitle>
-                <CardDescription>Herramientas para el operador</CardDescription>
-              </CardHeader>
-              <CardContent className="grid gap-3">
-                <Button variant="outline" className="justify-start rounded-2xl bg-white py-6 font-black"><Bell className="mr-3 h-5 w-5 text-cyan-600" /> Enviar aviso a conductores</Button>
-                <Button variant="outline" className="justify-start rounded-2xl bg-white py-6 font-black"><ShieldCheck className="mr-3 h-5 w-5 text-emerald-600" /> Revisar seguridad</Button>
-                <Button variant="outline" className="justify-start rounded-2xl bg-white py-6 font-black"><FileText className="mr-3 h-5 w-5 text-indigo-600" /> Generar informe diario</Button>
-              </CardContent>
-            </Card>
+            <PanelCard icon={LifeBuoy} title="Acciones rápidas" description="Herramientas para el operador">
+              <div className="grid gap-3">
+                <Button onClick={sendBroadcast} variant="outline" className="justify-start rounded-2xl bg-white py-6 font-black"><Bell className="mr-3 h-5 w-5 text-cyan-600" /> Enviar aviso a conductores</Button>
+                <Button onClick={runSecurityCheck} variant="outline" className="justify-start rounded-2xl bg-white py-6 font-black"><ShieldCheck className="mr-3 h-5 w-5 text-emerald-600" /> Revisar seguridad</Button>
+                <Button onClick={generateDailyReport} variant="outline" className="justify-start rounded-2xl bg-white py-6 font-black"><FileText className="mr-3 h-5 w-5 text-indigo-600" /> Generar informe diario</Button>
+              </div>
+            </PanelCard>
           </TabsContent>
 
-          <TabsContent value="config" className="grid gap-5 lg:grid-cols-3">
-            {[
-              { icon: Settings, title: "Reglas de servicio", text: "Tarifas, radio operativo, comisiones y límites." },
-              { icon: AlertTriangle, title: "Alertas", text: "Tiempo máximo de espera, incidencias y pagos pendientes." },
-              { icon: CheckCircle2, title: "Estado del sistema", text: "Supabase, Vercel, Auth y despliegues." },
-            ].map((item) => {
-              const Icon = item.icon;
-              return (
-                <Card key={item.title} className="border-white/70 bg-white/85 shadow-xl backdrop-blur-xl">
-                  <CardHeader>
-                    <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 text-white">
-                      <Icon className="h-6 w-6" />
-                    </div>
-                    <CardTitle className="font-black">{item.title}</CardTitle>
-                    <CardDescription>{item.text}</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <Button variant="outline" className="w-full rounded-2xl bg-white font-black">Configurar</Button>
-                  </CardContent>
-                </Card>
-              );
-            })}
+          <TabsContent value="config" className="grid gap-5 lg:grid-cols-[1fr_0.9fr]">
+            <PanelCard icon={Settings} title="Configuración operativa" description="Ajustes demo del sistema">
+              <div className="grid gap-3 sm:grid-cols-3">
+                {["Piloto municipal", "Hora punta", "Servicio nocturno"].map((mode) => (
+                  <Button key={mode} variant={serviceMode === mode ? "default" : "outline"} onClick={() => { setServiceMode(mode); addLog(`Modo cambiado: ${mode}`); }} className="rounded-2xl font-black">
+                    {mode}
+                  </Button>
+                ))}
+              </div>
+              <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                <div className="rounded-3xl border border-slate-100 bg-white p-4">
+                  <p className="text-sm font-bold text-slate-500">Radio operativo</p>
+                  <p className="mt-2 text-2xl font-black">8 km</p>
+                </div>
+                <div className="rounded-3xl border border-slate-100 bg-white p-4">
+                  <p className="text-sm font-bold text-slate-500">Comisión demo</p>
+                  <p className="mt-2 text-2xl font-black">12%</p>
+                </div>
+                <div className="rounded-3xl border border-slate-100 bg-white p-4">
+                  <p className="text-sm font-bold text-slate-500">Espera máxima</p>
+                  <p className="mt-2 text-2xl font-black">10 min</p>
+                </div>
+              </div>
+            </PanelCard>
+
+            <PanelCard icon={Activity} title="Registro de actividad" description="Últimas acciones hechas en modo prueba">
+              <div className="space-y-3">
+                {logs.map((log) => (
+                  <div key={log.id} className="rounded-2xl border border-slate-100 bg-white p-3">
+                    <p className="font-bold text-slate-900">{log.text}</p>
+                    <p className="text-xs text-slate-500">{log.time}</p>
+                  </div>
+                ))}
+              </div>
+            </PanelCard>
           </TabsContent>
         </Tabs>
       </main>
