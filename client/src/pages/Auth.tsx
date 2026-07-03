@@ -1,20 +1,80 @@
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useI18n } from "@/i18n/useI18n";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { AlertCircle, Car, Users, Shield } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { getLoginUrl } from "@/const";
+import { getLoginUrl, hasOAuthConfig } from "@/const";
+import {
+  AlertCircle,
+  ArrowRight,
+  BadgeCheck,
+  Car,
+  CheckCircle2,
+  Clock3,
+  Languages,
+  Lock,
+  Mail,
+  Phone,
+  Shield,
+  Sparkles,
+  UserRound,
+  Users,
+  Zap,
+} from "lucide-react";
+
+type AuthRole = "passenger" | "driver" | "admin";
+type AuthMode = "login" | "signup";
+
+const roleCards: Array<{
+  value: AuthRole;
+  icon: typeof Users;
+  title: string;
+  description: string;
+  gradient: string;
+}> = [
+  {
+    value: "passenger",
+    icon: Users,
+    title: "Pasajero",
+    description: "Pide tu taxi en segundos",
+    gradient: "from-sky-500 to-cyan-400",
+  },
+  {
+    value: "driver",
+    icon: Car,
+    title: "Conductor",
+    description: "Gestiona servicios y estado",
+    gradient: "from-cyan-500 to-blue-600",
+  },
+  {
+    value: "admin",
+    icon: Shield,
+    title: "Admin",
+    description: "Control de flota y panel",
+    gradient: "from-indigo-500 to-violet-500",
+  },
+];
+
+const trustItems = [
+  { icon: BadgeCheck, label: "Seguro" },
+  { icon: Zap, label: "Rápido" },
+  { icon: Clock3, label: "En tiempo real" },
+];
 
 export default function Auth() {
   const { t } = useI18n();
   const { isAuthenticated } = useAuth();
-  const [selectedRole, setSelectedRole] = useState<"passenger" | "driver" | "admin">("passenger");
+  const [selectedRole, setSelectedRole] = useState<AuthRole>("passenger");
+  const [mode, setMode] = useState<AuthMode>("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -23,11 +83,33 @@ export default function Auth() {
   const [language, setLanguage] = useState("es");
   const [error, setError] = useState("");
 
+  const selectedRoleCard = useMemo(
+    () => roleCards.find((role) => role.value === selectedRole) ?? roleCards[0],
+    [selectedRole]
+  );
+
   useEffect(() => {
     if (isAuthenticated) {
       window.location.href = "/";
     }
   }, [isAuthenticated]);
+
+  const startSecureAccess = () => {
+    if (!hasOAuthConfig()) {
+      setError(
+        "Falta configurar VITE_OAUTH_PORTAL_URL y VITE_APP_ID en Vercel para activar el acceso seguro."
+      );
+      return;
+    }
+
+    const loginUrl = getLoginUrl();
+    if (loginUrl === "/auth") {
+      setError("No se pudo preparar el acceso seguro. Revisa las variables de Vercel.");
+      return;
+    }
+
+    window.location.href = loginUrl;
+  };
 
   const handleLogin = () => {
     setError("");
@@ -35,8 +117,8 @@ export default function Auth() {
       setError(t.errors.requiredField);
       return;
     }
-    // Redirect to Manus OAuth login
-    window.location.href = getLoginUrl();
+
+    startSecureAccess();
   };
 
   const handleSignup = () => {
@@ -49,231 +131,313 @@ export default function Auth() {
       setError(t.errors.passwordMismatch);
       return;
     }
-    // In a real app, this would call an API to create the user with the selected role
-    // For now, redirect to OAuth login
-    window.location.href = getLoginUrl();
+
+    startSecureAccess();
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-background to-accent/5 flex flex-col items-center justify-center p-4">
-      {/* Header */}
-      <div className="mb-8 text-center">
-        <div className="flex items-center justify-center gap-2 mb-4">
-          <Car className="w-10 h-10 text-accent" />
-          <h1 className="text-4xl font-bold text-foreground">Taximun</h1>
+    <main className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.20),_transparent_32%),radial-gradient(circle_at_bottom_right,_rgba(99,102,241,0.18),_transparent_36%),linear-gradient(180deg,_#f8fbff_0%,_#eef7ff_48%,_#f8fbff_100%)] px-4 py-6 text-slate-950 sm:px-6">
+      <div className="pointer-events-none absolute -left-20 top-16 h-56 w-56 rounded-full bg-cyan-300/20 blur-3xl" />
+      <div className="pointer-events-none absolute -right-24 bottom-28 h-72 w-72 rounded-full bg-indigo-300/20 blur-3xl" />
+      <div className="pointer-events-none absolute left-1/2 top-0 h-40 w-40 -translate-x-1/2 rounded-full bg-white/60 blur-2xl" />
+
+      <section className="relative z-10 mx-auto flex min-h-[calc(100vh-3rem)] w-full max-w-5xl flex-col items-center justify-center gap-6 lg:grid lg:grid-cols-[0.95fr_1.05fr] lg:gap-10">
+        <div className="w-full max-w-md text-center lg:text-left">
+          <div className="mx-auto mb-5 inline-flex items-center gap-3 rounded-full border border-white/70 bg-white/75 px-4 py-2 shadow-[0_12px_40px_rgba(15,23,42,0.08)] backdrop-blur-xl lg:mx-0">
+            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 text-white shadow-lg shadow-cyan-500/30">
+              <Car className="h-6 w-6" />
+            </span>
+            <div className="text-left">
+              <p className="text-sm font-black uppercase tracking-[0.22em] text-cyan-700">Taximun</p>
+              <p className="text-xs font-medium text-slate-500">Movilidad municipal inteligente</p>
+            </div>
+          </div>
+
+          <h1 className="text-4xl font-black tracking-tight text-slate-950 sm:text-5xl lg:text-6xl">
+            Tu taxi,
+            <span className="block bg-gradient-to-r from-cyan-600 via-blue-600 to-indigo-600 bg-clip-text text-transparent">
+              más cerca.
+            </span>
+          </h1>
+
+          <p className="mt-4 text-base leading-7 text-slate-600 sm:text-lg">
+            Una experiencia más clara, rápida y moderna para pasajeros, conductores y administración.
+          </p>
+
+          <div className="mt-6 grid grid-cols-3 gap-3">
+            {trustItems.map((item) => {
+              const Icon = item.icon;
+              return (
+                <div
+                  key={item.label}
+                  className="rounded-3xl border border-white/70 bg-white/65 p-3 text-center shadow-[0_14px_34px_rgba(15,23,42,0.07)] backdrop-blur-xl"
+                >
+                  <Icon className="mx-auto mb-2 h-5 w-5 text-cyan-600" />
+                  <p className="text-[11px] font-bold uppercase tracking-wide text-slate-600">{item.label}</p>
+                </div>
+              );
+            })}
+          </div>
         </div>
-        <p className="text-muted-foreground text-lg">{t.common.loading}</p>
-      </div>
 
-      {/* Main Card */}
-      <Card className="w-full max-w-md shadow-xl border-border/50">
-        <CardHeader className="space-y-2">
-          <CardTitle className="text-2xl text-center">{t.auth.login}</CardTitle>
-          <CardDescription className="text-center">{t.auth.noAccount}</CardDescription>
-        </CardHeader>
-
-        <CardContent>
-          {/* Role Selection */}
-          <div className="mb-6 space-y-3">
-            <Label className="text-sm font-semibold">{t.common.status}</Label>
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                onClick={() => setSelectedRole("passenger")}
-                className={`p-3 rounded-lg border-2 transition-all ${
-                  selectedRole === "passenger"
-                    ? "border-accent bg-accent/10 text-accent"
-                    : "border-border text-muted-foreground hover:border-accent/50"
-                }`}
-              >
-                <Users className="w-5 h-5 mx-auto mb-1" />
-                <span className="text-xs font-medium">{t.auth.loginAsPassenger}</span>
-              </button>
-
-              <button
-                onClick={() => setSelectedRole("driver")}
-                className={`p-3 rounded-lg border-2 transition-all ${
-                  selectedRole === "driver"
-                    ? "border-accent bg-accent/10 text-accent"
-                    : "border-border text-muted-foreground hover:border-accent/50"
-                }`}
-              >
-                <Car className="w-5 h-5 mx-auto mb-1" />
-                <span className="text-xs font-medium">{t.auth.loginAsDriver}</span>
-              </button>
-
-              <button
-                onClick={() => setSelectedRole("admin")}
-                className={`p-3 rounded-lg border-2 transition-all ${
-                  selectedRole === "admin"
-                    ? "border-accent bg-accent/10 text-accent"
-                    : "border-border text-muted-foreground hover:border-accent/50"
-                }`}
-              >
-                <Shield className="w-5 h-5 mx-auto mb-1" />
-                <span className="text-xs font-medium">{t.auth.loginAsAdmin}</span>
-              </button>
+        <div className="w-full max-w-xl">
+          <div className="relative rounded-[2rem] border border-white/70 bg-white/80 p-4 shadow-[0_28px_90px_rgba(15,23,42,0.16)] backdrop-blur-2xl sm:p-6">
+            <div className="absolute -top-4 right-8 inline-flex items-center gap-2 rounded-full bg-slate-950 px-4 py-2 text-xs font-bold text-white shadow-xl shadow-slate-950/20">
+              <Sparkles className="h-4 w-4 text-cyan-300" />
+              App 2026
             </div>
-          </div>
 
-          {/* Tabs for Login/Signup */}
-          <Tabs defaultValue="login" className="w-full">
-            <TabsList className="grid w-full grid-cols-2 mb-6">
-              <TabsTrigger value="login">{t.auth.login}</TabsTrigger>
-              <TabsTrigger value="signup">{t.auth.signup}</TabsTrigger>
-            </TabsList>
+            <div className="mb-6 rounded-[1.5rem] bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 p-5 text-white shadow-2xl shadow-blue-950/25">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm font-semibold text-cyan-200">Bienvenido a Taximun</p>
+                  <h2 className="mt-1 text-3xl font-black tracking-tight">
+                    {mode === "login" ? "Iniciar sesión" : "Crear cuenta"}
+                  </h2>
+                  <p className="mt-2 text-sm leading-6 text-slate-300">
+                    {mode === "login"
+                      ? "Accede a tu panel y continúa gestionando tus servicios."
+                      : "Prepara tu perfil y activa el acceso seguro."}
+                  </p>
+                </div>
+                <div className={`rounded-3xl bg-gradient-to-br ${selectedRoleCard.gradient} p-3 shadow-lg shadow-cyan-500/20`}>
+                  <selectedRoleCard.icon className="h-7 w-7" />
+                </div>
+              </div>
+            </div>
 
-            {/* Login Tab */}
-            <TabsContent value="login" className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="login-email">{t.auth.email}</Label>
-                <Input
-                  id="login-email"
-                  type="email"
-                  placeholder="you@example.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="border-border/50"
-                />
+            <div className="space-y-5">
+              <div>
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <Label className="text-base font-black text-slate-900">Elige tu perfil</Label>
+                  <span className="rounded-full bg-cyan-50 px-3 py-1 text-xs font-bold text-cyan-700 ring-1 ring-cyan-100">
+                    {selectedRoleCard.title}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 sm:gap-3">
+                  {roleCards.map((role) => {
+                    const Icon = role.icon;
+                    const active = selectedRole === role.value;
+
+                    return (
+                      <button
+                        key={role.value}
+                        type="button"
+                        onClick={() => setSelectedRole(role.value)}
+                        className={`group relative overflow-hidden rounded-3xl border p-3 text-left transition-all duration-300 sm:p-4 ${
+                          active
+                            ? "border-cyan-400 bg-gradient-to-br from-cyan-50 to-blue-50 shadow-[0_18px_45px_rgba(6,182,212,0.18)]"
+                            : "border-slate-200 bg-white/70 shadow-sm hover:-translate-y-0.5 hover:border-cyan-200 hover:bg-cyan-50/40 hover:shadow-lg"
+                        }`}
+                      >
+                        <div
+                          className={`mb-3 flex h-10 w-10 items-center justify-center rounded-2xl text-white shadow-lg transition-transform group-hover:scale-105 bg-gradient-to-br ${role.gradient}`}
+                        >
+                          <Icon className="h-5 w-5" />
+                        </div>
+                        <p className="text-sm font-black text-slate-950">{role.title}</p>
+                        <p className="mt-1 hidden text-xs leading-4 text-slate-500 sm:block">{role.description}</p>
+                        {active && <CheckCircle2 className="absolute right-3 top-3 h-5 w-5 text-cyan-600" />}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="login-password">{t.auth.password}</Label>
-                <Input
-                  id="login-password"
-                  type="password"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="border-border/50"
-                />
+              <div className="grid grid-cols-2 rounded-2xl bg-slate-100/90 p-1 shadow-inner">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode("login");
+                    setError("");
+                  }}
+                  className={`rounded-xl px-4 py-3 text-sm font-black transition-all ${
+                    mode === "login"
+                      ? "bg-white text-slate-950 shadow-[0_10px_25px_rgba(15,23,42,0.10)]"
+                      : "text-slate-500 hover:text-slate-900"
+                  }`}
+                >
+                  Iniciar sesión
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode("signup");
+                    setError("");
+                  }}
+                  className={`rounded-xl px-4 py-3 text-sm font-black transition-all ${
+                    mode === "signup"
+                      ? "bg-white text-slate-950 shadow-[0_10px_25px_rgba(15,23,42,0.10)]"
+                      : "text-slate-500 hover:text-slate-900"
+                  }`}
+                >
+                  Registrarse
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                {mode === "signup" && (
+                  <div className="space-y-2">
+                    <Label htmlFor="signup-name" className="font-bold text-slate-800">
+                      {t.auth.name}
+                    </Label>
+                    <div className="relative">
+                      <UserRound className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+                      <Input
+                        id="signup-name"
+                        type="text"
+                        placeholder="Nombre completo"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        className="h-14 rounded-2xl border-slate-200 bg-white/90 pl-12 text-base shadow-sm transition-all focus-visible:ring-2 focus-visible:ring-cyan-400"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <Label htmlFor="auth-email" className="font-bold text-slate-800">
+                    {t.auth.email}
+                  </Label>
+                  <div className="relative">
+                    <Mail className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+                    <Input
+                      id="auth-email"
+                      type="email"
+                      placeholder="you@example.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="h-14 rounded-2xl border-slate-200 bg-white/90 pl-12 text-base shadow-sm transition-all focus-visible:ring-2 focus-visible:ring-cyan-400"
+                    />
+                  </div>
+                </div>
+
+                {mode === "signup" && (
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="signup-phone" className="font-bold text-slate-800">
+                        {t.auth.phone}
+                      </Label>
+                      <div className="relative">
+                        <Phone className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+                        <Input
+                          id="signup-phone"
+                          type="tel"
+                          placeholder="+34 600 000 000"
+                          value={phone}
+                          onChange={(e) => setPhone(e.target.value)}
+                          className="h-14 rounded-2xl border-slate-200 bg-white/90 pl-12 text-base shadow-sm transition-all focus-visible:ring-2 focus-visible:ring-cyan-400"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="signup-language" className="font-bold text-slate-800">
+                        {t.auth.language}
+                      </Label>
+                      <Select value={language} onValueChange={setLanguage}>
+                        <SelectTrigger
+                          id="signup-language"
+                          className="h-14 rounded-2xl border-slate-200 bg-white/90 px-4 text-base shadow-sm focus:ring-2 focus:ring-cyan-400"
+                        >
+                          <div className="flex items-center gap-3">
+                            <Languages className="h-5 w-5 text-slate-400" />
+                            <SelectValue />
+                          </div>
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="es">Español</SelectItem>
+                          <SelectItem value="ca">Català</SelectItem>
+                          <SelectItem value="en">English</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <Label htmlFor="auth-password" className="font-bold text-slate-800">
+                    {t.auth.password}
+                  </Label>
+                  <div className="relative">
+                    <Lock className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+                    <Input
+                      id="auth-password"
+                      type="password"
+                      placeholder="••••••••"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="h-14 rounded-2xl border-slate-200 bg-white/90 pl-12 text-base shadow-sm transition-all focus-visible:ring-2 focus-visible:ring-cyan-400"
+                    />
+                  </div>
+                </div>
+
+                {mode === "signup" && (
+                  <div className="space-y-2">
+                    <Label htmlFor="signup-confirm" className="font-bold text-slate-800">
+                      {t.auth.confirmPassword}
+                    </Label>
+                    <div className="relative">
+                      <Lock className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+                      <Input
+                        id="signup-confirm"
+                        type="password"
+                        placeholder="••••••••"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        className="h-14 rounded-2xl border-slate-200 bg-white/90 pl-12 text-base shadow-sm transition-all focus-visible:ring-2 focus-visible:ring-cyan-400"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
               {error && (
-                <Alert variant="destructive">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>{error}</AlertDescription>
+                <Alert className="rounded-2xl border-red-200 bg-red-50 text-red-700">
+                  <AlertCircle className="h-5 w-5" />
+                  <AlertDescription className="font-semibold">{error}</AlertDescription>
                 </Alert>
               )}
 
-              <Button onClick={handleLogin} className="w-full bg-accent hover:bg-accent/90">
-                {t.auth.login}
+              <Button
+                onClick={mode === "login" ? handleLogin : handleSignup}
+                className="group h-14 w-full rounded-2xl bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 text-base font-black text-white shadow-[0_18px_45px_rgba(37,99,235,0.28)] transition-all hover:-translate-y-0.5 hover:shadow-[0_24px_55px_rgba(37,99,235,0.34)]"
+              >
+                {mode === "login" ? "Iniciar sesión" : "Crear cuenta"}
+                <ArrowRight className="ml-2 h-5 w-5 transition-transform group-hover:translate-x-1" />
               </Button>
-            </TabsContent>
 
-            {/* Signup Tab */}
-            <TabsContent value="signup" className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="signup-name">{t.auth.name}</Label>
-                <Input
-                  id="signup-name"
-                  type="text"
-                  placeholder="John Doe"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="border-border/50"
-                />
+              <button
+                type="button"
+                onClick={startSecureAccess}
+                className="flex h-14 w-full items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-white/85 text-sm font-black text-slate-800 shadow-sm transition-all hover:-translate-y-0.5 hover:border-cyan-200 hover:bg-cyan-50 hover:text-cyan-800 hover:shadow-lg"
+              >
+                <Shield className="h-5 w-5 text-cyan-600" />
+                Acceso seguro OAuth
+              </button>
+
+              <div className="rounded-3xl border border-cyan-100 bg-cyan-50/70 p-4">
+                <div className="flex items-start gap-3">
+                  <div className="rounded-2xl bg-cyan-500 p-2 text-white shadow-lg shadow-cyan-500/20">
+                    <CheckCircle2 className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="font-black text-slate-900">Diseñado para operar rápido</p>
+                    <p className="mt-1 text-sm leading-6 text-slate-600">
+                      Paneles separados para pasajero, conductor y administración con acceso seguro.
+                    </p>
+                  </div>
+                </div>
               </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="signup-email">{t.auth.email}</Label>
-                <Input
-                  id="signup-email"
-                  type="email"
-                  placeholder="you@example.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="border-border/50"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="signup-phone">{t.auth.phone}</Label>
-                <Input
-                  id="signup-phone"
-                  type="tel"
-                  placeholder="+34 600 000 000"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  className="border-border/50"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="signup-language">{t.auth.language}</Label>
-                <Select value={language} onValueChange={setLanguage}>
-                  <SelectTrigger id="signup-language" className="border-border/50">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="es">Español</SelectItem>
-                    <SelectItem value="ca">Català</SelectItem>
-                    <SelectItem value="en">English</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="signup-password">{t.auth.password}</Label>
-                <Input
-                  id="signup-password"
-                  type="password"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="border-border/50"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="signup-confirm">{t.auth.confirmPassword}</Label>
-                <Input
-                  id="signup-confirm"
-                  type="password"
-                  placeholder="••••••••"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="border-border/50"
-                />
-              </div>
-
-              {error && (
-                <Alert variant="destructive">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
-              )}
-
-              <Button onClick={handleSignup} className="w-full bg-accent hover:bg-accent/90">
-                {t.auth.signup}
-              </Button>
-            </TabsContent>
-          </Tabs>
-
-          {/* Divider */}
-          <div className="relative my-6">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-border"></div>
-            </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-card px-2 text-muted-foreground">O</span>
             </div>
           </div>
 
-          {/* OAuth Button */}
-          <Button
-            onClick={() => (window.location.href = getLoginUrl())}
-            variant="outline"
-            className="w-full border-border/50 hover:bg-muted"
-          >
-            {t.auth.login} con Manus
-          </Button>
-        </CardContent>
-      </Card>
-
-      {/* Footer */}
-      <p className="mt-8 text-center text-sm text-muted-foreground">
-        © 2026 Taximun. {t.common.loading}
-      </p>
-    </div>
+          <p className="mt-5 text-center text-xs font-semibold text-slate-500">
+            © 2026 Taximun · Plataforma municipal de movilidad inteligente
+          </p>
+        </div>
+      </section>
+    </main>
   );
 }
