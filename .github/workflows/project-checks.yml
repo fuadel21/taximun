@@ -37,7 +37,13 @@ jobs:
         run: pnpm check
 
       - name: Tests
-        run: pnpm test
+        shell: bash
+        run: |
+          if find . -type f \( -name "*.test.*" -o -name "*.spec.*" \) | grep -q .; then
+            pnpm test
+          else
+            echo "No test files found. Skipping Vitest for now."
+          fi
 
       - name: Build
         run: pnpm build
