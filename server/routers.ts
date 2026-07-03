@@ -3,6 +3,7 @@ import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { supabase } from "./supabase-client";
 import { TRPCError } from "@trpc/server";
 import { systemRouter } from "./_core/systemRouter";
+import * as db from "./db";
 
 // Helper to create role-based procedures
 const passengerProcedure = protectedProcedure.use(async ({ ctx, next }) => {
@@ -52,45 +53,52 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ ctx, input }) => {
-        const { error } = await supabase
-          .from("users")
-          .upsert({
-            id: ctx.user?.id,
-            role: input.role,
-            language: input.language || "es",
-            phone_number: input.phoneNumber,
-          })
-          .eq("id", ctx.user?.id);
+        if (!ctx.user?.openId) {
+          throw new TRPCError({ code: "UNAUTHORIZED" });
+        }
 
-        if (error) {
+        try {
+          await db.upsertUser({
+            openId: ctx.user.openId,
+            role: input.role,
+            language: input.language || ctx.user.language || "es",
+            phone: input.phoneNumber || ctx.user.phone || null,
+          });
+        } catch (error) {
           throw new TRPCError({
             code: "INTERNAL_SERVER_ERROR",
-            message: error.message,
+            message: error instanceof Error ? error.message : "Could not update user role",
           });
         }
 
-        // Create role-specific profile
+        // Keep Supabase profile tables in sync for app data. These writes are
+        // best-effort because the authenticated session source is the primary DB.
         if (input.role === "passenger") {
-          await supabase.from("passengers").insert({
-            id: ctx.user?.id,
-          });
+          await supabase
+            .from("passengers")
+            .upsert({ id: String(ctx.user.id) })
+            .throwOnError();
         } else if (input.role === "driver") {
-          await supabase.from("drivers").insert({
-            id: ctx.user?.id,
-            status: "offline",
-          });
+          await supabase
+            .from("drivers")
+            .upsert({ id: String(ctx.user.id), status: "offline" })
+            .throwOnError();
         }
 
-        return { success: true };
+        return { success: true, role: input.role };
       }),
 
     setLanguage: protectedProcedure
       .input(z.enum(["es", "ca", "en"]))
       .mutation(async ({ ctx, input }) => {
-        await supabase
-          .from("users")
-          .update({ language: input })
-          .eq("id", ctx.user?.id);
+        if (!ctx.user?.openId) {
+          throw new TRPCError({ code: "UNAUTHORIZED" });
+        }
+
+        await db.upsertUser({
+          openId: ctx.user.openId,
+          language: input,
+        });
 
         return { success: true };
       }),
