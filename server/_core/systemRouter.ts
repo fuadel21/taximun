@@ -1,8 +1,11 @@
 import { z } from "zod";
+import { adminControlRouter } from "../admin-control-router";
 import { notifyOwner } from "./notification";
 import { adminProcedure, publicProcedure, router } from "./trpc";
 
 export const systemRouter = router({
+  adminControl: adminControlRouter,
+
   health: publicProcedure
     .input(
       z.object({
