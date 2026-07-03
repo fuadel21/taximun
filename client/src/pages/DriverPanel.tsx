@@ -380,7 +380,7 @@ export default function DriverPanel() {
                       className="w-full bg-accent hover:bg-accent/90 gap-2"
                     >
                       <Flag className="w-4 h-4" />
-                      {t.common.done}
+                      {t.driver.endRide}
                     </Button>
                   )}
                 </div>
