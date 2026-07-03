@@ -12,7 +12,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { getLoginUrl, hasOAuthConfig } from "@/const";
+import { trpc } from "@/lib/trpc";
+import { hasSupabaseBrowserConfig, supabase } from "@/lib/supabase";
 import {
   AlertCircle,
   ArrowRight,
@@ -59,7 +60,7 @@ const roleCards: Array<{
     value: "admin",
     icon: Shield,
     title: "Admin",
-    description: "Control de flota y panel",
+    description: "Solo cuentas autorizadas",
     gradient: "from-indigo-500 to-violet-500",
   },
 ];
@@ -70,9 +71,19 @@ const trustItems = [
   { icon: Clock3, label: "En tiempo real" },
 ];
 
+const routeForRole = (role: AuthRole) => {
+  if (role === "driver") return "/driver";
+  if (role === "admin") return "/admin";
+  return "/passenger";
+};
+
+const publicSignupRole = (role: AuthRole) => (role === "admin" ? "passenger" : role);
+
 export default function Auth() {
   const { t } = useI18n();
   const { isAuthenticated } = useAuth();
+  const utils = trpc.useUtils();
+  const setRoleMutation = trpc.auth.setRole.useMutation();
   const [selectedRole, setSelectedRole] = useState<AuthRole>("passenger");
   const [mode, setMode] = useState<AuthMode>("login");
   const [email, setEmail] = useState("");
@@ -80,13 +91,16 @@ export default function Auth() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
-  const [language, setLanguage] = useState("es");
+  const [language, setLanguage] = useState<"es" | "ca" | "en">("es");
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const selectedRoleCard = useMemo(
     () => roleCards.find((role) => role.value === selectedRole) ?? roleCards[0],
     [selectedRole]
   );
+  const SelectedRoleIcon = selectedRoleCard.icon;
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -94,37 +108,74 @@ export default function Auth() {
     }
   }, [isAuthenticated]);
 
-  const startSecureAccess = () => {
-    if (!hasOAuthConfig()) {
-      setError(
-        "Falta configurar VITE_OAUTH_PORTAL_URL y VITE_APP_ID en Vercel para activar el acceso seguro."
-      );
+  const syncRoleAndRedirect = async (role: AuthRole) => {
+    const roleToSync = publicSignupRole(role);
+
+    if (role === "admin") {
+      setSuccess("Sesión iniciada. El acceso admin requiere que la cuenta esté autorizada en el backend.");
+      await utils.auth.me.invalidate();
+      window.location.href = routeForRole(role);
       return;
     }
 
-    const loginUrl = getLoginUrl();
-    if (loginUrl === "/auth") {
-      setError("No se pudo preparar el acceso seguro. Revisa las variables de Vercel.");
-      return;
-    }
-
-    window.location.href = loginUrl;
+    await setRoleMutation.mutateAsync({
+      role: roleToSync,
+      language,
+      phoneNumber: phone || undefined,
+    });
+    await utils.auth.me.invalidate();
+    window.location.href = routeForRole(roleToSync);
   };
 
-  const handleLogin = () => {
+  const ensureSupabaseConfig = () => {
+    if (!hasSupabaseBrowserConfig()) {
+      setError("Faltan VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY en Vercel.");
+      return false;
+    }
+    return true;
+  };
+
+  const handleLogin = async () => {
     setError("");
+    setSuccess("");
+
+    if (!ensureSupabaseConfig()) return;
     if (!email || !password) {
       setError(t.errors.requiredField);
       return;
     }
 
-    startSecureAccess();
+    setIsSubmitting(true);
+    try {
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (signInError) {
+        setError(signInError.message);
+        return;
+      }
+
+      await syncRoleAndRedirect(selectedRole);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "No se pudo iniciar sesión.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleSignup = () => {
+  const handleSignup = async () => {
     setError("");
+    setSuccess("");
+
+    if (!ensureSupabaseConfig()) return;
     if (!name || !email || !password || !confirmPassword) {
       setError(t.errors.requiredField);
+      return;
+    }
+    if (password.length < 6) {
+      setError("La contraseña debe tener al menos 6 caracteres.");
       return;
     }
     if (password !== confirmPassword) {
@@ -132,7 +183,40 @@ export default function Auth() {
       return;
     }
 
-    startSecureAccess();
+    setIsSubmitting(true);
+    try {
+      const signupRole = publicSignupRole(selectedRole);
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            name,
+            phone,
+            role: signupRole,
+            language,
+          },
+          emailRedirectTo: `${window.location.origin}/auth`,
+        },
+      });
+
+      if (signUpError) {
+        setError(signUpError.message);
+        return;
+      }
+
+      if (!data.session) {
+        setSuccess("Cuenta creada. Revisa tu correo para confirmar el acceso antes de iniciar sesión.");
+        setMode("login");
+        return;
+      }
+
+      await syncRoleAndRedirect(signupRole);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "No se pudo crear la cuenta.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -196,12 +280,12 @@ export default function Auth() {
                   </h2>
                   <p className="mt-2 text-sm leading-6 text-slate-300">
                     {mode === "login"
-                      ? "Accede a tu panel y continúa gestionando tus servicios."
-                      : "Prepara tu perfil y activa el acceso seguro."}
+                      ? "Accede a tu panel con Supabase Auth."
+                      : "Crea tu perfil y activa el acceso seguro."}
                   </p>
                 </div>
                 <div className={`rounded-3xl bg-gradient-to-br ${selectedRoleCard.gradient} p-3 shadow-lg shadow-cyan-500/20`}>
-                  <selectedRoleCard.icon className="h-7 w-7" />
+                  <SelectedRoleIcon className="h-7 w-7" />
                 </div>
               </div>
             </div>
@@ -251,6 +335,7 @@ export default function Auth() {
                   onClick={() => {
                     setMode("login");
                     setError("");
+                    setSuccess("");
                   }}
                   className={`rounded-xl px-4 py-3 text-sm font-black transition-all ${
                     mode === "login"
@@ -265,6 +350,7 @@ export default function Auth() {
                   onClick={() => {
                     setMode("signup");
                     setError("");
+                    setSuccess("");
                   }}
                   className={`rounded-xl px-4 py-3 text-sm font-black transition-all ${
                     mode === "signup"
@@ -336,7 +422,7 @@ export default function Auth() {
                       <Label htmlFor="signup-language" className="font-bold text-slate-800">
                         {t.auth.language}
                       </Label>
-                      <Select value={language} onValueChange={setLanguage}>
+                      <Select value={language} onValueChange={(value: "es" | "ca" | "en") => setLanguage(value)}>
                         <SelectTrigger
                           id="signup-language"
                           className="h-14 rounded-2xl border-slate-200 bg-white/90 px-4 text-base shadow-sm focus:ring-2 focus:ring-cyan-400"
@@ -400,32 +486,35 @@ export default function Auth() {
                 </Alert>
               )}
 
+              {success && (
+                <Alert className="rounded-2xl border-cyan-200 bg-cyan-50 text-cyan-800">
+                  <CheckCircle2 className="h-5 w-5" />
+                  <AlertDescription className="font-semibold">{success}</AlertDescription>
+                </Alert>
+              )}
+
               <Button
                 onClick={mode === "login" ? handleLogin : handleSignup}
-                className="group h-14 w-full rounded-2xl bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 text-base font-black text-white shadow-[0_18px_45px_rgba(37,99,235,0.28)] transition-all hover:-translate-y-0.5 hover:shadow-[0_24px_55px_rgba(37,99,235,0.34)]"
+                disabled={isSubmitting || setRoleMutation.isPending}
+                className="group h-14 w-full rounded-2xl bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 text-base font-black text-white shadow-[0_18px_45px_rgba(37,99,235,0.28)] transition-all hover:-translate-y-0.5 hover:shadow-[0_24px_55px_rgba(37,99,235,0.34)] disabled:cursor-not-allowed disabled:opacity-70"
               >
-                {mode === "login" ? "Iniciar sesión" : "Crear cuenta"}
+                {isSubmitting || setRoleMutation.isPending
+                  ? "Procesando..."
+                  : mode === "login"
+                    ? "Iniciar sesión"
+                    : "Crear cuenta"}
                 <ArrowRight className="ml-2 h-5 w-5 transition-transform group-hover:translate-x-1" />
               </Button>
-
-              <button
-                type="button"
-                onClick={startSecureAccess}
-                className="flex h-14 w-full items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-white/85 text-sm font-black text-slate-800 shadow-sm transition-all hover:-translate-y-0.5 hover:border-cyan-200 hover:bg-cyan-50 hover:text-cyan-800 hover:shadow-lg"
-              >
-                <Shield className="h-5 w-5 text-cyan-600" />
-                Acceso seguro OAuth
-              </button>
 
               <div className="rounded-3xl border border-cyan-100 bg-cyan-50/70 p-4">
                 <div className="flex items-start gap-3">
                   <div className="rounded-2xl bg-cyan-500 p-2 text-white shadow-lg shadow-cyan-500/20">
-                    <CheckCircle2 className="h-5 w-5" />
+                    <Shield className="h-5 w-5" />
                   </div>
                   <div>
-                    <p className="font-black text-slate-900">Diseñado para operar rápido</p>
+                    <p className="font-black text-slate-900">Acceso con Supabase Auth</p>
                     <p className="mt-1 text-sm leading-6 text-slate-600">
-                      Paneles separados para pasajero, conductor y administración con acceso seguro.
+                      Ya no necesitas Manus OAuth. Solo configura las variables públicas de Supabase en Vercel.
                     </p>
                   </div>
                 </div>
