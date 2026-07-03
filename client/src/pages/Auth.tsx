@@ -35,6 +35,8 @@ import {
 type AuthRole = "passenger" | "driver" | "admin";
 type AuthMode = "login" | "signup";
 
+const GUEST_ROLE_KEY = "taximun_guest_role";
+
 const roleCards: Array<{
   value: AuthRole;
   icon: typeof Users;
@@ -133,6 +135,29 @@ export default function Auth() {
       return false;
     }
     return true;
+  };
+
+  const handleGuestAccess = (role: AuthRole) => {
+    setError("");
+    setSuccess("");
+    try {
+      localStorage.setItem(GUEST_ROLE_KEY, role);
+      localStorage.setItem(
+        "manus-runtime-user-info",
+        JSON.stringify({
+          id: role === "admin" ? -3 : role === "driver" ? -2 : -1,
+          openId: `guest:${role}`,
+          name: `Invitado ${role}`,
+          email: `guest-${role}@taximun.local`,
+          role,
+          loginMethod: "guest",
+          isGuest: true,
+        })
+      );
+    } catch {
+      // Ignore localStorage errors.
+    }
+    window.location.href = routeForRole(role);
   };
 
   const handleLogin = async () => {
@@ -505,6 +530,39 @@ export default function Auth() {
                     : "Crear cuenta"}
                 <ArrowRight className="ml-2 h-5 w-5 transition-transform group-hover:translate-x-1" />
               </Button>
+
+              <div className="rounded-3xl border border-amber-200 bg-amber-50/80 p-4">
+                <div className="mb-3 flex items-center gap-2">
+                  <Sparkles className="h-5 w-5 text-amber-600" />
+                  <p className="font-black text-slate-900">Modo prueba sin registro</p>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-3">
+                  <button
+                    type="button"
+                    onClick={() => handleGuestAccess("passenger")}
+                    className="rounded-2xl bg-white px-3 py-3 text-sm font-black text-slate-800 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                  >
+                    Pasajero
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleGuestAccess("driver")}
+                    className="rounded-2xl bg-white px-3 py-3 text-sm font-black text-slate-800 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                  >
+                    Conductor
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleGuestAccess("admin")}
+                    className="rounded-2xl bg-white px-3 py-3 text-sm font-black text-slate-800 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                  >
+                    Admin
+                  </button>
+                </div>
+                <p className="mt-3 text-xs font-semibold leading-5 text-amber-800">
+                  Acceso temporal solo para revisar pantallas. Las acciones que guardan datos pueden requerir login real.
+                </p>
+              </div>
 
               <div className="rounded-3xl border border-cyan-100 bg-cyan-50/70 p-4">
                 <div className="flex items-start gap-3">
