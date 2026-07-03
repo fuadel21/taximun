@@ -4,22 +4,39 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { TaxiMap } from "@/components/TaxiMap";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { MapPin, Clock, DollarSign, Star, LogOut, Loader2, AlertCircle } from "lucide-react";
+import { MapPin, Clock, DollarSign, Star, LogOut, Loader2 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 
 export default function PassengerPanel() {
   const { t } = useI18nContext();
-  const { user, logout } = useAuth();
+  const { logout } = useAuth();
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [pickupLocation, setPickupLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [dropoffLocation, setDropoffLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [step, setStep] = useState<"pickup" | "dropoff" | "confirm">("pickup");
   const [estimatedFare, setEstimatedFare] = useState<number | null>(null);
   const [estimatedDuration, setEstimatedDuration] = useState<number | null>(null);
+
+  const shouldEstimateFare = Boolean(pickupLocation && dropoffLocation && step === "confirm");
+
+  // Queries and mutations
+  const createRideMutation = trpc.passenger.createRide.useMutation();
+  const { data: currentRide, isLoading: isLoadingCurrentRide } = trpc.passenger.getCurrentRide.useQuery();
+  const { data: rideHistory } = trpc.passenger.getRideHistory.useQuery();
+  const estimateFareQuery = trpc.public.estimateFare.useQuery(
+    {
+      pickupLat: pickupLocation?.lat ?? 0,
+      pickupLng: pickupLocation?.lng ?? 0,
+      dropoffLat: dropoffLocation?.lat ?? 0,
+      dropoffLng: dropoffLocation?.lng ?? 0,
+    },
+    {
+      enabled: shouldEstimateFare,
+    }
+  );
 
   // Get user's current location
   useEffect(() => {
@@ -41,32 +58,25 @@ export default function PassengerPanel() {
         }
       );
     }
-  }, []);
+  }, [t.common.error]);
 
   // Estimate fare when both locations are selected
   useEffect(() => {
-    if (pickupLocation && dropoffLocation && step === "confirm") {
-      const estimateFareQuery = trpc.public.estimateFare.useQuery({
-        pickupLat: pickupLocation.lat,
-        pickupLng: pickupLocation.lng,
-        dropoffLat: dropoffLocation.lat,
-        dropoffLng: dropoffLocation.lng,
-      });
-
-      if (estimateFareQuery.data) {
-        setEstimatedFare(estimateFareQuery.data.fare);
-        setEstimatedDuration(estimateFareQuery.data.duration);
-      }
+    if (!shouldEstimateFare) {
+      setEstimatedFare(null);
+      setEstimatedDuration(null);
+      return;
     }
-  }, [pickupLocation, dropoffLocation, step]);
 
-  // Queries and mutations
-  const createRideMutation = trpc.passenger.createRide.useMutation();
-  const { data: currentRide, isLoading: isLoadingCurrentRide } = trpc.passenger.getCurrentRide.useQuery();
-  const { data: rideHistory } = trpc.passenger.getRideHistory.useQuery();
+    if (estimateFareQuery.data) {
+      setEstimatedFare(estimateFareQuery.data.fare);
+      setEstimatedDuration(estimateFareQuery.data.duration);
+    }
+  }, [estimateFareQuery.data, shouldEstimateFare]);
 
   const handlePickupSelect = (lat: number, lng: number) => {
     setPickupLocation({ lat, lng });
+    setDropoffLocation(null);
     setStep("dropoff");
   };
 
@@ -99,6 +109,17 @@ export default function PassengerPanel() {
       toast.error(t.common.error);
     }
   };
+
+  if (isLoadingCurrentRide) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background to-accent/5">
+        <div className="text-center space-y-4">
+          <Loader2 className="w-12 h-12 text-accent animate-spin mx-auto" />
+          <p className="text-lg text-muted-foreground">{t.common.loading}</p>
+        </div>
+      </div>
+    );
+  }
 
   // Show current ride tracking if exists
   if (currentRide) {
@@ -309,14 +330,18 @@ export default function PassengerPanel() {
                         <Clock className="w-4 h-4" />
                         {t.booking.estimatedTime}
                       </span>
-                      <span className="font-semibold text-foreground">~{estimatedDuration} {t.booking.minutes}</span>
+                      <span className="font-semibold text-foreground">
+                        {estimateFareQuery.isLoading ? t.common.loading : `~${estimatedDuration ?? "--"} ${t.booking.minutes}`}
+                      </span>
                     </div>
                     <div className="flex items-center justify-between text-sm">
                       <span className="flex items-center gap-2 text-muted-foreground">
                         <DollarSign className="w-4 h-4" />
                         {t.booking.estimatedFare}
                       </span>
-                      <span className="font-semibold text-foreground">€{estimatedFare?.toFixed(2)}</span>
+                      <span className="font-semibold text-foreground">
+                        {estimateFareQuery.isLoading ? t.common.loading : `€${estimatedFare?.toFixed(2) ?? "--"}`}
+                      </span>
                     </div>
                   </div>
                 )}
@@ -337,7 +362,12 @@ export default function PassengerPanel() {
                     <Button
                       className="w-full bg-accent hover:bg-accent/90 gap-2"
                       onClick={handleConfirmBooking}
-                      disabled={createRideMutation.isPending}
+                      disabled={
+                        createRideMutation.isPending ||
+                        estimateFareQuery.isLoading ||
+                        !estimatedFare ||
+                        !estimatedDuration
+                      }
                     >
                       {createRideMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
                       {t.booking.confirmBooking}
