@@ -10,17 +10,21 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { AlertCircle, Car, Users, Shield } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { getLoginUrl } from "@/const";
+import { savePendingAuthRole } from "@/lib/pendingAuthRole";
+
+type AuthRole = "passenger" | "driver" | "admin";
+type AuthLanguage = "es" | "ca" | "en";
 
 export default function Auth() {
   const { t } = useI18n();
   const { isAuthenticated } = useAuth();
-  const [selectedRole, setSelectedRole] = useState<"passenger" | "driver" | "admin">("passenger");
+  const [selectedRole, setSelectedRole] = useState<AuthRole>("passenger");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
-  const [language, setLanguage] = useState("es");
+  const [language, setLanguage] = useState<AuthLanguage>("es");
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -29,14 +33,18 @@ export default function Auth() {
     }
   }, [isAuthenticated]);
 
+  const startOAuthLogin = () => {
+    savePendingAuthRole({
+      role: selectedRole,
+      language,
+      phoneNumber: phone.trim() || undefined,
+    });
+    window.location.href = getLoginUrl();
+  };
+
   const handleLogin = () => {
     setError("");
-    if (!email || !password) {
-      setError(t.errors.requiredField);
-      return;
-    }
-    // Redirect to Manus OAuth login
-    window.location.href = getLoginUrl();
+    startOAuthLogin();
   };
 
   const handleSignup = () => {
@@ -49,9 +57,8 @@ export default function Auth() {
       setError(t.errors.passwordMismatch);
       return;
     }
-    // In a real app, this would call an API to create the user with the selected role
-    // For now, redirect to OAuth login
-    window.location.href = getLoginUrl();
+
+    startOAuthLogin();
   };
 
   return (
@@ -62,14 +69,18 @@ export default function Auth() {
           <Car className="w-10 h-10 text-accent" />
           <h1 className="text-4xl font-bold text-foreground">Taximun</h1>
         </div>
-        <p className="text-muted-foreground text-lg">{t.common.loading}</p>
+        <p className="text-muted-foreground text-lg">
+          Taxi municipal, conductor y pasajero en una sola plataforma
+        </p>
       </div>
 
       {/* Main Card */}
       <Card className="w-full max-w-md shadow-xl border-border/50">
         <CardHeader className="space-y-2">
           <CardTitle className="text-2xl text-center">{t.auth.login}</CardTitle>
-          <CardDescription className="text-center">{t.auth.noAccount}</CardDescription>
+          <CardDescription className="text-center">
+            Elige cómo quieres entrar. Guardaremos tu rol después del acceso seguro.
+          </CardDescription>
         </CardHeader>
 
         <CardContent>
@@ -78,6 +89,7 @@ export default function Auth() {
             <Label className="text-sm font-semibold">{t.common.status}</Label>
             <div className="grid grid-cols-3 gap-2">
               <button
+                type="button"
                 onClick={() => setSelectedRole("passenger")}
                 className={`p-3 rounded-lg border-2 transition-all ${
                   selectedRole === "passenger"
@@ -90,6 +102,7 @@ export default function Auth() {
               </button>
 
               <button
+                type="button"
                 onClick={() => setSelectedRole("driver")}
                 className={`p-3 rounded-lg border-2 transition-all ${
                   selectedRole === "driver"
@@ -102,6 +115,7 @@ export default function Auth() {
               </button>
 
               <button
+                type="button"
                 onClick={() => setSelectedRole("admin")}
                 className={`p-3 rounded-lg border-2 transition-all ${
                   selectedRole === "admin"
@@ -113,6 +127,11 @@ export default function Auth() {
                 <span className="text-xs font-medium">{t.auth.loginAsAdmin}</span>
               </button>
             </div>
+            {selectedRole === "admin" && (
+              <p className="text-xs text-muted-foreground">
+                El acceso admin solo funcionará para cuentas autorizadas.
+              </p>
+            )}
           </div>
 
           {/* Tabs for Login/Signup */}
@@ -200,7 +219,7 @@ export default function Auth() {
 
               <div className="space-y-2">
                 <Label htmlFor="signup-language">{t.auth.language}</Label>
-                <Select value={language} onValueChange={setLanguage}>
+                <Select value={language} onValueChange={(value) => setLanguage(value as AuthLanguage)}>
                   <SelectTrigger id="signup-language" className="border-border/50">
                     <SelectValue />
                   </SelectTrigger>
@@ -261,18 +280,18 @@ export default function Auth() {
 
           {/* OAuth Button */}
           <Button
-            onClick={() => (window.location.href = getLoginUrl())}
+            onClick={startOAuthLogin}
             variant="outline"
             className="w-full border-border/50 hover:bg-muted"
           >
-            {t.auth.login} con Manus
+            {t.auth.login} con acceso seguro
           </Button>
         </CardContent>
       </Card>
 
       {/* Footer */}
       <p className="mt-8 text-center text-sm text-muted-foreground">
-        © 2026 Taximun. {t.common.loading}
+        © 2026 Taximun. Plataforma municipal de movilidad.
       </p>
     </div>
   );
