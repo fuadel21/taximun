@@ -6,6 +6,7 @@ import type { Request } from "express";
 import { SignJWT, jwtVerify } from "jose";
 import type { User } from "../../drizzle/schema";
 import * as db from "../db";
+import { getUserFromToken } from "../supabase-client";
 import { ENV } from "./env";
 import type {
   ExchangeTokenRequest,
@@ -14,6 +15,7 @@ import type {
   GetUserInfoWithJwtRequest,
   GetUserInfoWithJwtResponse,
 } from "./types/manusTypes";
+
 // Utility function
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === "string" && value.length > 0;
@@ -154,6 +156,14 @@ class SDKServer {
     return new Map(Object.entries(parsed));
   }
 
+  private getBearerToken(req: Request) {
+    const authHeader = req.headers.authorization;
+    if (typeof authHeader === "string" && authHeader.startsWith("Bearer ")) {
+      return authHeader.slice(7);
+    }
+    return null;
+  }
+
   private getSessionSecret() {
     const secret = ENV.cookieSecret;
     return new TextEncoder().encode(secret);
@@ -256,22 +266,64 @@ class SDKServer {
     } as GetUserInfoWithJwtResponse;
   }
 
-  async authenticateRequest(req: Request): Promise<AuthenticatedUser> {
-    // 1. Prefer the session cookie (regular OAuth login).
-    const cookies = this.parseCookies(req.headers.cookie);
-    let sessionToken = cookies.get(COOKIE_NAME);
+  private async authenticateSupabaseToken(
+    token: string,
+    signedInAt: Date
+  ): Promise<AuthenticatedUser | null> {
+    const supabaseUser = await getUserFromToken(token);
 
-    // 2. Fallback to the Authorization header (Preview auto-login via
-    //    sessionStorage), used when the browser blocks iframe cookies such as
-    //    Safari ITP, private browsing, or iOS/Android WebView.
-    if (!sessionToken) {
-      const authHeader = req.headers.authorization;
-      if (typeof authHeader === "string" && authHeader.startsWith("Bearer ")) {
-        sessionToken = authHeader.slice(7);
-      }
+    if (!supabaseUser) {
+      return null;
     }
 
+    const metadata = supabaseUser.user_metadata ?? {};
+    const name =
+      typeof metadata.name === "string"
+        ? metadata.name
+        : typeof metadata.full_name === "string"
+          ? metadata.full_name
+          : supabaseUser.email?.split("@")[0] || "Taximun user";
+    const openId = `supabase:${supabaseUser.id}`;
+
+    await db.upsertUser({
+      openId,
+      name,
+      email: supabaseUser.email ?? null,
+      loginMethod: "supabase",
+      lastSignedIn: signedInAt,
+    });
+
+    const user = await db.getUserByOpenId(openId);
+    if (!user) {
+      throw ForbiddenError("Supabase user could not be synced");
+    }
+
+    return user;
+  }
+
+  async authenticateRequest(req: Request): Promise<AuthenticatedUser> {
+    const signedInAt = new Date();
+
+    // 1. Prefer the session cookie for the legacy OAuth flow.
+    const cookies = this.parseCookies(req.headers.cookie);
+    const cookieSessionToken = cookies.get(COOKIE_NAME);
+
+    // 2. Also support Authorization Bearer. This may be either the legacy
+    //    internal JWT or a Supabase Auth access token.
+    const bearerToken = this.getBearerToken(req);
+    const sessionToken = cookieSessionToken ?? bearerToken;
+
     const session = await this.verifySession(sessionToken);
+
+    if (!session && bearerToken) {
+      const supabaseUser = await this.authenticateSupabaseToken(
+        bearerToken,
+        signedInAt
+      );
+      if (supabaseUser) {
+        return supabaseUser;
+      }
+    }
 
     if (!session) {
       throw ForbiddenError("Invalid session cookie");
@@ -287,10 +339,9 @@ class SDKServer {
     }
 
     const sessionUserId = session.openId;
-    const signedInAt = new Date();
     let user = await db.getUserByOpenId(sessionUserId);
 
-    // If user not in DB, sync from OAuth server automatically
+    // If user not in DB, sync from OAuth server automatically.
     if (!user) {
       try {
         const userInfo = await this.getUserInfoWithJwt(sessionToken ?? "");
