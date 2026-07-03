@@ -1,394 +1,629 @@
-import { useEffect, useState } from "react";
-import { useI18nContext } from "@/contexts/I18nContext";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { TaxiMap } from "@/components/TaxiMap";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { MapPin, Clock, DollarSign, Star, LogOut, Loader2, AlertCircle } from "lucide-react";
-import { trpc } from "@/lib/trpc";
-import { toast } from "sonner";
+import {
+  ArrowRight,
+  Bell,
+  CalendarClock,
+  Car,
+  CheckCircle2,
+  Clock3,
+  CreditCard,
+  Euro,
+  History,
+  Home,
+  LifeBuoy,
+  Loader2,
+  LocateFixed,
+  LogOut,
+  MapPin,
+  Navigation,
+  Phone,
+  Route,
+  Search,
+  ShieldCheck,
+  Sparkles,
+  Star,
+  Timer,
+  UserRound,
+  XCircle,
+} from "lucide-react";
+
+type RideStatus = "draft" | "searching" | "assigned" | "arriving" | "completed" | "cancelled";
+
+type Ride = {
+  id: string;
+  pickup: string;
+  dropoff: string;
+  fare: number;
+  duration: number;
+  distanceKm: number;
+  status: RideStatus;
+  requestedAt: string;
+  driverName?: string;
+  taxiCode?: string;
+  plate?: string;
+  eta?: number;
+};
+
+type ActivityLog = {
+  id: string;
+  text: string;
+  time: string;
+};
+
+const routePresets = [
+  {
+    id: "station-hospital",
+    title: "Estación → Hospital",
+    pickup: "Estación central · Parada taxi 2",
+    dropoff: "Hospital municipal · Entrada principal",
+    fare: 12.8,
+    duration: 14,
+    distanceKm: 5.4,
+  },
+  {
+    id: "home-center",
+    title: "Casa → Centro",
+    pickup: "Mi ubicación actual",
+    dropoff: "Plaza del Ayuntamiento · Centro",
+    fare: 8.9,
+    duration: 9,
+    distanceKm: 3.1,
+  },
+  {
+    id: "airport-hotel",
+    title: "Hotel → Aeropuerto",
+    pickup: "Hotel Costa · Recepción",
+    dropoff: "Aeropuerto · Terminal principal",
+    fare: 34.5,
+    duration: 28,
+    distanceKm: 21.6,
+  },
+];
+
+const recentPlaces = ["Casa", "Trabajo", "Estación", "Hospital", "Centro", "Hotel Costa"];
+
+const nowLabel = () =>
+  new Date().toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
+
+function makeRide(pickup: string, dropoff: string, fare: number, duration: number, distanceKm: number): Ride {
+  return {
+    id: `P-${Date.now().toString().slice(-5)}`,
+    pickup,
+    dropoff,
+    fare,
+    duration,
+    distanceKm,
+    status: "searching",
+    requestedAt: nowLabel(),
+  };
+}
+
+function statusBadge(status: RideStatus) {
+  if (status === "searching") return <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">Buscando taxi</Badge>;
+  if (status === "assigned") return <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">Taxi asignado</Badge>;
+  if (status === "arriving") return <Badge className="bg-cyan-100 text-cyan-800 hover:bg-cyan-100">En camino</Badge>;
+  if (status === "completed") return <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100">Finalizado</Badge>;
+  if (status === "cancelled") return <Badge className="bg-red-100 text-red-800 hover:bg-red-100">Cancelado</Badge>;
+  return <Badge variant="outline">Preparando</Badge>;
+}
+
+function MetricCard({ icon: Icon, title, value, note }: { icon: any; title: string; value: string; note: string }) {
+  return (
+    <Card className="border-white/70 bg-white/85 shadow-[0_16px_45px_rgba(15,23,42,0.08)] backdrop-blur-xl">
+      <CardContent className="p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-black uppercase tracking-wide text-slate-500">{title}</p>
+            <p className="mt-2 text-2xl font-black text-slate-950">{value}</p>
+            <p className="mt-1 text-xs font-semibold text-slate-500">{note}</p>
+          </div>
+          <div className="rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 p-3 text-white shadow-lg shadow-cyan-500/20">
+            <Icon className="h-5 w-5" />
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function PanelCard({ icon: Icon, title, description, children }: { icon: any; title: string; description: string; children: ReactNode }) {
+  return (
+    <Card className="border-white/70 bg-white/85 shadow-xl backdrop-blur-xl">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-xl font-black">
+          <Icon className="h-5 w-5 text-cyan-600" />
+          {title}
+        </CardTitle>
+        <CardDescription>{description}</CardDescription>
+      </CardHeader>
+      <CardContent>{children}</CardContent>
+    </Card>
+  );
+}
 
 export default function PassengerPanel() {
-  const { t } = useI18nContext();
-  const { user, logout } = useAuth();
+  const { user, logout, isGuest } = useAuth() as any;
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
-  const [pickupLocation, setPickupLocation] = useState<{ lat: number; lng: number } | null>(null);
-  const [dropoffLocation, setDropoffLocation] = useState<{ lat: number; lng: number } | null>(null);
-  const [step, setStep] = useState<"pickup" | "dropoff" | "confirm">("pickup");
-  const [estimatedFare, setEstimatedFare] = useState<number | null>(null);
-  const [estimatedDuration, setEstimatedDuration] = useState<number | null>(null);
+  const [pickupAddress, setPickupAddress] = useState("Mi ubicación actual");
+  const [dropoffAddress, setDropoffAddress] = useState("Hospital municipal · Entrada principal");
+  const [fare, setFare] = useState(12.8);
+  const [duration, setDuration] = useState(14);
+  const [distanceKm, setDistanceKm] = useState(5.4);
+  const [currentRide, setCurrentRide] = useState<Ride | null>(null);
+  const [history, setHistory] = useState<Ride[]>([]);
+  const [activity, setActivity] = useState<ActivityLog[]>([
+    { id: "a1", text: "Panel pasajero cargado", time: nowLabel() },
+  ]);
+  const [paymentMethod, setPaymentMethod] = useState("Tarjeta terminada en 4242");
 
-  // Get user's current location
   useEffect(() => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setUserLocation({
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
-          });
-          setPickupLocation({
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-          });
-        },
-        (error) => {
-          console.error("Geolocation error:", error);
-          toast.error(t.common.error);
-        }
-      );
-    }
+    if (!navigator.geolocation) return;
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setUserLocation({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+        });
+      },
+      () => {
+        setUserLocation(null);
+      },
+      { enableHighAccuracy: true, maximumAge: 30000, timeout: 10000 }
+    );
   }, []);
 
-  // Estimate fare when both locations are selected
-  useEffect(() => {
-    if (pickupLocation && dropoffLocation && step === "confirm") {
-      const estimateFareQuery = trpc.public.estimateFare.useQuery({
-        pickupLat: pickupLocation.lat,
-        pickupLng: pickupLocation.lng,
-        dropoffLat: dropoffLocation.lat,
-        dropoffLng: dropoffLocation.lng,
-      });
+  const addActivity = (text: string) => {
+    setActivity((current) => [{ id: String(Date.now()), text, time: nowLabel() }, ...current].slice(0, 7));
+  };
 
-      if (estimateFareQuery.data) {
-        setEstimatedFare(estimateFareQuery.data.fare);
-        setEstimatedDuration(estimateFareQuery.data.duration);
-      }
+  const applyPreset = (presetId: string) => {
+    const preset = routePresets.find((item) => item.id === presetId);
+    if (!preset) return;
+    setPickupAddress(preset.pickup);
+    setDropoffAddress(preset.dropoff);
+    setFare(preset.fare);
+    setDuration(preset.duration);
+    setDistanceKm(preset.distanceKm);
+    addActivity(`Ruta rápida seleccionada: ${preset.title}`);
+  };
+
+  const recalculateEstimate = () => {
+    const base = 4.5;
+    const distance = Math.max(2.2, Math.min(28, (pickupAddress.length + dropoffAddress.length) / 4));
+    const nextFare = Number((base + distance * 1.55).toFixed(2));
+    const nextDuration = Math.round(distance * 2.4 + 4);
+    setDistanceKm(Number(distance.toFixed(1)));
+    setFare(nextFare);
+    setDuration(nextDuration);
+    addActivity("Tarifa estimada recalculada");
+  };
+
+  const requestTaxi = () => {
+    if (!pickupAddress.trim() || !dropoffAddress.trim()) {
+      addActivity("Falta origen o destino para pedir taxi");
+      return;
     }
-  }, [pickupLocation, dropoffLocation, step]);
 
-  // Queries and mutations
-  const createRideMutation = trpc.passenger.createRide.useMutation();
-  const { data: currentRide, isLoading: isLoadingCurrentRide } = trpc.passenger.getCurrentRide.useQuery();
-  const { data: rideHistory } = trpc.passenger.getRideHistory.useQuery();
-
-  const handlePickupSelect = (lat: number, lng: number) => {
-    setPickupLocation({ lat, lng });
-    setStep("dropoff");
+    const ride = makeRide(pickupAddress, dropoffAddress, fare, duration, distanceKm);
+    setCurrentRide(ride);
+    addActivity(`Taxi solicitado: ${ride.id}`);
   };
 
-  const handleDropoffSelect = (lat: number, lng: number) => {
-    setDropoffLocation({ lat, lng });
-    setStep("confirm");
+  const assignDriver = () => {
+    if (!currentRide || currentRide.status !== "searching") return;
+    setCurrentRide({
+      ...currentRide,
+      status: "assigned",
+      driverName: "Marta Soler",
+      taxiCode: "TX-118",
+      plate: "9912-MDC",
+      eta: 4,
+    });
+    addActivity("Conductor asignado: Marta Soler · TX-118");
   };
 
-  const handleConfirmBooking = async () => {
-    if (!pickupLocation || !dropoffLocation || !estimatedFare || !estimatedDuration) return;
-
-    try {
-      await createRideMutation.mutateAsync({
-        pickupLat: pickupLocation.lat,
-        pickupLng: pickupLocation.lng,
-        dropoffLat: dropoffLocation.lat,
-        dropoffLng: dropoffLocation.lng,
-        estimatedFare,
-        estimatedDuration,
-      });
-
-      toast.success(t.booking.rideConfirmed);
-      setStep("pickup");
-      setPickupLocation(null);
-      setDropoffLocation(null);
-      setEstimatedFare(null);
-      setEstimatedDuration(null);
-    } catch (error) {
-      console.error("Error creating ride:", error);
-      toast.error(t.common.error);
-    }
+  const markArriving = () => {
+    if (!currentRide || currentRide.status !== "assigned") return;
+    setCurrentRide({ ...currentRide, status: "arriving", eta: 2 });
+    addActivity("El taxi está de camino al punto de recogida");
   };
 
-  // Show current ride tracking if exists
-  if (currentRide) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-background to-accent/5">
-        {/* Header */}
-        <header className="bg-card border-b border-border/50 shadow-sm sticky top-0 z-10">
-          <div className="container max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-foreground">Taximun</h1>
-              <p className="text-sm text-muted-foreground">{t.passenger.trackingRide}</p>
-            </div>
-            <Button variant="outline" onClick={logout} className="gap-2">
-              <LogOut className="w-4 h-4" />
-              {t.nav.logout}
-            </Button>
-          </div>
-        </header>
+  const completeRide = () => {
+    if (!currentRide) return;
+    const completedRide: Ride = { ...currentRide, status: "completed" };
+    setHistory((current) => [completedRide, ...current]);
+    setCurrentRide(null);
+    addActivity(`Viaje finalizado: ${completedRide.id}`);
+  };
 
-        <main className="container max-w-7xl mx-auto px-4 py-8">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Map with tracking */}
-            <div className="lg:col-span-2">
-              <Card className="shadow-lg border-border/50">
-                <CardHeader>
-                  <CardTitle>{t.map.map}</CardTitle>
-                  <CardDescription>{t.passenger.trackingDriver}</CardDescription>
-                </CardHeader>
-                <CardContent className="p-0 rounded-lg overflow-hidden">
-                  <TaxiMap readOnly userLocation={userLocation || undefined} />
-                </CardContent>
-              </Card>
-            </div>
+  const cancelRide = () => {
+    if (!currentRide) return;
+    const cancelledRide: Ride = { ...currentRide, status: "cancelled" };
+    setHistory((current) => [cancelledRide, ...current]);
+    setCurrentRide(null);
+    addActivity(`Viaje cancelado: ${cancelledRide.id}`);
+  };
 
-            {/* Ride Details */}
-            <div className="space-y-4">
-              <Card className="shadow-lg border-border/50">
-                <CardHeader>
-                  <CardTitle>{t.passenger.rideDetails}</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {/* Driver Info */}
-                  {currentRide.driver && (
-                    <div className="p-4 bg-accent/10 rounded-lg">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="font-semibold text-foreground">{t.passenger.driver}</span>
-                        <div className="flex items-center gap-1">
-                          <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                          <span className="text-sm font-semibold">{currentRide.driver.rating?.toFixed(1)}</span>
-                        </div>
-                      </div>
-                      <p className="text-sm text-muted-foreground">{t.passenger.waitingForDriver}</p>
-                    </div>
-                  )}
+  const requestSupport = () => addActivity("Solicitud de soporte enviada al operador");
+  const callDriver = () => addActivity("Llamada segura al conductor iniciada");
+  const changePayment = () => {
+    const nextMethod = paymentMethod.includes("4242") ? "Efectivo al finalizar" : "Tarjeta terminada en 4242";
+    setPaymentMethod(nextMethod);
+    addActivity(`Método de pago cambiado: ${nextMethod}`);
+  };
 
-                  {/* Locations */}
-                  <div className="space-y-3 pt-4 border-t border-border/50">
-                    <div className="flex gap-2">
-                      <MapPin className="w-4 h-4 text-accent flex-shrink-0 mt-1" />
-                      <div className="flex-1">
-                        <p className="text-xs text-muted-foreground">{t.booking.pickupLocation}</p>
-                        <p className="text-sm font-semibold text-foreground">
-                          {currentRide.pickup_lat?.toFixed(4)}, {currentRide.pickup_lng?.toFixed(4)}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <MapPin className="w-4 h-4 text-secondary flex-shrink-0 mt-1" />
-                      <div className="flex-1">
-                        <p className="text-xs text-muted-foreground">{t.booking.dropoffLocation}</p>
-                        <p className="text-sm font-semibold text-foreground">
-                          {currentRide.dropoff_lat?.toFixed(4)}, {currentRide.dropoff_lng?.toFixed(4)}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
+  const locationLabel = useMemo(() => {
+    if (!userLocation) return "Ubicación no disponible";
+    return `${userLocation.latitude.toFixed(4)}, ${userLocation.longitude.toFixed(4)}`;
+  }, [userLocation]);
 
-                  {/* Fare Info */}
-                  <div className="space-y-2 pt-4 border-t border-border/50">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="flex items-center gap-2 text-muted-foreground">
-                        <Clock className="w-4 h-4" />
-                        {t.booking.estimatedTime}
-                      </span>
-                      <span className="font-semibold text-foreground">~{currentRide.estimated_duration} {t.booking.minutes}</span>
-                    </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="flex items-center gap-2 text-muted-foreground">
-                        <DollarSign className="w-4 h-4" />
-                        {t.booking.estimatedFare}
-                      </span>
-                      <span className="font-semibold text-foreground">€{currentRide.estimated_fare?.toFixed(2)}</span>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </div>
-        </main>
-      </div>
-    );
-  }
+  const statusText = currentRide
+    ? currentRide.status === "searching"
+      ? "Buscando conductor"
+      : currentRide.status === "assigned"
+        ? "Taxi asignado"
+        : currentRide.status === "arriving"
+          ? "Taxi en camino"
+          : "Sin viaje activo"
+    : "Sin viaje activo";
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background to-accent/5">
-      {/* Header */}
-      <header className="bg-card border-b border-border/50 shadow-sm sticky top-0 z-10">
-        <div className="container max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">Taximun</h1>
-            <p className="text-sm text-muted-foreground">{t.passenger.passengerPanel}</p>
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.18),_transparent_30%),linear-gradient(180deg,_#f8fbff_0%,_#eef6ff_46%,_#ffffff_100%)] text-slate-950">
+      <header className="sticky top-0 z-20 border-b border-white/70 bg-white/80 shadow-sm backdrop-blur-2xl">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 text-white shadow-lg shadow-cyan-500/20">
+              <UserRound className="h-6 w-6" />
+            </div>
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.22em] text-cyan-700">Taximun Passenger</p>
+              <h1 className="text-xl font-black leading-tight sm:text-2xl">Panel pasajero</h1>
+            </div>
           </div>
-          <Button variant="outline" onClick={logout} className="gap-2">
-            <LogOut className="w-4 h-4" />
-            {t.nav.logout}
-          </Button>
+          <div className="flex items-center gap-2">
+            {isGuest && <Badge className="hidden bg-amber-100 text-amber-800 hover:bg-amber-100 sm:inline-flex">Modo prueba</Badge>}
+            {currentRide ? statusBadge(currentRide.status) : <Badge className="bg-slate-100 text-slate-700 hover:bg-slate-100">Disponible</Badge>}
+            <Button variant="outline" onClick={logout} className="rounded-2xl bg-white/80">
+              <LogOut className="mr-2 h-4 w-4" />
+              Salir
+            </Button>
+          </div>
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="container max-w-7xl mx-auto px-4 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Map */}
-          <div className="lg:col-span-2">
-            <Card className="shadow-lg border-border/50">
-              <CardHeader>
-                <CardTitle>{t.map.map}</CardTitle>
-                <CardDescription>
-                  {step === "pickup"
-                    ? t.booking.pickupLocation
-                    : step === "dropoff"
-                      ? t.booking.dropoffLocation
-                      : t.booking.confirmBooking}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="p-0 rounded-lg overflow-hidden">
-                <TaxiMap
-                  userLocation={userLocation || undefined}
-                  onLocationSelect={step === "pickup" ? handlePickupSelect : handleDropoffSelect}
-                />
-              </CardContent>
-            </Card>
+      <main className="mx-auto max-w-7xl space-y-6 px-4 py-6">
+        <section className="overflow-hidden rounded-[2rem] bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 p-5 text-white shadow-[0_24px_80px_rgba(15,23,42,0.24)] sm:p-7">
+          <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr] lg:items-center">
+            <div>
+              <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-sm font-bold text-cyan-100 ring-1 ring-white/15">
+                <Sparkles className="h-4 w-4" />
+                Viaje inteligente · {user?.name ?? "Pasajero invitado"}
+              </div>
+              <h2 className="text-3xl font-black tracking-tight sm:text-4xl">Pide tu taxi en segundos</h2>
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300 sm:text-base">
+                Elige origen, destino y confirma. Después puedes simular asignación, llegada, llamada segura, cancelación y finalización.
+              </p>
+              <div className="mt-5 flex flex-wrap gap-3">
+                <Button onClick={requestTaxi} disabled={Boolean(currentRide)} className="rounded-2xl bg-cyan-500 font-black text-white hover:bg-cyan-400">
+                  <Car className="mr-2 h-4 w-4" />
+                  Pedir taxi
+                </Button>
+                <Button onClick={recalculateEstimate} variant="outline" className="rounded-2xl border-white/20 bg-white/10 font-black text-white hover:bg-white/20">
+                  <RefreshIcon />
+                  Recalcular tarifa
+                </Button>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-3xl bg-white/10 p-4 ring-1 ring-white/15">
+                <p className="text-sm font-black">Estado</p>
+                <p className="mt-2 text-xl font-black">{statusText}</p>
+              </div>
+              <div className="rounded-3xl bg-white/10 p-4 ring-1 ring-white/15">
+                <p className="text-sm font-black">ETA</p>
+                <p className="mt-2 text-2xl font-black">{currentRide?.eta ? `${currentRide.eta} min` : `${duration} min`}</p>
+              </div>
+              <div className="rounded-3xl bg-white/10 p-4 ring-1 ring-white/15">
+                <p className="text-sm font-black">Tarifa</p>
+                <p className="mt-2 text-2xl font-black">{fare.toFixed(2)} €</p>
+              </div>
+              <div className="rounded-3xl bg-white/10 p-4 ring-1 ring-white/15">
+                <p className="text-sm font-black">Ubicación</p>
+                <p className="mt-2 text-xs font-bold text-cyan-100">{locationLabel}</p>
+              </div>
+            </div>
           </div>
+        </section>
 
-          {/* Booking Panel */}
-          <div className="space-y-4">
-            <Card className="shadow-lg border-border/50">
-              <CardHeader>
-                <CardTitle>{t.booking.bookTaxi}</CardTitle>
-                <CardDescription>{t.booking.estimatedFare}</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {/* Step Indicator */}
-                <div className="flex gap-2">
-                  <div
-                    className={`flex-1 h-1 rounded-full transition-colors ${
-                      step !== "pickup" ? "bg-accent" : "bg-muted"
-                    }`}
-                  />
-                  <div
-                    className={`flex-1 h-1 rounded-full transition-colors ${
-                      step === "confirm" ? "bg-accent" : "bg-muted"
-                    }`}
-                  />
-                </div>
+        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <MetricCard icon={Clock3} title="Tiempo" value={`${duration} min`} note="Estimación actual" />
+          <MetricCard icon={Euro} title="Precio" value={`${fare.toFixed(2)} €`} note="Tarifa estimada" />
+          <MetricCard icon={Route} title="Distancia" value={`${distanceKm} km`} note="Ruta aproximada" />
+          <MetricCard icon={Star} title="Calidad" value="4,8" note="Conductores verificados" />
+        </section>
 
-                {/* Pickup Location */}
-                <div className="space-y-2">
-                  <Label className="text-sm font-semibold flex items-center gap-2">
-                    <MapPin className="w-4 h-4 text-accent" />
-                    {t.booking.pickupLocation}
-                  </Label>
-                  <div className="p-3 bg-muted rounded-lg text-sm">
-                    {pickupLocation ? (
-                      <p className="text-foreground">
-                        {pickupLocation.lat.toFixed(4)}, {pickupLocation.lng.toFixed(4)}
-                      </p>
-                    ) : (
-                      <p className="text-muted-foreground">{t.booking.selectOnMap}</p>
-                    )}
-                  </div>
-                </div>
+        <div className="grid gap-6 lg:grid-cols-[1.35fr_0.65fr]">
+          <div className="space-y-6">
+            <PanelCard icon={Navigation} title="Mapa y seguimiento" description="Vista de ubicación y zona de servicio">
+              <div className="overflow-hidden rounded-3xl">
+                <TaxiMap userLocation={userLocation || undefined} readOnly />
+              </div>
+            </PanelCard>
 
-                {/* Dropoff Location */}
-                {step !== "pickup" && (
-                  <div className="space-y-2">
-                    <Label className="text-sm font-semibold flex items-center gap-2">
-                      <MapPin className="w-4 h-4 text-secondary" />
-                      {t.booking.dropoffLocation}
-                    </Label>
-                    <div className="p-3 bg-muted rounded-lg text-sm">
-                      {dropoffLocation ? (
-                        <p className="text-foreground">
-                          {dropoffLocation.lat.toFixed(4)}, {dropoffLocation.lng.toFixed(4)}
-                        </p>
-                      ) : (
-                        <p className="text-muted-foreground">{t.booking.selectOnMap}</p>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* Estimated Info */}
-                {step === "confirm" && (
-                  <div className="space-y-2 pt-4 border-t border-border/50">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="flex items-center gap-2 text-muted-foreground">
-                        <Clock className="w-4 h-4" />
-                        {t.booking.estimatedTime}
-                      </span>
-                      <span className="font-semibold text-foreground">~{estimatedDuration} {t.booking.minutes}</span>
-                    </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="flex items-center gap-2 text-muted-foreground">
-                        <DollarSign className="w-4 h-4" />
-                        {t.booking.estimatedFare}
-                      </span>
-                      <span className="font-semibold text-foreground">€{estimatedFare?.toFixed(2)}</span>
-                    </div>
-                  </div>
-                )}
-
-                {/* Action Buttons */}
-                <div className="pt-4 space-y-2">
-                  {step !== "pickup" && (
-                    <Button
-                      variant="outline"
-                      className="w-full"
-                      onClick={() => setStep(step === "dropoff" ? "pickup" : "dropoff")}
-                      disabled={createRideMutation.isPending}
-                    >
-                      {t.common.back}
-                    </Button>
-                  )}
-                  {step === "confirm" && (
-                    <Button
-                      className="w-full bg-accent hover:bg-accent/90 gap-2"
-                      onClick={handleConfirmBooking}
-                      disabled={createRideMutation.isPending}
-                    >
-                      {createRideMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-                      {t.booking.confirmBooking}
-                    </Button>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Quick Actions */}
-            <Tabs defaultValue="history" className="w-full">
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="history">{t.passenger.rideHistory}</TabsTrigger>
-                <TabsTrigger value="favorites">{t.passenger.myFavorites}</TabsTrigger>
+            <Tabs defaultValue="booking" className="space-y-4">
+              <TabsList className="grid h-auto grid-cols-3 rounded-3xl bg-white/80 p-1 shadow-sm backdrop-blur-xl">
+                <TabsTrigger value="booking" className="rounded-2xl py-3 font-black">Reserva</TabsTrigger>
+                <TabsTrigger value="tracking" className="rounded-2xl py-3 font-black">Seguimiento</TabsTrigger>
+                <TabsTrigger value="history" className="rounded-2xl py-3 font-black">Historial</TabsTrigger>
               </TabsList>
 
-              <TabsContent value="history" className="mt-4">
-                <Card className="border-border/50">
-                  <CardContent className="pt-6">
-                    {rideHistory && rideHistory.length > 0 ? (
-                      <div className="space-y-3">
-                        {rideHistory.slice(0, 5).map((ride) => (
-                          <div key={ride.id} className="p-3 bg-muted rounded-lg text-sm">
-                            <div className="flex items-center justify-between mb-2">
-                              <span className="font-semibold text-foreground">{ride.status}</span>
-                              <span className="text-xs text-muted-foreground">€{ride.actual_fare?.toFixed(2)}</span>
-                            </div>
-                            <p className="text-xs text-muted-foreground">
-                              {new Date(ride.created_at).toLocaleDateString()}
-                            </p>
-                          </div>
-                        ))}
+              <TabsContent value="booking">
+                <PanelCard icon={MapPin} title="Nueva solicitud" description="Origen, destino y tarifa antes de confirmar">
+                  <div className="grid gap-4">
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label className="font-black text-slate-800">Origen</Label>
+                        <Input value={pickupAddress} onChange={(event) => setPickupAddress(event.target.value)} className="h-13 rounded-2xl bg-white" />
                       </div>
-                    ) : (
-                      <p className="text-sm text-muted-foreground text-center">{t.common.noData}</p>
-                    )}
-                  </CardContent>
-                </Card>
+                      <div className="space-y-2">
+                        <Label className="font-black text-slate-800">Destino</Label>
+                        <Input value={dropoffAddress} onChange={(event) => setDropoffAddress(event.target.value)} className="h-13 rounded-2xl bg-white" />
+                      </div>
+                    </div>
+
+                    <div className="grid gap-2 sm:grid-cols-3">
+                      {routePresets.map((preset) => (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          onClick={() => applyPreset(preset.id)}
+                          className="rounded-3xl border border-slate-100 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                        >
+                          <p className="font-black text-slate-900">{preset.title}</p>
+                          <p className="mt-1 text-xs font-semibold text-slate-500">{preset.duration} min · {preset.fare.toFixed(2)} €</p>
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="grid gap-3 rounded-3xl bg-slate-50 p-4 sm:grid-cols-3">
+                      <div>
+                        <p className="text-xs font-bold uppercase text-slate-400">Duración</p>
+                        <p className="mt-1 text-xl font-black">{duration} min</p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold uppercase text-slate-400">Distancia</p>
+                        <p className="mt-1 text-xl font-black">{distanceKm} km</p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold uppercase text-slate-400">Precio</p>
+                        <p className="mt-1 text-xl font-black">{fare.toFixed(2)} €</p>
+                      </div>
+                    </div>
+
+                    <Button onClick={requestTaxi} disabled={Boolean(currentRide)} className="rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 py-6 text-base font-black text-white">
+                      Confirmar solicitud <ArrowRight className="ml-2 h-5 w-5" />
+                    </Button>
+                  </div>
+                </PanelCard>
               </TabsContent>
 
-              <TabsContent value="favorites" className="mt-4">
-                <Card className="border-border/50">
-                  <CardContent className="pt-6">
-                    <p className="text-sm text-muted-foreground text-center">{t.common.noData}</p>
-                  </CardContent>
-                </Card>
+              <TabsContent value="tracking">
+                {currentRide ? (
+                  <RideTracking ride={currentRide} onAssign={assignDriver} onArriving={markArriving} onComplete={completeRide} onCancel={cancelRide} onCall={callDriver} />
+                ) : (
+                  <PanelCard icon={ShieldCheck} title="Sin viaje activo" description="Cuando pidas un taxi, aparecerá aquí el seguimiento">
+                    <div className="rounded-3xl bg-slate-50 p-6 text-center">
+                      <p className="font-black text-slate-900">Todavía no has solicitado taxi</p>
+                      <p className="mt-2 text-sm text-slate-500">Usa la pestaña Reserva para iniciar una solicitud demo.</p>
+                    </div>
+                  </PanelCard>
+                )}
+              </TabsContent>
+
+              <TabsContent value="history">
+                <PanelCard icon={History} title="Historial" description="Viajes finalizados o cancelados durante esta sesión">
+                  <div className="space-y-3">
+                    {history.length === 0 && <p className="rounded-3xl bg-slate-50 p-5 text-center text-sm font-semibold text-slate-500">No hay viajes en el historial todavía.</p>}
+                    {history.map((ride) => (
+                      <div key={`${ride.id}-${ride.status}`} className="rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="font-black">{ride.id}</p>
+                            <p className="mt-1 text-sm text-slate-500">{ride.pickup} → {ride.dropoff}</p>
+                          </div>
+                          {statusBadge(ride.status)}
+                        </div>
+                        <p className="mt-3 text-sm font-black text-slate-900">{ride.fare.toFixed(2)} € · {ride.duration} min</p>
+                      </div>
+                    ))}
+                  </div>
+                </PanelCard>
               </TabsContent>
             </Tabs>
           </div>
+
+          <aside className="space-y-4">
+            <PanelCard icon={CreditCard} title="Pago" description="Método de pago para el viaje">
+              <div className="space-y-3">
+                <div className="rounded-3xl bg-slate-50 p-4">
+                  <p className="text-sm font-bold text-slate-500">Método actual</p>
+                  <p className="mt-2 font-black text-slate-950">{paymentMethod}</p>
+                </div>
+                <Button onClick={changePayment} variant="outline" className="w-full rounded-2xl bg-white font-black">Cambiar método</Button>
+              </div>
+            </PanelCard>
+
+            <PanelCard icon={Home} title="Lugares rápidos" description="Accesos frecuentes">
+              <div className="grid grid-cols-2 gap-2">
+                {recentPlaces.map((place) => (
+                  <button
+                    key={place}
+                    type="button"
+                    onClick={() => {
+                      setDropoffAddress(place);
+                      addActivity(`Destino rápido seleccionado: ${place}`);
+                    }}
+                    className="rounded-2xl bg-white p-3 text-sm font-black shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                  >
+                    {place}
+                  </button>
+                ))}
+              </div>
+            </PanelCard>
+
+            <PanelCard icon={LifeBuoy} title="Ayuda" description="Acciones rápidas">
+              <div className="grid gap-3">
+                <Button onClick={requestSupport} variant="outline" className="justify-start rounded-2xl bg-white py-6 font-black">
+                  <LifeBuoy className="mr-3 h-5 w-5 text-indigo-600" /> Pedir soporte
+                </Button>
+                <Button onClick={callDriver} disabled={!currentRide?.driverName} variant="outline" className="justify-start rounded-2xl bg-white py-6 font-black">
+                  <Phone className="mr-3 h-5 w-5 text-cyan-600" /> Llamada segura
+                </Button>
+              </div>
+            </PanelCard>
+
+            <PanelCard icon={Bell} title="Actividad" description="Últimas acciones">
+              <div className="space-y-3">
+                {activity.map((item) => (
+                  <div key={item.id} className="rounded-2xl border border-slate-100 bg-white p-3">
+                    <p className="font-bold text-slate-900">{item.text}</p>
+                    <p className="text-xs text-slate-500">{item.time}</p>
+                  </div>
+                ))}
+              </div>
+            </PanelCard>
+          </aside>
         </div>
       </main>
     </div>
+  );
+}
+
+function RefreshIcon() {
+  return <Search className="mr-2 h-4 w-4" />;
+}
+
+function RideTracking({
+  ride,
+  onAssign,
+  onArriving,
+  onComplete,
+  onCancel,
+  onCall,
+}: {
+  ride: Ride;
+  onAssign: () => void;
+  onArriving: () => void;
+  onComplete: () => void;
+  onCancel: () => void;
+  onCall: () => void;
+}) {
+  const progress = ride.status === "searching" ? 25 : ride.status === "assigned" ? 55 : ride.status === "arriving" ? 82 : 100;
+
+  return (
+    <PanelCard icon={LocateFixed} title="Seguimiento del viaje" description="Estado de la solicitud en tiempo real">
+      <div className="space-y-4">
+        <div className="rounded-3xl bg-slate-50 p-4">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold uppercase text-slate-400">Solicitud</p>
+              <p className="font-black text-slate-950">{ride.id}</p>
+            </div>
+            {statusBadge(ride.status)}
+          </div>
+          <div className="h-3 overflow-hidden rounded-full bg-slate-200">
+            <div className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-blue-600 transition-all" style={{ width: `${progress}%` }} />
+          </div>
+        </div>
+
+        {ride.driverName && (
+          <div className="rounded-3xl border border-cyan-100 bg-cyan-50 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-bold text-cyan-700">Conductor asignado</p>
+                <p className="mt-1 text-xl font-black text-slate-950">{ride.driverName}</p>
+                <p className="text-sm font-semibold text-slate-600">{ride.taxiCode} · {ride.plate}</p>
+              </div>
+              <div className="rounded-2xl bg-white p-3 text-cyan-600 shadow-sm">
+                <Car className="h-6 w-6" />
+              </div>
+            </div>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <div className="rounded-2xl bg-white p-3">
+                <p className="text-xs font-bold text-slate-400">Llega en</p>
+                <p className="text-lg font-black">{ride.eta ?? 4} min</p>
+              </div>
+              <div className="rounded-2xl bg-white p-3">
+                <p className="text-xs font-bold text-slate-400">Valoración</p>
+                <p className="text-lg font-black">4,9 ⭐</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="grid gap-3">
+          <div className="rounded-3xl bg-white p-4 shadow-sm">
+            <p className="mb-2 flex items-center gap-2 text-sm font-black text-slate-800">
+              <MapPin className="h-4 w-4 text-cyan-600" /> Recogida
+            </p>
+            <p className="text-sm text-slate-600">{ride.pickup}</p>
+          </div>
+          <div className="rounded-3xl bg-white p-4 shadow-sm">
+            <p className="mb-2 flex items-center gap-2 text-sm font-black text-slate-800">
+              <MapPin className="h-4 w-4 text-blue-600" /> Destino
+            </p>
+            <p className="text-sm text-slate-600">{ride.dropoff}</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2">
+          <div className="rounded-3xl bg-white p-4 text-center shadow-sm">
+            <p className="text-xs font-bold text-slate-400">Importe</p>
+            <p className="mt-1 font-black">{ride.fare.toFixed(2)} €</p>
+          </div>
+          <div className="rounded-3xl bg-white p-4 text-center shadow-sm">
+            <p className="text-xs font-bold text-slate-400">Tiempo</p>
+            <p className="mt-1 font-black">{ride.duration} min</p>
+          </div>
+          <div className="rounded-3xl bg-white p-4 text-center shadow-sm">
+            <p className="text-xs font-bold text-slate-400">Distancia</p>
+            <p className="mt-1 font-black">{ride.distanceKm} km</p>
+          </div>
+        </div>
+
+        <div className="grid gap-2 sm:grid-cols-2">
+          {ride.status === "searching" && (
+            <Button onClick={onAssign} className="rounded-2xl bg-blue-600 py-6 font-black text-white hover:bg-blue-500">
+              <Loader2 className="mr-2 h-5 w-5" /> Simular asignación
+            </Button>
+          )}
+          {ride.status === "assigned" && (
+            <Button onClick={onArriving} className="rounded-2xl bg-cyan-600 py-6 font-black text-white hover:bg-cyan-500">
+              <Navigation className="mr-2 h-5 w-5" /> Taxi en camino
+            </Button>
+          )}
+          {ride.status === "arriving" && (
+            <Button onClick={onComplete} className="rounded-2xl bg-emerald-600 py-6 font-black text-white hover:bg-emerald-500">
+              <CheckCircle2 className="mr-2 h-5 w-5" /> Finalizar viaje
+            </Button>
+          )}
+          <Button onClick={onCall} disabled={!ride.driverName} variant="outline" className="rounded-2xl bg-white py-6 font-black">
+            <Phone className="mr-2 h-5 w-5" /> Llamar conductor
+          </Button>
+          <Button onClick={onCancel} variant="outline" className="rounded-2xl border-red-200 bg-white py-6 font-black text-red-700 hover:bg-red-50 sm:col-span-2">
+            <XCircle className="mr-2 h-5 w-5" /> Cancelar viaje
+          </Button>
+        </div>
+      </div>
+    </PanelCard>
   );
 }
