@@ -91,7 +91,7 @@ export default function AdminPanel() {
   const users = useMemo<AdminUserRow[]>(() => {
     const driverRows = (drivers || []).map((driver) => ({
       id: String(driver.id),
-      name: `${t.driver.passenger.replace(t.driver.passenger, t.driver.driverPanel)} ${String(driver.id).slice(0, 8)}`,
+      name: `${t.admin.drivers} ${String(driver.id).slice(0, 8)}`,
       role: "driver" as const,
       contact: driver.user?.phone_number || driver.user?.id || "--",
       status: driver.status || "--",
@@ -99,14 +99,14 @@ export default function AdminPanel() {
 
     const passengerRows = (passengers || []).map((passenger) => ({
       id: String(passenger.id),
-      name: `${t.passenger.passengerPanel} ${String(passenger.id).slice(0, 8)}`,
+      name: `${t.admin.passengers} ${String(passenger.id).slice(0, 8)}`,
       role: "passenger" as const,
       contact: passenger.user?.phone_number || passenger.user?.id || "--",
       status: "active",
     }));
 
     return [...driverRows, ...passengerRows];
-  }, [drivers, passengers, t.driver.driverPanel, t.driver.passenger, t.passenger.passengerPanel]);
+  }, [drivers, passengers, t.admin.drivers, t.admin.passengers]);
 
   const filteredUsers = users.filter((user) => {
     const query = searchTerm.toLowerCase();
@@ -330,7 +330,7 @@ export default function AdminPanel() {
             <Card className="shadow-lg border-border/50">
               <CardHeader>
                 <CardTitle>{t.admin.totalRevenue}</CardTitle>
-                <CardDescription>{t.admin.recentRides ?? t.admin.completedRides}</CardDescription>
+                <CardDescription>{t.admin.completedRides}</CardDescription>
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={300}>
