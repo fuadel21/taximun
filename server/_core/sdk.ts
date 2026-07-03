@@ -20,6 +20,17 @@ import type {
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === "string" && value.length > 0;
 
+const configuredAdminEmails = () =>
+  ENV.adminEmails
+    .split(",")
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean);
+
+const isConfiguredAdminEmail = (email: string | null | undefined) => {
+  if (!email) return false;
+  return configuredAdminEmails().includes(email.trim().toLowerCase());
+};
+
 export type SessionPayload = {
   openId: string;
   appId: string;
@@ -278,8 +289,9 @@ class SDKServer {
 
     const metadata = supabaseUser.user_metadata ?? {};
     const metadataRole = typeof metadata.role === "string" ? metadata.role : null;
-    const safeRole =
-      metadataRole === "passenger" || metadataRole === "driver"
+    const safeRole = isConfiguredAdminEmail(supabaseUser.email)
+      ? "admin"
+      : metadataRole === "passenger" || metadataRole === "driver"
         ? metadataRole
         : undefined;
     const name =
@@ -356,6 +368,7 @@ class SDKServer {
           name: userInfo.name || null,
           email: userInfo.email ?? null,
           loginMethod: userInfo.loginMethod ?? userInfo.platform ?? null,
+          role: isConfiguredAdminEmail(userInfo.email) ? "admin" : undefined,
           lastSignedIn: signedInAt,
         });
         user = await db.getUserByOpenId(userInfo.openId);
@@ -371,6 +384,7 @@ class SDKServer {
 
     await db.upsertUser({
       openId: user.openId,
+      role: isConfiguredAdminEmail(user.email) ? "admin" : user.role,
       lastSignedIn: signedInAt,
     });
 
