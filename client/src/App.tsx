@@ -7,8 +7,8 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
 import AuthReal from "./pages/AuthReal";
 import TestHub from "./pages/TestHub";
-import PassengerPanelReal from "./pages/PassengerPanelReal";
-import DriverPanel from "./pages/DriverPanel";
+import PassengerPanelModern from "./pages/PassengerPanelModern";
+import DriverPanelModern from "./pages/DriverPanelModern";
 import AdminPanel from "./pages/AdminPanel";
 
 function Router() {
@@ -18,13 +18,13 @@ function Router() {
       <Route path={"/auth"} component={AuthReal} />
       <Route path={"/test"} component={TestHub} />
       {/* Passenger routes */}
-      <Route path={"/passenger"} component={PassengerPanelReal} />
-      <Route path={"/passenger/rides"} component={PassengerPanelReal} />
-      <Route path={"/passenger/book"} component={PassengerPanelReal} />
+      <Route path={"/passenger"} component={PassengerPanelModern} />
+      <Route path={"/passenger/rides"} component={PassengerPanelModern} />
+      <Route path={"/passenger/book"} component={PassengerPanelModern} />
       {/* Driver routes */}
-      <Route path={"/driver"} component={DriverPanel} />
-      <Route path={"/driver/queue"} component={DriverPanel} />
-      <Route path={"/driver/earnings"} component={DriverPanel} />
+      <Route path={"/driver"} component={DriverPanelModern} />
+      <Route path={"/driver/queue"} component={DriverPanelModern} />
+      <Route path={"/driver/earnings"} component={DriverPanelModern} />
       {/* Admin routes */}
       <Route path={"/admin"} component={AdminPanel} />
       <Route path={"/admin/dashboard"} component={AdminPanel} />
