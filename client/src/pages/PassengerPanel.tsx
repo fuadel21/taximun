@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useLocation } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { trpc } from "@/lib/trpc";
 import { TaxiMap } from "@/components/TaxiMap";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,9 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   ArrowRight,
   Bell,
-  CalendarClock,
   Car,
-  CheckCircle2,
   Clock3,
   CreditCard,
   Euro,
@@ -30,32 +30,30 @@ import {
   ShieldCheck,
   Sparkles,
   Star,
-  Timer,
   UserRound,
   XCircle,
 } from "lucide-react";
 
-type RideStatus = "draft" | "searching" | "assigned" | "arriving" | "completed" | "cancelled";
+type RideStatus = "pending" | "assigned" | "in_progress" | "completed" | "cancelled" | "rejected";
 
-type Ride = {
+type TaxiRideRow = {
   id: string;
-  pickup: string;
-  dropoff: string;
-  fare: number;
-  duration: number;
-  distanceKm: number;
+  passenger_name?: string | null;
+  driver_name?: string | null;
+  taxi_code?: string | null;
+  plate?: string | null;
+  pickup_address: string;
+  dropoff_address: string;
+  estimated_fare: number | string;
+  estimated_duration: number | string;
+  distance_km: number | string;
   status: RideStatus;
-  requestedAt: string;
-  driverName?: string;
-  taxiCode?: string;
-  plate?: string;
-  eta?: number;
-};
-
-type ActivityLog = {
-  id: string;
-  text: string;
-  time: string;
+  payment_method?: string | null;
+  requested_at?: string | null;
+  assigned_at?: string | null;
+  started_at?: string | null;
+  completed_at?: string | null;
+  cancelled_at?: string | null;
 };
 
 const routePresets = [
@@ -90,29 +88,24 @@ const routePresets = [
 
 const recentPlaces = ["Casa", "Trabajo", "Estación", "Hospital", "Centro", "Hotel Costa"];
 
-const nowLabel = () =>
-  new Date().toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
+function money(value: unknown) {
+  return `${Number(value ?? 0).toFixed(2)} €`;
+}
 
-function makeRide(pickup: string, dropoff: string, fare: number, duration: number, distanceKm: number): Ride {
-  return {
-    id: `P-${Date.now().toString().slice(-5)}`,
-    pickup,
-    dropoff,
-    fare,
-    duration,
-    distanceKm,
-    status: "searching",
-    requestedAt: nowLabel(),
-  };
+function dateLabel(value: unknown) {
+  if (typeof value !== "string") return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleString("es-ES", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
 function statusBadge(status: RideStatus) {
-  if (status === "searching") return <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">Buscando taxi</Badge>;
-  if (status === "assigned") return <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">Taxi asignado</Badge>;
-  if (status === "arriving") return <Badge className="bg-cyan-100 text-cyan-800 hover:bg-cyan-100">En camino</Badge>;
+  if (status === "pending") return <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">Buscando conductor</Badge>;
+  if (status === "assigned") return <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">Conductor asignado</Badge>;
+  if (status === "in_progress") return <Badge className="bg-cyan-100 text-cyan-800 hover:bg-cyan-100">Viaje en curso</Badge>;
   if (status === "completed") return <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100">Finalizado</Badge>;
   if (status === "cancelled") return <Badge className="bg-red-100 text-red-800 hover:bg-red-100">Cancelado</Badge>;
-  return <Badge variant="outline">Preparando</Badge>;
+  return <Badge className="bg-slate-100 text-slate-700 hover:bg-slate-100">Rechazado</Badge>;
 }
 
 function MetricCard({ icon: Icon, title, value, note }: { icon: any; title: string; value: string; note: string }) {
@@ -151,39 +144,61 @@ function PanelCard({ icon: Icon, title, description, children }: { icon: any; ti
 
 export default function PassengerPanel() {
   const { user, logout, isGuest } = useAuth() as any;
+  const [, setLocation] = useLocation();
+  const utils = trpc.useUtils();
+  const canUseRealApi = !isGuest && (user?.role === "passenger" || user?.role === "admin");
+
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [pickupAddress, setPickupAddress] = useState("Mi ubicación actual");
   const [dropoffAddress, setDropoffAddress] = useState("Hospital municipal · Entrada principal");
   const [fare, setFare] = useState(12.8);
   const [duration, setDuration] = useState(14);
   const [distanceKm, setDistanceKm] = useState(5.4);
-  const [currentRide, setCurrentRide] = useState<Ride | null>(null);
-  const [history, setHistory] = useState<Ride[]>([]);
-  const [activity, setActivity] = useState<ActivityLog[]>([
-    { id: "a1", text: "Panel pasajero cargado", time: nowLabel() },
-  ]);
-  const [paymentMethod, setPaymentMethod] = useState("Tarjeta terminada en 4242");
+  const [paymentMethod, setPaymentMethod] = useState("cash");
+  const [formError, setFormError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!navigator.geolocation) return;
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        setUserLocation({
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-        });
+        setUserLocation({ latitude: position.coords.latitude, longitude: position.coords.longitude });
       },
-      () => {
-        setUserLocation(null);
-      },
+      () => setUserLocation(null),
       { enableHighAccuracy: true, maximumAge: 30000, timeout: 10000 }
     );
   }, []);
 
-  const addActivity = (text: string) => {
-    setActivity((current) => [{ id: String(Date.now()), text, time: nowLabel() }, ...current].slice(0, 7));
-  };
+  const currentRideQuery = trpc.system.taxiOps.passenger.getCurrentRide.useQuery(undefined, {
+    enabled: canUseRealApi,
+    refetchInterval: 5000,
+    refetchOnWindowFocus: true,
+  });
+
+  const historyQuery = trpc.system.taxiOps.passenger.getRideHistory.useQuery(undefined, {
+    enabled: canUseRealApi,
+    refetchInterval: 10000,
+  });
+
+  const createRideMutation = trpc.system.taxiOps.passenger.createRide.useMutation({
+    onSuccess: () => {
+      setFormError(null);
+      utils.system.taxiOps.passenger.getCurrentRide.invalidate();
+      utils.system.taxiOps.passenger.getRideHistory.invalidate();
+    },
+    onError: (error) => setFormError(error.message),
+  });
+
+  const cancelRideMutation = trpc.system.taxiOps.passenger.cancelRide.useMutation({
+    onSuccess: () => {
+      utils.system.taxiOps.passenger.getCurrentRide.invalidate();
+      utils.system.taxiOps.passenger.getRideHistory.invalidate();
+    },
+    onError: (error) => setFormError(error.message),
+  });
+
+  const currentRide = (currentRideQuery.data ?? null) as TaxiRideRow | null;
+  const rideHistory = (historyQuery.data ?? []) as TaxiRideRow[];
 
   const applyPreset = (presetId: string) => {
     const preset = routePresets.find((item) => item.id === presetId);
@@ -193,72 +208,45 @@ export default function PassengerPanel() {
     setFare(preset.fare);
     setDuration(preset.duration);
     setDistanceKm(preset.distanceKm);
-    addActivity(`Ruta rápida seleccionada: ${preset.title}`);
   };
 
   const recalculateEstimate = () => {
     const base = 4.5;
     const distance = Math.max(2.2, Math.min(28, (pickupAddress.length + dropoffAddress.length) / 4));
-    const nextFare = Number((base + distance * 1.55).toFixed(2));
-    const nextDuration = Math.round(distance * 2.4 + 4);
     setDistanceKm(Number(distance.toFixed(1)));
-    setFare(nextFare);
-    setDuration(nextDuration);
-    addActivity("Tarifa estimada recalculada");
+    setFare(Number((base + distance * 1.55).toFixed(2)));
+    setDuration(Math.round(distance * 2.4 + 4));
   };
 
-  const requestTaxi = () => {
+  const requestTaxi = async () => {
+    if (!canUseRealApi) {
+      setFormError("Para crear solicitudes reales debes iniciar sesión como pasajero.");
+      return;
+    }
     if (!pickupAddress.trim() || !dropoffAddress.trim()) {
-      addActivity("Falta origen o destino para pedir taxi");
+      setFormError("Falta origen o destino.");
+      return;
+    }
+    if (currentRide) {
+      setFormError("Ya tienes un viaje activo. Cancélalo o espera a que finalice.");
       return;
     }
 
-    const ride = makeRide(pickupAddress, dropoffAddress, fare, duration, distanceKm);
-    setCurrentRide(ride);
-    addActivity(`Taxi solicitado: ${ride.id}`);
-  };
-
-  const assignDriver = () => {
-    if (!currentRide || currentRide.status !== "searching") return;
-    setCurrentRide({
-      ...currentRide,
-      status: "assigned",
-      driverName: "Marta Soler",
-      taxiCode: "TX-118",
-      plate: "9912-MDC",
-      eta: 4,
+    await createRideMutation.mutateAsync({
+      pickupAddress,
+      dropoffAddress,
+      pickupLat: userLocation?.latitude,
+      pickupLng: userLocation?.longitude,
+      estimatedFare: fare,
+      estimatedDuration: duration,
+      distanceKm,
+      paymentMethod,
     });
-    addActivity("Conductor asignado: Marta Soler · TX-118");
   };
 
-  const markArriving = () => {
-    if (!currentRide || currentRide.status !== "assigned") return;
-    setCurrentRide({ ...currentRide, status: "arriving", eta: 2 });
-    addActivity("El taxi está de camino al punto de recogida");
-  };
-
-  const completeRide = () => {
+  const cancelCurrentRide = async () => {
     if (!currentRide) return;
-    const completedRide: Ride = { ...currentRide, status: "completed" };
-    setHistory((current) => [completedRide, ...current]);
-    setCurrentRide(null);
-    addActivity(`Viaje finalizado: ${completedRide.id}`);
-  };
-
-  const cancelRide = () => {
-    if (!currentRide) return;
-    const cancelledRide: Ride = { ...currentRide, status: "cancelled" };
-    setHistory((current) => [cancelledRide, ...current]);
-    setCurrentRide(null);
-    addActivity(`Viaje cancelado: ${cancelledRide.id}`);
-  };
-
-  const requestSupport = () => addActivity("Solicitud de soporte enviada al operador");
-  const callDriver = () => addActivity("Llamada segura al conductor iniciada");
-  const changePayment = () => {
-    const nextMethod = paymentMethod.includes("4242") ? "Efectivo al finalizar" : "Tarjeta terminada en 4242";
-    setPaymentMethod(nextMethod);
-    addActivity(`Método de pago cambiado: ${nextMethod}`);
+    await cancelRideMutation.mutateAsync({ rideId: currentRide.id });
   };
 
   const locationLabel = useMemo(() => {
@@ -267,14 +255,44 @@ export default function PassengerPanel() {
   }, [userLocation]);
 
   const statusText = currentRide
-    ? currentRide.status === "searching"
-      ? "Buscando conductor"
+    ? currentRide.status === "pending"
+      ? "Esperando conductor"
       : currentRide.status === "assigned"
-        ? "Taxi asignado"
-        : currentRide.status === "arriving"
-          ? "Taxi en camino"
+        ? "Conductor asignado"
+        : currentRide.status === "in_progress"
+          ? "Viaje en curso"
           : "Sin viaje activo"
     : "Sin viaje activo";
+
+  const isSaving = createRideMutation.isPending || cancelRideMutation.isPending;
+
+  if (!canUseRealApi) {
+    return (
+      <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.18),_transparent_30%),linear-gradient(180deg,_#f8fbff_0%,_#eef6ff_46%,_#ffffff_100%)] px-4 py-6 text-slate-950">
+        <div className="mx-auto flex min-h-[calc(100vh-3rem)] max-w-2xl items-center justify-center">
+          <Card className="border-white/70 bg-white/90 shadow-2xl backdrop-blur-xl">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-2xl font-black">
+                <ShieldCheck className="h-6 w-6 text-cyan-600" />
+                Acceso real requerido
+              </CardTitle>
+              <CardDescription>
+                El panel pasajero ya no usa simulaciones. Para crear viajes reales debes iniciar sesión o registrarte como pasajero.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3 sm:flex-row">
+              <Button onClick={() => setLocation("/auth")} className="rounded-2xl bg-slate-950 font-black text-white hover:bg-slate-800">
+                Ir al login
+              </Button>
+              <Button onClick={logout} variant="outline" className="rounded-2xl bg-white font-black">
+                Salir
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.18),_transparent_30%),linear-gradient(180deg,_#f8fbff_0%,_#eef6ff_46%,_#ffffff_100%)] text-slate-950">
@@ -286,12 +304,11 @@ export default function PassengerPanel() {
             </div>
             <div>
               <p className="text-xs font-black uppercase tracking-[0.22em] text-cyan-700">Taximun Passenger</p>
-              <h1 className="text-xl font-black leading-tight sm:text-2xl">Panel pasajero</h1>
+              <h1 className="text-xl font-black leading-tight sm:text-2xl">Panel pasajero real</h1>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {isGuest && <Badge className="hidden bg-amber-100 text-amber-800 hover:bg-amber-100 sm:inline-flex">Modo prueba</Badge>}
-            {currentRide ? statusBadge(currentRide.status) : <Badge className="bg-slate-100 text-slate-700 hover:bg-slate-100">Disponible</Badge>}
+            {currentRide ? statusBadge(currentRide.status) : <Badge className="bg-slate-100 text-slate-700 hover:bg-slate-100">Sin viaje</Badge>}
             <Button variant="outline" onClick={logout} className="rounded-2xl bg-white/80">
               <LogOut className="mr-2 h-4 w-4" />
               Salir
@@ -306,19 +323,19 @@ export default function PassengerPanel() {
             <div>
               <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-sm font-bold text-cyan-100 ring-1 ring-white/15">
                 <Sparkles className="h-4 w-4" />
-                Viaje inteligente · {user?.name ?? "Pasajero invitado"}
+                Datos reales Supabase · {user?.name ?? "Pasajero"}
               </div>
-              <h2 className="text-3xl font-black tracking-tight sm:text-4xl">Pide tu taxi en segundos</h2>
+              <h2 className="text-3xl font-black tracking-tight sm:text-4xl">Solicita un taxi real</h2>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300 sm:text-base">
-                Elige origen, destino y confirma. Después puedes simular asignación, llegada, llamada segura, cancelación y finalización.
+                La solicitud se guarda en Supabase. Un conductor real la verá desde su panel y podrá aceptarla, iniciarla y finalizarla.
               </p>
               <div className="mt-5 flex flex-wrap gap-3">
-                <Button onClick={requestTaxi} disabled={Boolean(currentRide)} className="rounded-2xl bg-cyan-500 font-black text-white hover:bg-cyan-400">
-                  <Car className="mr-2 h-4 w-4" />
-                  Pedir taxi
+                <Button onClick={requestTaxi} disabled={Boolean(currentRide) || isSaving} className="rounded-2xl bg-cyan-500 font-black text-white hover:bg-cyan-400">
+                  {createRideMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Car className="mr-2 h-4 w-4" />}
+                  Pedir taxi real
                 </Button>
                 <Button onClick={recalculateEstimate} variant="outline" className="rounded-2xl border-white/20 bg-white/10 font-black text-white hover:bg-white/20">
-                  <RefreshIcon />
+                  <Search className="mr-2 h-4 w-4" />
                   Recalcular tarifa
                 </Button>
               </div>
@@ -329,12 +346,12 @@ export default function PassengerPanel() {
                 <p className="mt-2 text-xl font-black">{statusText}</p>
               </div>
               <div className="rounded-3xl bg-white/10 p-4 ring-1 ring-white/15">
-                <p className="text-sm font-black">ETA</p>
-                <p className="mt-2 text-2xl font-black">{currentRide?.eta ? `${currentRide.eta} min` : `${duration} min`}</p>
+                <p className="text-sm font-black">Tiempo</p>
+                <p className="mt-2 text-2xl font-black">{duration} min</p>
               </div>
               <div className="rounded-3xl bg-white/10 p-4 ring-1 ring-white/15">
                 <p className="text-sm font-black">Tarifa</p>
-                <p className="mt-2 text-2xl font-black">{fare.toFixed(2)} €</p>
+                <p className="mt-2 text-2xl font-black">{money(fare)}</p>
               </div>
               <div className="rounded-3xl bg-white/10 p-4 ring-1 ring-white/15">
                 <p className="text-sm font-black">Ubicación</p>
@@ -344,16 +361,27 @@ export default function PassengerPanel() {
           </div>
         </section>
 
+        {formError && (
+          <div className="rounded-3xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-800">
+            {formError}
+          </div>
+        )}
+        {(currentRideQuery.error || historyQuery.error) && (
+          <div className="rounded-3xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-800">
+            Error conectando con Supabase: {currentRideQuery.error?.message || historyQuery.error?.message}
+          </div>
+        )}
+
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <MetricCard icon={Clock3} title="Tiempo" value={`${duration} min`} note="Estimación actual" />
-          <MetricCard icon={Euro} title="Precio" value={`${fare.toFixed(2)} €`} note="Tarifa estimada" />
+          <MetricCard icon={Clock3} title="Tiempo" value={`${duration} min`} note="Estimación de solicitud" />
+          <MetricCard icon={Euro} title="Precio" value={money(fare)} note="Tarifa estimada" />
           <MetricCard icon={Route} title="Distancia" value={`${distanceKm} km`} note="Ruta aproximada" />
-          <MetricCard icon={Star} title="Calidad" value="4,8" note="Conductores verificados" />
+          <MetricCard icon={Star} title="Historial" value={String(rideHistory.length)} note="Viajes anteriores" />
         </section>
 
         <div className="grid gap-6 lg:grid-cols-[1.35fr_0.65fr]">
           <div className="space-y-6">
-            <PanelCard icon={Navigation} title="Mapa y seguimiento" description="Vista de ubicación y zona de servicio">
+            <PanelCard icon={Navigation} title="Mapa y seguimiento" description="Ubicación y seguimiento del servicio">
               <div className="overflow-hidden rounded-3xl">
                 <TaxiMap userLocation={userLocation || undefined} readOnly />
               </div>
@@ -367,7 +395,7 @@ export default function PassengerPanel() {
               </TabsList>
 
               <TabsContent value="booking">
-                <PanelCard icon={MapPin} title="Nueva solicitud" description="Origen, destino y tarifa antes de confirmar">
+                <PanelCard icon={MapPin} title="Nueva solicitud real" description="Origen, destino y tarifa antes de confirmar">
                   <div className="grid gap-4">
                     <div className="grid gap-4 sm:grid-cols-2">
                       <div className="space-y-2">
@@ -382,14 +410,9 @@ export default function PassengerPanel() {
 
                     <div className="grid gap-2 sm:grid-cols-3">
                       {routePresets.map((preset) => (
-                        <button
-                          key={preset.id}
-                          type="button"
-                          onClick={() => applyPreset(preset.id)}
-                          className="rounded-3xl border border-slate-100 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
-                        >
+                        <button key={preset.id} type="button" onClick={() => applyPreset(preset.id)} className="rounded-3xl border border-slate-100 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
                           <p className="font-black text-slate-900">{preset.title}</p>
-                          <p className="mt-1 text-xs font-semibold text-slate-500">{preset.duration} min · {preset.fare.toFixed(2)} €</p>
+                          <p className="mt-1 text-xs font-semibold text-slate-500">{preset.duration} min · {money(preset.fare)}</p>
                         </button>
                       ))}
                     </div>
@@ -405,44 +428,50 @@ export default function PassengerPanel() {
                       </div>
                       <div>
                         <p className="text-xs font-bold uppercase text-slate-400">Precio</p>
-                        <p className="mt-1 text-xl font-black">{fare.toFixed(2)} €</p>
+                        <p className="mt-1 text-xl font-black">{money(fare)}</p>
                       </div>
                     </div>
 
-                    <Button onClick={requestTaxi} disabled={Boolean(currentRide)} className="rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 py-6 text-base font-black text-white">
-                      Confirmar solicitud <ArrowRight className="ml-2 h-5 w-5" />
+                    <Button onClick={requestTaxi} disabled={Boolean(currentRide) || isSaving} className="rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 py-6 text-base font-black text-white">
+                      {createRideMutation.isPending ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <ArrowRight className="mr-2 h-5 w-5" />}
+                      Confirmar solicitud real
                     </Button>
                   </div>
                 </PanelCard>
               </TabsContent>
 
               <TabsContent value="tracking">
-                {currentRide ? (
-                  <RideTracking ride={currentRide} onAssign={assignDriver} onArriving={markArriving} onComplete={completeRide} onCancel={cancelRide} onCall={callDriver} />
+                {currentRideQuery.isLoading ? (
+                  <PanelCard icon={Loader2} title="Cargando viaje" description="Consultando Supabase">
+                    <div className="py-8 text-center text-sm font-bold text-slate-500">Cargando...</div>
+                  </PanelCard>
+                ) : currentRide ? (
+                  <RideTracking ride={currentRide} onCancel={cancelCurrentRide} isSaving={isSaving} />
                 ) : (
-                  <PanelCard icon={ShieldCheck} title="Sin viaje activo" description="Cuando pidas un taxi, aparecerá aquí el seguimiento">
+                  <PanelCard icon={ShieldCheck} title="Sin viaje activo" description="Cuando pidas un taxi real aparecerá aquí">
                     <div className="rounded-3xl bg-slate-50 p-6 text-center">
-                      <p className="font-black text-slate-900">Todavía no has solicitado taxi</p>
-                      <p className="mt-2 text-sm text-slate-500">Usa la pestaña Reserva para iniciar una solicitud demo.</p>
+                      <p className="font-black text-slate-900">No hay solicitud activa</p>
+                      <p className="mt-2 text-sm text-slate-500">Crea una solicitud desde la pestaña Reserva.</p>
                     </div>
                   </PanelCard>
                 )}
               </TabsContent>
 
               <TabsContent value="history">
-                <PanelCard icon={History} title="Historial" description="Viajes finalizados o cancelados durante esta sesión">
+                <PanelCard icon={History} title="Historial real" description="Viajes finalizados, cancelados o rechazados en Supabase">
                   <div className="space-y-3">
-                    {history.length === 0 && <p className="rounded-3xl bg-slate-50 p-5 text-center text-sm font-semibold text-slate-500">No hay viajes en el historial todavía.</p>}
-                    {history.map((ride) => (
-                      <div key={`${ride.id}-${ride.status}`} className="rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
+                    {historyQuery.isLoading && <p className="rounded-3xl bg-slate-50 p-5 text-center text-sm font-semibold text-slate-500">Cargando historial...</p>}
+                    {!historyQuery.isLoading && rideHistory.length === 0 && <p className="rounded-3xl bg-slate-50 p-5 text-center text-sm font-semibold text-slate-500">No hay viajes en el historial todavía.</p>}
+                    {rideHistory.map((ride) => (
+                      <div key={ride.id} className="rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
                         <div className="flex items-start justify-between gap-3">
                           <div>
-                            <p className="font-black">{ride.id}</p>
-                            <p className="mt-1 text-sm text-slate-500">{ride.pickup} → {ride.dropoff}</p>
+                            <p className="font-black">{ride.id.slice(0, 8)}</p>
+                            <p className="mt-1 text-sm text-slate-500">{ride.pickup_address} → {ride.dropoff_address}</p>
                           </div>
                           {statusBadge(ride.status)}
                         </div>
-                        <p className="mt-3 text-sm font-black text-slate-900">{ride.fare.toFixed(2)} € · {ride.duration} min</p>
+                        <p className="mt-3 text-sm font-black text-slate-900">{money(ride.estimated_fare)} · {ride.estimated_duration} min · {dateLabel(ride.requested_at)}</p>
                       </div>
                     ))}
                   </div>
@@ -452,53 +481,42 @@ export default function PassengerPanel() {
           </div>
 
           <aside className="space-y-4">
-            <PanelCard icon={CreditCard} title="Pago" description="Método de pago para el viaje">
+            <PanelCard icon={CreditCard} title="Pago" description="Método de pago del viaje">
               <div className="space-y-3">
                 <div className="rounded-3xl bg-slate-50 p-4">
                   <p className="text-sm font-bold text-slate-500">Método actual</p>
-                  <p className="mt-2 font-black text-slate-950">{paymentMethod}</p>
+                  <p className="mt-2 font-black text-slate-950">{paymentMethod === "cash" ? "Efectivo" : "Tarjeta"}</p>
                 </div>
-                <Button onClick={changePayment} variant="outline" className="w-full rounded-2xl bg-white font-black">Cambiar método</Button>
+                <Button onClick={() => setPaymentMethod(paymentMethod === "cash" ? "card" : "cash")} variant="outline" className="w-full rounded-2xl bg-white font-black">
+                  Cambiar método
+                </Button>
               </div>
             </PanelCard>
 
             <PanelCard icon={Home} title="Lugares rápidos" description="Accesos frecuentes">
               <div className="grid grid-cols-2 gap-2">
                 {recentPlaces.map((place) => (
-                  <button
-                    key={place}
-                    type="button"
-                    onClick={() => {
-                      setDropoffAddress(place);
-                      addActivity(`Destino rápido seleccionado: ${place}`);
-                    }}
-                    className="rounded-2xl bg-white p-3 text-sm font-black shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
-                  >
+                  <button key={place} type="button" onClick={() => setDropoffAddress(place)} className="rounded-2xl bg-white p-3 text-sm font-black shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
                     {place}
                   </button>
                 ))}
               </div>
             </PanelCard>
 
-            <PanelCard icon={LifeBuoy} title="Ayuda" description="Acciones rápidas">
+            <PanelCard icon={LifeBuoy} title="Ayuda" description="Acciones disponibles">
               <div className="grid gap-3">
-                <Button onClick={requestSupport} variant="outline" className="justify-start rounded-2xl bg-white py-6 font-black">
-                  <LifeBuoy className="mr-3 h-5 w-5 text-indigo-600" /> Pedir soporte
+                <Button disabled variant="outline" className="justify-start rounded-2xl bg-white py-6 font-black">
+                  <LifeBuoy className="mr-3 h-5 w-5 text-indigo-600" /> Soporte en siguiente bloque
                 </Button>
-                <Button onClick={callDriver} disabled={!currentRide?.driverName} variant="outline" className="justify-start rounded-2xl bg-white py-6 font-black">
-                  <Phone className="mr-3 h-5 w-5 text-cyan-600" /> Llamada segura
+                <Button disabled={!currentRide?.driver_name} variant="outline" className="justify-start rounded-2xl bg-white py-6 font-black">
+                  <Phone className="mr-3 h-5 w-5 text-cyan-600" /> Llamada segura pendiente
                 </Button>
               </div>
             </PanelCard>
 
-            <PanelCard icon={Bell} title="Actividad" description="Últimas acciones">
-              <div className="space-y-3">
-                {activity.map((item) => (
-                  <div key={item.id} className="rounded-2xl border border-slate-100 bg-white p-3">
-                    <p className="font-bold text-slate-900">{item.text}</p>
-                    <p className="text-xs text-slate-500">{item.time}</p>
-                  </div>
-                ))}
+            <PanelCard icon={Bell} title="Estado API" description="Sin simulaciones">
+              <div className="rounded-3xl bg-emerald-50 p-4 text-sm font-bold text-emerald-800">
+                Este panel usa `system.taxiOps.passenger` y guarda solicitudes reales en `taxi_rides`.
               </div>
             </PanelCard>
           </aside>
@@ -508,35 +526,18 @@ export default function PassengerPanel() {
   );
 }
 
-function RefreshIcon() {
-  return <Search className="mr-2 h-4 w-4" />;
-}
-
-function RideTracking({
-  ride,
-  onAssign,
-  onArriving,
-  onComplete,
-  onCancel,
-  onCall,
-}: {
-  ride: Ride;
-  onAssign: () => void;
-  onArriving: () => void;
-  onComplete: () => void;
-  onCancel: () => void;
-  onCall: () => void;
-}) {
-  const progress = ride.status === "searching" ? 25 : ride.status === "assigned" ? 55 : ride.status === "arriving" ? 82 : 100;
+function RideTracking({ ride, onCancel, isSaving }: { ride: TaxiRideRow; onCancel: () => void; isSaving: boolean }) {
+  const progress = ride.status === "pending" ? 25 : ride.status === "assigned" ? 60 : ride.status === "in_progress" ? 85 : 100;
+  const canCancel = ride.status === "pending" || ride.status === "assigned";
 
   return (
-    <PanelCard icon={LocateFixed} title="Seguimiento del viaje" description="Estado de la solicitud en tiempo real">
+    <PanelCard icon={LocateFixed} title="Seguimiento real del viaje" description="Estado actualizado desde Supabase">
       <div className="space-y-4">
         <div className="rounded-3xl bg-slate-50 p-4">
           <div className="mb-3 flex items-center justify-between gap-3">
             <div>
               <p className="text-xs font-bold uppercase text-slate-400">Solicitud</p>
-              <p className="font-black text-slate-950">{ride.id}</p>
+              <p className="font-black text-slate-950">{ride.id.slice(0, 8)}</p>
             </div>
             {statusBadge(ride.status)}
           </div>
@@ -545,28 +546,22 @@ function RideTracking({
           </div>
         </div>
 
-        {ride.driverName && (
+        {ride.driver_name ? (
           <div className="rounded-3xl border border-cyan-100 bg-cyan-50 p-4">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-sm font-bold text-cyan-700">Conductor asignado</p>
-                <p className="mt-1 text-xl font-black text-slate-950">{ride.driverName}</p>
-                <p className="text-sm font-semibold text-slate-600">{ride.taxiCode} · {ride.plate}</p>
+                <p className="mt-1 text-xl font-black text-slate-950">{ride.driver_name}</p>
+                <p className="text-sm font-semibold text-slate-600">{ride.taxi_code ?? "Taxi"} · {ride.plate ?? "Matrícula pendiente"}</p>
               </div>
               <div className="rounded-2xl bg-white p-3 text-cyan-600 shadow-sm">
                 <Car className="h-6 w-6" />
               </div>
             </div>
-            <div className="mt-4 grid grid-cols-2 gap-2">
-              <div className="rounded-2xl bg-white p-3">
-                <p className="text-xs font-bold text-slate-400">Llega en</p>
-                <p className="text-lg font-black">{ride.eta ?? 4} min</p>
-              </div>
-              <div className="rounded-2xl bg-white p-3">
-                <p className="text-xs font-bold text-slate-400">Valoración</p>
-                <p className="text-lg font-black">4,9 ⭐</p>
-              </div>
-            </div>
+          </div>
+        ) : (
+          <div className="rounded-3xl border border-amber-100 bg-amber-50 p-4 text-sm font-bold text-amber-800">
+            Esperando a que un conductor acepte la solicitud desde su panel.
           </div>
         )}
 
@@ -575,54 +570,37 @@ function RideTracking({
             <p className="mb-2 flex items-center gap-2 text-sm font-black text-slate-800">
               <MapPin className="h-4 w-4 text-cyan-600" /> Recogida
             </p>
-            <p className="text-sm text-slate-600">{ride.pickup}</p>
+            <p className="text-sm text-slate-600">{ride.pickup_address}</p>
           </div>
           <div className="rounded-3xl bg-white p-4 shadow-sm">
             <p className="mb-2 flex items-center gap-2 text-sm font-black text-slate-800">
               <MapPin className="h-4 w-4 text-blue-600" /> Destino
             </p>
-            <p className="text-sm text-slate-600">{ride.dropoff}</p>
+            <p className="text-sm text-slate-600">{ride.dropoff_address}</p>
           </div>
         </div>
 
         <div className="grid grid-cols-3 gap-2">
           <div className="rounded-3xl bg-white p-4 text-center shadow-sm">
             <p className="text-xs font-bold text-slate-400">Importe</p>
-            <p className="mt-1 font-black">{ride.fare.toFixed(2)} €</p>
+            <p className="mt-1 font-black">{money(ride.estimated_fare)}</p>
           </div>
           <div className="rounded-3xl bg-white p-4 text-center shadow-sm">
             <p className="text-xs font-bold text-slate-400">Tiempo</p>
-            <p className="mt-1 font-black">{ride.duration} min</p>
+            <p className="mt-1 font-black">{ride.estimated_duration} min</p>
           </div>
           <div className="rounded-3xl bg-white p-4 text-center shadow-sm">
             <p className="text-xs font-bold text-slate-400">Distancia</p>
-            <p className="mt-1 font-black">{ride.distanceKm} km</p>
+            <p className="mt-1 font-black">{ride.distance_km} km</p>
           </div>
         </div>
 
-        <div className="grid gap-2 sm:grid-cols-2">
-          {ride.status === "searching" && (
-            <Button onClick={onAssign} className="rounded-2xl bg-blue-600 py-6 font-black text-white hover:bg-blue-500">
-              <Loader2 className="mr-2 h-5 w-5" /> Simular asignación
-            </Button>
-          )}
-          {ride.status === "assigned" && (
-            <Button onClick={onArriving} className="rounded-2xl bg-cyan-600 py-6 font-black text-white hover:bg-cyan-500">
-              <Navigation className="mr-2 h-5 w-5" /> Taxi en camino
-            </Button>
-          )}
-          {ride.status === "arriving" && (
-            <Button onClick={onComplete} className="rounded-2xl bg-emerald-600 py-6 font-black text-white hover:bg-emerald-500">
-              <CheckCircle2 className="mr-2 h-5 w-5" /> Finalizar viaje
-            </Button>
-          )}
-          <Button onClick={onCall} disabled={!ride.driverName} variant="outline" className="rounded-2xl bg-white py-6 font-black">
-            <Phone className="mr-2 h-5 w-5" /> Llamar conductor
+        {canCancel && (
+          <Button onClick={onCancel} disabled={isSaving} variant="outline" className="w-full rounded-2xl border-red-200 bg-white py-6 font-black text-red-700 hover:bg-red-50">
+            {isSaving ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <XCircle className="mr-2 h-5 w-5" />}
+            Cancelar viaje real
           </Button>
-          <Button onClick={onCancel} variant="outline" className="rounded-2xl border-red-200 bg-white py-6 font-black text-red-700 hover:bg-red-50 sm:col-span-2">
-            <XCircle className="mr-2 h-5 w-5" /> Cancelar viaje
-          </Button>
-        </div>
+        )}
       </div>
     </PanelCard>
   );
