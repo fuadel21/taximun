@@ -3,6 +3,7 @@ import { TRPCClientError } from "@trpc/client";
 import { useCallback, useEffect, useMemo } from "react";
 
 const GUEST_ROLE_KEY = "taximun_guest_role";
+const REAL_AUTH_KEY = "taximun_real_auth";
 
 type UseAuthOptions = {
   redirectOnUnauthenticated?: boolean;
@@ -11,6 +12,10 @@ type UseAuthOptions = {
 
 function readGuestRole() {
   try {
+    if (localStorage.getItem(REAL_AUTH_KEY) === "1") {
+      localStorage.removeItem(GUEST_ROLE_KEY);
+      return null;
+    }
     const role = localStorage.getItem(GUEST_ROLE_KEY);
     if (role === "passenger" || role === "driver" || role === "admin") {
       return role;
@@ -61,6 +66,7 @@ export function useAuth(options?: UseAuthOptions) {
   const logout = useCallback(async () => {
     try {
       localStorage.removeItem(GUEST_ROLE_KEY);
+      localStorage.removeItem(REAL_AUTH_KEY);
     } catch {}
 
     try {
@@ -74,9 +80,6 @@ export function useAuth(options?: UseAuthOptions) {
       }
       throw error;
     } finally {
-      // Clear the Preview auto-login token mirrored into sessionStorage, so
-      // header-based sessions (Safari ITP / WebView) are logged out too. The
-      // backend cookie is cleared by the logout mutation.
       try {
         sessionStorage.removeItem("manus-cookie");
       } catch {}
@@ -87,10 +90,12 @@ export function useAuth(options?: UseAuthOptions) {
 
   const state = useMemo(() => {
     const user = guestUser ?? meQuery.data ?? null;
-    localStorage.setItem(
-      "manus-runtime-user-info",
-      JSON.stringify(user)
-    );
+    try {
+      localStorage.setItem(
+        "manus-runtime-user-info",
+        JSON.stringify(user)
+      );
+    } catch {}
     return {
       user,
       loading: guestUser ? false : meQuery.isLoading || logoutMutation.isPending,
