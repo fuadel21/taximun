@@ -12,6 +12,7 @@ const readPendingRedirectPath = () => {
     sessionStorage.removeItem(REDIRECT_PATH_KEY);
     if (
       path === "/auth" ||
+      path === "/test" ||
       path === "/passenger" ||
       path === "/driver" ||
       path === "/admin"
