@@ -6,6 +6,7 @@ const sourceIndex = path.join(publicDir, "index.html");
 
 const routes = [
   "auth",
+  "test",
   "passenger",
   "passenger/rides",
   "passenger/book",
