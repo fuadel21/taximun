@@ -7,7 +7,7 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
 import AuthReal from "./pages/AuthReal";
 import TestHub from "./pages/TestHub";
-import PassengerPanel from "./pages/PassengerPanel";
+import PassengerPanelReal from "./pages/PassengerPanelReal";
 import DriverPanel from "./pages/DriverPanel";
 import AdminPanel from "./pages/AdminPanel";
 
@@ -18,9 +18,9 @@ function Router() {
       <Route path={"/auth"} component={AuthReal} />
       <Route path={"/test"} component={TestHub} />
       {/* Passenger routes */}
-      <Route path={"/passenger"} component={PassengerPanel} />
-      <Route path={"/passenger/rides"} component={PassengerPanel} />
-      <Route path={"/passenger/book"} component={PassengerPanel} />
+      <Route path={"/passenger"} component={PassengerPanelReal} />
+      <Route path={"/passenger/rides"} component={PassengerPanelReal} />
+      <Route path={"/passenger/book"} component={PassengerPanelReal} />
       {/* Driver routes */}
       <Route path={"/driver"} component={DriverPanel} />
       <Route path={"/driver/queue"} component={DriverPanel} />
