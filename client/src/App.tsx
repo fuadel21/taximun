@@ -12,6 +12,7 @@ import PassengerProfile from "./pages/PassengerProfile";
 import DriverApp from "./pages/DriverApp";
 import DriverProfile from "./pages/DriverProfile";
 import AdminPanel from "./pages/AdminPanel";
+import AdminSupportPage from "./pages/AdminSupportPage";
 
 function Router() {
   return (
@@ -33,6 +34,7 @@ function Router() {
       <Route path={"/admin"} component={AdminPanel} />
       <Route path={"/admin/dashboard"} component={AdminPanel} />
       <Route path={"/admin/users"} component={AdminPanel} />
+      <Route path={"/admin/safety"} component={AdminSupportPage} />
       <Route path={"/404"} component={NotFound} />
       {/* Final fallback route */}
       <Route component={NotFound} />
