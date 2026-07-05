@@ -1,5 +1,5 @@
-import ProfilePanel from "./ProfilePanel";
+import { TaxiProfileSettings } from "../components/TaxiProfileSettings";
 
-const DriverProfile = () => <ProfilePanel role="driver" />;
-
-export default DriverProfile;
+export default function DriverProfile() {
+  return <TaxiProfileSettings role="driver" />;
+}
