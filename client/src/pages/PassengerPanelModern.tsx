@@ -37,6 +37,7 @@ type RideStatus = "pending" | "assigned" | "in_progress" | "completed" | "cancel
 type TaxiRideRow = {
   id: string;
   passenger_name?: string | null;
+  driver_id?: string | null;
   driver_name?: string | null;
   taxi_code?: string | null;
   plate?: string | null;
@@ -47,6 +48,18 @@ type TaxiRideRow = {
   distance_km: number | string;
   status: RideStatus;
   requested_at?: string | null;
+};
+
+type DriverPublicProfile = {
+  user_id: string;
+  full_name?: string | null;
+  avatar_url?: string | null;
+  rating?: number | string | null;
+  completed_rides?: number | string | null;
+  taxi_code?: string | null;
+  plate?: string | null;
+  vehicle_model?: string | null;
+  is_verified?: boolean | null;
 };
 
 const clearGuest = () => {
@@ -333,6 +346,19 @@ export default function PassengerPanelModern() {
 }
 
 function ActiveRideCard({ ride, pin, progress, saving, onCancel }: { ride: TaxiRideRow; pin: string; progress: number; saving: boolean; onCancel: () => void }) {
+  const driverProfileQuery = trpc.system.taxiProfiles.getDriverPublicProfile.useQuery(
+    { driverId: ride.driver_id ?? "" },
+    { enabled: Boolean(ride.driver_id), retry: false, refetchInterval: 10000 }
+  );
+  const profile = (driverProfileQuery.data ?? null) as DriverPublicProfile | null;
+  const driverName = profile?.full_name || ride.driver_name || "Buscando conductor";
+  const taxiCode = profile?.taxi_code || ride.taxi_code || "Taxi pendiente";
+  const plate = profile?.plate || ride.plate || "";
+  const vehicleModel = profile?.vehicle_model || "Vehículo pendiente";
+  const rating = Number(profile?.rating ?? 5).toFixed(1).replace(".", ",");
+  const rides = Number(profile?.completed_rides ?? 0);
+  const initials = driverName.split(" ").filter(Boolean).slice(0, 2).map((item) => item[0]).join("").toUpperCase() || "TX";
+
   return (
     <Card className="rounded-[1.75rem] border-white bg-white shadow-xl">
       <CardContent className="space-y-4 p-4">
@@ -346,13 +372,28 @@ function ActiveRideCard({ ride, pin, progress, saving, onCancel }: { ride: TaxiR
         <div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-blue-600" style={{ width: `${progress}%` }} /></div>
         <div className="grid gap-3 sm:grid-cols-[1fr_0.8fr]">
           <div className="rounded-3xl bg-slate-50 p-4">
-            <p className="text-xs font-bold uppercase text-slate-400">Conductor</p>
-            <p className="mt-1 text-xl font-black">{ride.driver_name ?? "Buscando conductor"}</p>
-            <p className="text-sm font-bold text-slate-500">{ride.taxi_code ?? "Taxi pendiente"} {ride.plate ? `· ${ride.plate}` : ""}</p>
+            <div className="flex items-start gap-3">
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-slate-950 text-lg font-black text-white shadow-lg">
+                {profile?.avatar_url ? <img src={profile.avatar_url} alt={driverName} className="h-full w-full object-cover" /> : initials}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="truncate text-xl font-black">{driverName}</p>
+                  {profile?.is_verified ? <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100"><ShieldCheck className="mr-1 h-3.5 w-3.5" />Verificado</Badge> : <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">Pendiente</Badge>}
+                </div>
+                <p className="text-sm font-bold text-slate-500">{taxiCode}{plate ? ` · ${plate}` : ""}</p>
+                <p className="text-sm font-bold text-slate-500">{vehicleModel}</p>
+              </div>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <MiniMetric icon={<Star className="h-4 w-4" />} title="Rating" value={rating} />
+              <MiniMetric icon={<CheckCircle2 className="h-4 w-4" />} title="Viajes" value={String(rides)} />
+            </div>
           </div>
           <div className="rounded-3xl bg-slate-950 p-4 text-white">
             <p className="text-xs font-bold uppercase text-slate-400">PIN de recogida</p>
             <p className="mt-1 text-3xl font-black tracking-widest">{pin}</p>
+            <p className="mt-3 text-xs font-bold text-slate-400">Comparte este PIN solo al subir al taxi.</p>
           </div>
         </div>
         <div className="space-y-2 rounded-3xl bg-slate-50 p-4 text-sm font-bold text-slate-700">
