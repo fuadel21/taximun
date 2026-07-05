@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
@@ -278,7 +278,7 @@ export default function AdminAlertsPanel() {
   );
 }
 
-function MetricCard({ icon, title, value, note }: { icon: React.ReactNode; title: string; value: string; note: string }) {
+function MetricCard({ icon, title, value, note }: { icon: ReactNode; title: string; value: string; note: string }) {
   return (
     <Card className="overflow-hidden rounded-[1.75rem] border-white/70 bg-white/85 shadow-[0_18px_50px_rgba(15,23,42,0.08)] backdrop-blur-xl">
       <CardContent className="p-5">
