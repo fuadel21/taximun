@@ -8,7 +8,9 @@ import Home from "./pages/Home";
 import AuthReal from "./pages/AuthReal";
 import TestHub from "./pages/TestHub";
 import PassengerApp from "./pages/PassengerApp";
+import PassengerProfile from "./pages/PassengerProfile";
 import DriverApp from "./pages/DriverApp";
+import DriverProfile from "./pages/DriverProfile";
 import AdminPanel from "./pages/AdminPanel";
 
 function Router() {
@@ -21,10 +23,12 @@ function Router() {
       <Route path={"/passenger"} component={PassengerApp} />
       <Route path={"/passenger/rides"} component={PassengerApp} />
       <Route path={"/passenger/book"} component={PassengerApp} />
+      <Route path={"/passenger/profile"} component={PassengerProfile} />
       {/* Driver routes */}
       <Route path={"/driver"} component={DriverApp} />
       <Route path={"/driver/queue"} component={DriverApp} />
       <Route path={"/driver/earnings"} component={DriverApp} />
+      <Route path={"/driver/profile"} component={DriverProfile} />
       {/* Admin routes */}
       <Route path={"/admin"} component={AdminPanel} />
       <Route path={"/admin/dashboard"} component={AdminPanel} />
