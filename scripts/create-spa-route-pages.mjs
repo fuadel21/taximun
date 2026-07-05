@@ -10,12 +10,17 @@ const routes = [
   "passenger",
   "passenger/rides",
   "passenger/book",
+  "passenger/profile",
+  "passenger/security",
   "driver",
   "driver/queue",
   "driver/earnings",
+  "driver/profile",
+  "driver/security",
   "admin",
   "admin/dashboard",
   "admin/users",
+  "admin/safety",
 ];
 
 await Promise.all(
