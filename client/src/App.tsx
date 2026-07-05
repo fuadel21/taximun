@@ -23,13 +23,11 @@ function Router() {
       <Route path={"/passenger"} component={PassengerApp} />
       <Route path={"/passenger/rides"} component={PassengerApp} />
       <Route path={"/passenger/book"} component={PassengerApp} />
-      <Route path={"/passenger/security"} component={PassengerApp} />
       <Route path={"/passenger/profile"} component={PassengerProfile} />
       {/* Driver routes */}
       <Route path={"/driver"} component={DriverApp} />
       <Route path={"/driver/queue"} component={DriverApp} />
       <Route path={"/driver/earnings"} component={DriverApp} />
-      <Route path={"/driver/security"} component={DriverApp} />
       <Route path={"/driver/profile"} component={DriverProfile} />
       {/* Admin routes */}
       <Route path={"/admin"} component={AdminPanel} />
