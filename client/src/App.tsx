@@ -13,6 +13,7 @@ import DriverApp from "./pages/DriverApp";
 import DriverProfile from "./pages/DriverProfile";
 import AdminPanel from "./pages/AdminPanel";
 import AdminSafetyPanel from "./pages/AdminSafetyPanel";
+import AdminAlertsPanel from "./pages/AdminAlertsPanel";
 
 function Router() {
   return (
@@ -24,19 +25,21 @@ function Router() {
       <Route path={"/passenger"} component={PassengerApp} />
       <Route path={"/passenger/rides"} component={PassengerApp} />
       <Route path={"/passenger/book"} component={PassengerApp} />
+      <Route path={"/passenger/security"} component={PassengerApp} />
       <Route path={"/passenger/profile"} component={PassengerProfile} />
       {/* Driver routes */}
       <Route path={"/driver"} component={DriverApp} />
       <Route path={"/driver/queue"} component={DriverApp} />
       <Route path={"/driver/earnings"} component={DriverApp} />
+      <Route path={"/driver/security"} component={DriverApp} />
       <Route path={"/driver/profile"} component={DriverProfile} />
       {/* Admin routes */}
       <Route path={"/admin"} component={AdminPanel} />
       <Route path={"/admin/dashboard"} component={AdminPanel} />
       <Route path={"/admin/users"} component={AdminPanel} />
       <Route path={"/admin/safety"} component={AdminSafetyPanel} />
-      <Route path={"/admin/alerts"} component={AdminSafetyPanel} />
-      <Route path={"/admin/incidents"} component={AdminSafetyPanel} />
+      <Route path={"/admin/alerts"} component={AdminAlertsPanel} />
+      <Route path={"/admin/incidents"} component={AdminAlertsPanel} />
       <Route path={"/404"} component={NotFound} />
       {/* Final fallback route */}
       <Route component={NotFound} />
