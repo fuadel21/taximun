@@ -1,5 +1,6 @@
 import { AppBottomNav } from "@/components/AppBottomNav";
 import { TaxiProfileSettings } from "@/components/TaxiProfileSettings";
+import { TaxiSupportActions } from "@/components/TaxiSupportActions";
 import { Car, Clock3, Home, ShieldCheck } from "lucide-react";
 import { useLocation } from "wouter";
 import PassengerPanelModern from "./PassengerPanelModern";
@@ -7,15 +8,31 @@ import PassengerPanelModern from "./PassengerPanelModern";
 export default function PassengerApp() {
   const [location, setLocation] = useLocation();
   const isProfile = location.includes("/profile");
+  const isSecurity = location.includes("/security");
 
   return (
     <div className="pb-24 md:pb-0">
-      {isProfile ? <TaxiProfileSettings role="passenger" /> : <PassengerPanelModern />}
+      {isProfile ? (
+        <TaxiProfileSettings role="passenger" />
+      ) : isSecurity ? (
+        <main className="min-h-screen bg-[#f7f8fb] px-4 py-6">
+          <div className="mx-auto max-w-3xl space-y-4">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.25em] text-cyan-700">Taximun</p>
+              <h1 className="text-3xl font-black">Seguridad pasajero</h1>
+              <p className="mt-2 text-sm font-semibold text-slate-500">Registra incidencias reales para revisión del administrador.</p>
+            </div>
+            <TaxiSupportActions role="passenger" />
+          </div>
+        </main>
+      ) : (
+        <PassengerPanelModern />
+      )}
       <AppBottomNav
         items={[
-          { label: "Inicio", active: !isProfile, icon: <Home className="h-5 w-5" />, onClick: () => setLocation("/passenger") },
+          { label: "Inicio", active: !isProfile && !isSecurity, icon: <Home className="h-5 w-5" />, onClick: () => setLocation("/passenger") },
           { label: "Viaje", icon: <Car className="h-5 w-5" />, onClick: () => setLocation("/passenger") },
-          { label: "Seguro", icon: <ShieldCheck className="h-5 w-5" />, onClick: () => setLocation("/passenger") },
+          { label: "Seguro", active: isSecurity, icon: <ShieldCheck className="h-5 w-5" />, onClick: () => setLocation("/passenger/security") },
           { label: "Perfil", active: isProfile, icon: <Clock3 className="h-5 w-5" />, onClick: () => setLocation("/passenger/profile") },
         ]}
       />
