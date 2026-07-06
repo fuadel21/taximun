@@ -21,6 +21,7 @@ const routes = [
   "admin/dashboard",
   "admin/users",
   "admin/safety",
+  "admin/support",
 ];
 
 await Promise.all(
