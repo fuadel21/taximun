@@ -12,7 +12,7 @@ import PassengerProfile from "./pages/PassengerProfile";
 import DriverApp from "./pages/DriverApp";
 import DriverProfile from "./pages/DriverProfile";
 import AdminPanel from "./pages/AdminPanel";
-import AdminSafetyPanel from "./pages/AdminSafetyPanel";
+import AdminSafetyPage from "./pages/AdminSafetyPage";
 import AdminAlertsPanel from "./pages/AdminAlertsPanel";
 
 function Router() {
@@ -37,7 +37,7 @@ function Router() {
       <Route path={"/admin"} component={AdminPanel} />
       <Route path={"/admin/dashboard"} component={AdminPanel} />
       <Route path={"/admin/users"} component={AdminPanel} />
-      <Route path={"/admin/safety"} component={AdminSafetyPanel} />
+      <Route path={"/admin/safety"} component={AdminSafetyPage} />
       <Route path={"/admin/alerts"} component={AdminAlertsPanel} />
       <Route path={"/admin/incidents"} component={AdminAlertsPanel} />
       <Route path={"/404"} component={NotFound} />
