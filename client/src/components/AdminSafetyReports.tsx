@@ -2,7 +2,7 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { AlertTriangle, CheckCircle2, Clock3, Loader2, RefreshCw, ShieldCheck } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock3, Loader2, RefreshCw } from "lucide-react";
 
 type SafetyReport = {
   id: string;
