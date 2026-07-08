@@ -7,9 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { TAXIMUN_MARKETS } from "@shared/constants";
 import {
   AlertCircle,
-  ArrowRight,
   Bell,
   Car,
   CheckCircle2,
@@ -57,6 +57,7 @@ type DriverStatusRow = {
 
 type ActivityRow = { id: string; message: string; created_at: string };
 
+const market = TAXIMUN_MARKETS.barcelona;
 const money = (value: unknown) => `${Number(value ?? 0).toFixed(2)} €`;
 const dateLabel = (value: unknown) => {
   if (typeof value !== "string") return "Ahora";
@@ -91,9 +92,9 @@ export default function DriverPanelModern() {
   const [checking, setChecking] = useState(true);
   const [sessionOk, setSessionOk] = useState(false);
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
-  const [taxiCode, setTaxiCode] = useState("TX-001");
+  const [taxiCode, setTaxiCode] = useState("AMB-0001");
   const [plate, setPlate] = useState("0000-TXM");
-  const [zone, setZone] = useState("Centro");
+  const [zone, setZone] = useState(market.zones[0].name);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -158,12 +159,13 @@ export default function DriverPanelModern() {
   const saving = upsertStatus.isPending || acceptRide.isPending || startRide.isPending || rejectRide.isPending || completeRide.isPending;
   const currentStatus = live?.status ?? "offline";
   const locationLabel = useMemo(() => userLocation ? `${userLocation.latitude.toFixed(4)}, ${userLocation.longitude.toFixed(4)}` : "Ubicación no disponible", [userLocation]);
+  const hotZones = useMemo(() => market.zones, []);
 
   useEffect(() => {
     if (!live) return;
-    setTaxiCode(live.taxi_code ?? "TX-001");
+    setTaxiCode(live.taxi_code ?? "AMB-0001");
     setPlate(live.plate ?? "0000-TXM");
-    setZone(live.current_zone ?? "Centro");
+    setZone(live.current_zone ?? market.zones[0].name);
   }, [live]);
 
   const setDriverStatus = async (status: DriverStatus) => {
@@ -196,8 +198,9 @@ export default function DriverPanelModern() {
         <div className="absolute inset-0 opacity-95"><TaxiMap userLocation={userLocation || undefined} readOnly /></div>
         <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between bg-gradient-to-b from-slate-950/85 to-transparent px-4 py-4 text-white">
           <div>
-            <p className="text-xs font-black uppercase tracking-[0.25em] text-cyan-200">Taximun Driver</p>
-            <h1 className="text-2xl font-black">Tu turno</h1>
+            <p className="text-xs font-black uppercase tracking-[0.25em] text-cyan-200">{market.launchLabel}</p>
+            <h1 className="text-2xl font-black">Consola Taximun Driver</h1>
+            <p className="mt-1 text-xs font-semibold text-slate-200">{locationLabel}</p>
           </div>
           <Button onClick={logout} variant="outline" className="rounded-2xl border-white/20 bg-white/15 font-black text-white hover:bg-white/25"><LogOut className="mr-2 h-4 w-4" />Salir</Button>
         </div>
@@ -232,12 +235,20 @@ export default function DriverPanelModern() {
 
           <Card className="rounded-[1.75rem] border-white bg-white shadow-xl">
             <CardContent className="space-y-3 p-4">
-              <div className="flex items-center justify-between gap-3"><h2 className="text-xl font-black">Datos del taxi</h2><Sparkles className="h-5 w-5 text-cyan-600" /></div>
+              <div className="flex items-center justify-between gap-3"><div><h2 className="text-xl font-black">Datos del taxi</h2><p className="text-xs font-bold text-slate-500">Licencia, matrícula y zona de trabajo para el piloto Barcelona.</p></div><Sparkles className="h-5 w-5 text-cyan-600" /></div>
               <div className="grid gap-2 sm:grid-cols-3">
-                <Input value={taxiCode} onChange={(e) => setTaxiCode(e.target.value)} className="h-12 rounded-2xl bg-slate-50 font-bold" placeholder="Código taxi" />
+                <Input value={taxiCode} onChange={(e) => setTaxiCode(e.target.value)} className="h-12 rounded-2xl bg-slate-50 font-bold" placeholder="Licencia / código taxi" />
                 <Input value={plate} onChange={(e) => setPlate(e.target.value)} className="h-12 rounded-2xl bg-slate-50 font-bold" placeholder="Matrícula" />
                 <Input value={zone} onChange={(e) => setZone(e.target.value)} className="h-12 rounded-2xl bg-slate-50 font-bold" placeholder="Zona" />
               </div>
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {hotZones.map((item) => (
+                  <button key={item.id} type="button" onClick={() => setZone(item.name)} className={`shrink-0 rounded-full border px-3 py-2 text-xs font-black transition ${zone === item.name ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 bg-slate-50 text-slate-700"}`}>
+                    {item.name} · {item.demand}
+                  </button>
+                ))}
+              </div>
+              <p className="rounded-3xl bg-amber-50 p-3 text-xs font-bold text-amber-800">{market.complianceNote}</p>
               <Button onClick={() => setDriverStatus(currentStatus)} disabled={saving} className="h-12 w-full rounded-2xl bg-slate-950 font-black text-white hover:bg-slate-800">Guardar perfil operativo</Button>
             </CardContent>
           </Card>
@@ -256,7 +267,7 @@ export default function DriverPanelModern() {
           ) : (
             <Card className="rounded-[1.75rem] border-white bg-white shadow-xl">
               <CardContent className="space-y-3 p-4">
-                <div className="flex items-center justify-between gap-3"><h2 className="text-xl font-black">Solicitudes cercanas</h2><Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">{pending.length} nuevas</Badge></div>
+                <div className="flex items-center justify-between gap-3"><div><h2 className="text-xl font-black">Solicitudes cercanas</h2><p className="text-xs font-bold text-slate-500">Prioridad por zona: {zone}</p></div><Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">{pending.length} nuevas</Badge></div>
                 {pending.length === 0 && <p className="rounded-3xl bg-slate-50 p-5 text-center text-sm font-bold text-slate-500">No hay solicitudes pendientes ahora.</p>}
                 <div className="grid gap-3 lg:grid-cols-2">
                   {pending.map((ride) => <RideRequest key={ride.id} ride={ride} saving={saving} onAccept={() => acceptRide.mutate({ rideId: ride.id, taxiCode, plate })} onReject={() => rejectRide.mutate({ rideId: ride.id })} />)}
