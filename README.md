@@ -58,6 +58,25 @@ Para migraciones legacy con Drizzle:
 pnpm db:push
 ```
 
+## Base Supabase del taxi
+
+La migración principal está en:
+
+```bash
+supabase/migrations/20260708090000_taximun_taxi_core.sql
+```
+
+Incluye:
+
+- `taxi_rides`: solicitudes, asignación de conductor, estado del viaje, estimación, origen/destino y tiempos.
+- `driver_live_status`: turno del conductor, zona, taxi, matrícula, ubicación, rating y ganancias.
+- `taxi_activity_logs`: trazabilidad de acciones de pasajero, conductor, admin y sistema.
+- `taxi_driver_documents`: documentación para validar conductor/taxi antes de operar.
+- Índices para viajes pendientes, búsquedas por pasajero/conductor, zonas y ubicación.
+- RLS para separar pasajero, conductor y administración.
+
+Para ejecutarla manualmente en Supabase SQL Editor, copia todo el contenido del archivo y ejecútalo con un usuario owner/service role. Después revisa que las tablas tengan RLS activo y que el backend tenga `SUPABASE_SERVICE_ROLE_KEY` configurada.
+
 ## Piloto Barcelona
 
 El primer mercado está definido en `shared/constants.ts` dentro de `TAXIMUN_MARKETS.barcelona`:
@@ -75,8 +94,9 @@ El primer mercado está definido en `shared/constants.ts` dentro de `TAXIMUN_MAR
 - [x] Configuración de mercado Barcelona.
 - [x] Experiencia pasajero con zonas, presets y servicios.
 - [x] Consola conductor con zona operativa y estado de turno.
-- [ ] Crear tablas Supabase definitivas para `taxi_rides`, `driver_live_status`, `taxi_activity_logs`, perfiles, documentos y pagos.
-- [ ] Reglas RLS y tests de permisos.
+- [x] Crear tablas Supabase base para `taxi_rides`, `driver_live_status`, `taxi_activity_logs` y documentación de conductor.
+- [x] Añadir RLS base e índices operativos.
+- [ ] Tests de permisos y flujos completos pasajero-conductor-admin.
 
 ### Fase 2 — Operativa real
 
@@ -104,4 +124,4 @@ El primer mercado está definido en `shared/constants.ts` dentro de `TAXIMUN_MAR
 
 ## Próximo bloque recomendado
 
-El siguiente PR debería ser el **núcleo de base de datos Supabase**: migraciones SQL, RLS, índices y funciones RPC para matching real. Sin eso, la UI puede verse muy profesional, pero producción seguirá dependiendo de tablas que todavía no están formalizadas en el repo.
+El siguiente PR debería conectar esta base con matching real: función RPC para buscar conductores disponibles por distancia/zona, cola por aeropuerto/Sants/puerto y validaciones para que un conductor no pueda aceptar dos viajes al mismo tiempo.
