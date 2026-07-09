@@ -13,11 +13,32 @@ const rideStatusSchema = z.enum([
 ]);
 
 const driverStatusSchema = z.enum(["available", "busy", "offline"]);
+const serviceTypeSchema = z.enum(["taxi", "eco", "van"]);
 
 function throwIfSupabaseError(error: { message: string } | null) {
   if (error) {
     throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: error.message });
   }
+}
+
+function throwMatchingError(error: { message: string } | null) {
+  if (!error) return;
+
+  const dictionary: Record<string, string> = {
+    DRIVER_NOT_ONLINE: "Primero debes ponerte online para aceptar servicios.",
+    DRIVER_NOT_AVAILABLE: "No puedes aceptar este servicio porque no estás disponible.",
+    DRIVER_ALREADY_BUSY: "Ya tienes un servicio activo. Finalízalo antes de aceptar otro.",
+    DRIVER_REJECTED_RIDE: "Ya rechazaste este servicio.",
+    RIDE_NOT_FOUND: "Este servicio ya no existe.",
+    RIDE_NOT_PENDING: "Este servicio ya no está disponible.",
+    RIDE_ALREADY_TAKEN: "Otro conductor ya aceptó este servicio.",
+  };
+
+  const match = Object.keys(dictionary).find((key) => error.message.includes(key));
+  throw new TRPCError({
+    code: match ? "CONFLICT" : "INTERNAL_SERVER_ERROR",
+    message: match ? dictionary[match] : error.message,
+  });
 }
 
 function assertPassenger(ctx: any) {
@@ -67,6 +88,8 @@ export const taxiOpsRouter = router({
           estimatedDuration: z.number().int().min(0),
           distanceKm: z.number().min(0),
           paymentMethod: z.string().min(2).default("cash"),
+          serviceType: serviceTypeSchema.default("taxi"),
+          pickupZone: z.string().min(2).default("Barcelona"),
         })
       )
       .mutation(async ({ ctx, input }) => {
@@ -77,6 +100,8 @@ export const taxiOpsRouter = router({
           .insert({
             passenger_id: ctx.user.openId,
             passenger_name: ctx.user.name || "Pasajero",
+            market_id: "barcelona",
+            pickup_zone: input.pickupZone,
             pickup_address: input.pickupAddress,
             dropoff_address: input.dropoffAddress,
             pickup_lat: input.pickupLat ?? null,
@@ -87,6 +112,7 @@ export const taxiOpsRouter = router({
             estimated_duration: input.estimatedDuration,
             distance_km: input.distanceKm,
             payment_method: input.paymentMethod,
+            service_type: input.serviceType,
             status: "pending",
           })
           .select()
@@ -216,12 +242,19 @@ export const taxiOpsRouter = router({
     getPendingRides: protectedProcedure.query(async ({ ctx }) => {
       assertDriver(ctx);
 
-      const { data, error } = await supabase
-        .from("taxi_rides")
-        .select("*")
-        .eq("status", "pending")
-        .order("requested_at", { ascending: true })
-        .limit(20);
+      const { data: live, error: liveError } = await supabase
+        .from("driver_live_status")
+        .select("current_zone")
+        .eq("driver_id", ctx.user.openId)
+        .maybeSingle();
+
+      throwIfSupabaseError(liveError);
+
+      const { data, error } = await supabase.rpc("taximun_find_pending_rides_for_driver", {
+        p_driver_id: ctx.user.openId,
+        p_current_zone: live?.current_zone ?? null,
+        p_limit: 20,
+      });
 
       throwIfSupabaseError(error);
       return data ?? [];
@@ -269,32 +302,15 @@ export const taxiOpsRouter = router({
       .mutation(async ({ ctx, input }) => {
         assertDriver(ctx);
 
-        const { data, error } = await supabase
-          .from("taxi_rides")
-          .update({
-            driver_id: ctx.user.openId,
-            driver_name: ctx.user.name || "Conductor",
-            taxi_code: input.taxiCode,
-            plate: input.plate,
-            status: "assigned",
-            assigned_at: new Date().toISOString(),
-          })
-          .eq("id", input.rideId)
-          .eq("status", "pending")
-          .select()
-          .single();
+        const { data, error } = await supabase.rpc("taximun_accept_ride", {
+          p_ride_id: input.rideId,
+          p_driver_id: ctx.user.openId,
+          p_driver_name: ctx.user.name || "Conductor",
+          p_taxi_code: input.taxiCode,
+          p_plate: input.plate,
+        });
 
-        throwIfSupabaseError(error);
-
-        await supabase
-          .from("driver_live_status")
-          .upsert({
-            driver_id: ctx.user.openId,
-            driver_name: ctx.user.name || "Conductor",
-            taxi_code: input.taxiCode,
-            plate: input.plate,
-            status: "busy",
-          });
+        throwMatchingError(error);
 
         await logActivity({
           actorId: ctx.user.openId,
@@ -336,19 +352,17 @@ export const taxiOpsRouter = router({
       .mutation(async ({ ctx, input }) => {
         assertDriver(ctx);
 
-        const { data, error } = await supabase
-          .from("taxi_rides")
-          .update({ status: "rejected" })
-          .eq("id", input.rideId)
-          .eq("status", "pending")
-          .select()
-          .single();
+        const { data, error } = await supabase.rpc("taximun_reject_ride", {
+          p_ride_id: input.rideId,
+          p_driver_id: ctx.user.openId,
+          p_reason: "Conductor no acepta este servicio",
+        });
 
-        throwIfSupabaseError(error);
+        throwMatchingError(error);
         await logActivity({
           actorId: ctx.user.openId,
           actorRole: actorRole(ctx),
-          message: "Viaje rechazado por conductor",
+          message: "Viaje ocultado para este conductor",
           rideId: input.rideId,
         });
 
