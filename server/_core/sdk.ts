@@ -118,139 +118,96 @@ class SDKServer {
     if (set.has("REGISTERED_PLATFORM_APPLE")) return "apple";
     if (
       set.has("REGISTERED_PLATFORM_MICROSOFT") ||
-      set.has("REGISTERED_PLATFORM_AZURE")
-    )
+      set.has("REGISTERED_PLATFORM_MICROSOFT_ENTRA")
+    ) {
       return "microsoft";
-    if (set.has("REGISTERED_PLATFORM_GITHUB")) return "github";
-    const first = Array.from(set)[0];
-    return first ? first.toLowerCase() : null;
-  }
-
-  /**
-   * Exchange OAuth authorization code for access token
-   * @example
-   * const tokenResponse = await sdk.exchangeCodeForToken(code, state);
-   */
-  async exchangeCodeForToken(
-    code: string,
-    state: string
-  ): Promise<ExchangeTokenResponse> {
-    return this.oauthService.getTokenByCode(code, state);
-  }
-
-  /**
-   * Get user information using access token
-   * @example
-   * const userInfo = await sdk.getUserInfo(tokenResponse.accessToken);
-   */
-  async getUserInfo(accessToken: string): Promise<GetUserInfoResponse> {
-    const data = await this.oauthService.getUserInfoByToken({
-      accessToken,
-    } as ExchangeTokenResponse);
-    const loginMethod = this.deriveLoginMethod(
-      (data as any)?.platforms,
-      (data as any)?.platform ?? data.platform ?? null
-    );
-    return {
-      ...(data as any),
-      platform: loginMethod,
-      loginMethod,
-    } as GetUserInfoResponse;
-  }
-
-  private parseCookies(cookieHeader: string | undefined) {
-    if (!cookieHeader) {
-      return new Map<string, string>();
-    }
-
-    const parsed = parseCookieHeader(cookieHeader);
-    return new Map(Object.entries(parsed));
-  }
-
-  private getBearerToken(req: Request) {
-    const authHeader = req.headers.authorization;
-    if (typeof authHeader === "string" && authHeader.startsWith("Bearer ")) {
-      return authHeader.slice(7);
     }
     return null;
   }
 
-  private getSessionSecret() {
-    const secret = ENV.cookieSecret;
-    return new TextEncoder().encode(secret);
+  getOAuthService() {
+    return this.oauthService;
   }
 
-  /**
-   * Create a session token for a Manus user openId
-   * @example
-   * const sessionToken = await sdk.createSessionToken(userInfo.openId);
-   */
-  async createSessionToken(
-    openId: string,
-    options: { expiresInMs?: number; name?: string } = {}
-  ): Promise<string> {
-    return this.signSession(
-      {
-        openId,
-        appId: ENV.appId,
-        name: options.name || "",
-      },
-      options
+  async createSession(payload: SessionPayload): Promise<string> {
+    const secret = new TextEncoder().encode(ENV.cookieSecret);
+    return await new SignJWT(payload)
+      .setProtectedHeader({ alg: "HS256" })
+      .setIssuedAt()
+      .setExpirationTime("1y")
+      .sign(secret);
+  }
+
+  async verifySession(token: string | null | undefined): Promise<SessionPayload | null> {
+    if (!isNonEmptyString(token)) return null;
+    try {
+      const secret = new TextEncoder().encode(ENV.cookieSecret);
+      const { payload } = await jwtVerify(token, secret);
+      if (
+        typeof payload.openId === "string" &&
+        typeof payload.appId === "string" &&
+        typeof payload.name === "string"
+      ) {
+        return payload as SessionPayload;
+      }
+    } catch (error) {
+      return null;
+    }
+    return null;
+  }
+
+  getBearerToken(req: Request): string | null {
+    const authorization = req.headers.authorization;
+    if (!authorization || Array.isArray(authorization)) return null;
+    const [scheme, token] = authorization.split(" ");
+    if (scheme?.toLowerCase() !== "bearer" || !token) return null;
+    return token;
+  }
+
+  parseCookies(cookieHeader: string | undefined): Map<string, string> {
+    const parsed = parseCookieHeader(cookieHeader ?? "");
+    return new Map(Object.entries(parsed));
+  }
+
+  async setSessionCookie(res: any, token: string): Promise<void> {
+    const isProduction = process.env.NODE_ENV === "production";
+    const cookie = `${COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(
+      ONE_YEAR_MS / 1000
+    )}${isProduction ? "; Secure" : ""}`;
+    res.setHeader("Set-Cookie", cookie);
+  }
+
+  async clearSessionCookie(res: any): Promise<void> {
+    res.setHeader(
+      "Set-Cookie",
+      `${COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`
     );
   }
 
-  async signSession(
-    payload: SessionPayload,
-    options: { expiresInMs?: number } = {}
-  ): Promise<string> {
-    const issuedAt = Date.now();
-    const expiresInMs = options.expiresInMs ?? ONE_YEAR_MS;
-    const expirationSeconds = Math.floor((issuedAt + expiresInMs) / 1000);
-    const secretKey = this.getSessionSecret();
+  async exchangeToken(code: string, state: string) {
+    const token = await this.oauthService.getTokenByCode(code, state);
+    const userInfo = await this.oauthService.getUserInfoByToken(token);
+    const loginMethod = this.deriveLoginMethod(
+      (userInfo as any)?.platforms,
+      (userInfo as any)?.platform ?? userInfo.platform ?? null
+    );
 
-    return new SignJWT({
-      openId: payload.openId,
-      appId: payload.appId,
-      name: payload.name,
-    })
-      .setProtectedHeader({ alg: "HS256", typ: "JWT" })
-      .setExpirationTime(expirationSeconds)
-      .sign(secretKey);
-  }
+    await db.upsertUser({
+      openId: userInfo.openId,
+      name: userInfo.name || null,
+      email: userInfo.email ?? null,
+      loginMethod,
+      role: isConfiguredAdminEmail(userInfo.email) ? "admin" : undefined,
+      lastSignedIn: new Date(),
+    });
 
-  async verifySession(
-    cookieValue: string | undefined | null
-  ): Promise<{ openId: string; appId: string; name: string } | null> {
-    if (!cookieValue) {
-      console.warn("[Auth] Missing session cookie");
-      return null;
-    }
-
-    try {
-      const secretKey = this.getSessionSecret();
-      const { payload } = await jwtVerify(cookieValue, secretKey, {
-        algorithms: ["HS256"],
-      });
-      const { openId, appId, name } = payload as Record<string, unknown>;
-
-      if (
-        !isNonEmptyString(openId) ||
-        !isNonEmptyString(appId) ||
-        !isNonEmptyString(name)
-      ) {
-        console.warn("[Auth] Session payload missing required fields");
-        return null;
-      }
-
-      return {
-        openId,
-        appId,
-        name,
-      };
-    } catch (error) {
-      console.warn("[Auth] Session verification failed", String(error));
-      return null;
-    }
+    return {
+      openId: userInfo.openId,
+      name: userInfo.name,
+      email: userInfo.email,
+      loginMethod,
+      platform: loginMethod,
+    };
   }
 
   async getUserInfoWithJwt(
@@ -293,7 +250,7 @@ class SDKServer {
       ? "admin"
       : metadataRole === "passenger" || metadataRole === "driver"
         ? metadataRole
-        : undefined;
+        : "passenger";
     const name =
       typeof metadata.name === "string"
         ? metadata.name
@@ -312,11 +269,28 @@ class SDKServer {
     });
 
     const user = await db.getUserByOpenId(openId);
-    if (!user) {
-      throw ForbiddenError("Supabase user could not be synced");
+    if (user) {
+      return user;
     }
 
-    return user;
+    // Production Supabase-only deployments do not need the legacy MySQL user
+    // table for taxiOps. Return a safe runtime user when DATABASE_URL is absent.
+    const now = new Date();
+    return {
+      id: -1,
+      openId,
+      name,
+      email: supabaseUser.email ?? null,
+      phone: null,
+      loginMethod: "supabase",
+      role: safeRole,
+      language: "es",
+      profilePicture: null,
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+      lastSignedIn: signedInAt,
+    } as unknown as AuthenticatedUser;
   }
 
   async authenticateRequest(req: Request): Promise<AuthenticatedUser> {
@@ -410,7 +384,7 @@ function buildCronUser(
     name: userInfo.name || "Manus Scheduled Task",
     email: null,
     loginMethod: null,
-    role: "user",
+    role: "passenger",
     createdAt: now,
     updatedAt: now,
     lastSignedIn: now,
