@@ -7,9 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { TAXIMUN_MARKETS } from "@shared/constants";
 import {
   AlertCircle,
-  ArrowRight,
   Car,
   CheckCircle2,
   Clock3,
@@ -23,7 +23,6 @@ import {
   MessageCircle,
   Navigation,
   Phone,
-  Plus,
   Route,
   ShieldCheck,
   Sparkles,
@@ -62,6 +61,33 @@ type DriverPublicProfile = {
   is_verified?: boolean | null;
 };
 
+const market = TAXIMUN_MARKETS.barcelona;
+
+const presetIconById = {
+  home: Home,
+  sants: MapPin,
+  airport: Car,
+  fira: Route,
+} as const;
+
+const serviceIconById = {
+  taxi: Car,
+  eco: Sparkles,
+  van: Users,
+} as const;
+
+const presets = market.popularPlaces.map((item) => ({
+  ...item,
+  title: item.label,
+  time: item.minutes,
+  icon: presetIconById[item.id as keyof typeof presetIconById] ?? MapPin,
+}));
+
+const rideOptions = market.serviceLevels.map((item) => ({
+  ...item,
+  icon: serviceIconById[item.id as keyof typeof serviceIconById] ?? Car,
+}));
+
 const clearGuest = () => {
   try {
     localStorage.removeItem("taximun_guest_role");
@@ -77,19 +103,6 @@ const formatDate = (value: unknown) => {
   if (Number.isNaN(date.getTime())) return "Ahora";
   return date.toLocaleString("es-ES", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" });
 };
-
-const presets = [
-  { icon: Home, title: "Casa", pickup: "Mi ubicación actual", dropoff: "Casa", fare: 8.9, time: 9, km: 3.1 },
-  { icon: MapPin, title: "Centro", pickup: "Mi ubicación actual", dropoff: "Plaza del Ayuntamiento", fare: 7.6, time: 8, km: 2.7 },
-  { icon: Route, title: "Estación", pickup: "Mi ubicación actual", dropoff: "Estación central", fare: 10.4, time: 12, km: 4.1 },
-  { icon: Car, title: "Aeropuerto", pickup: "Hotel Costa", dropoff: "Aeropuerto", fare: 34.5, time: 28, km: 21.6 },
-];
-
-const rideOptions = [
-  { id: "standard", title: "Taxi", note: "Rápido", multiplier: 1, icon: Car },
-  { id: "eco", title: "Eco", note: "ECO/eléctrico", multiplier: 1.08, icon: Sparkles },
-  { id: "van", title: "Grupo", note: "Hasta 6 plazas", multiplier: 1.45, icon: Users },
-];
 
 function statusLabel(status: RideStatus) {
   if (status === "pending") return "Buscando conductor";
@@ -116,11 +129,11 @@ export default function PassengerPanelModern() {
   const [sessionOk, setSessionOk] = useState(false);
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [pickupAddress, setPickupAddress] = useState("Mi ubicación actual");
-  const [dropoffAddress, setDropoffAddress] = useState("Hospital municipal · Entrada principal");
-  const [baseFare, setBaseFare] = useState(12.8);
+  const [dropoffAddress, setDropoffAddress] = useState("Barcelona Sants");
+  const [baseFare, setBaseFare] = useState(12.4);
   const [duration, setDuration] = useState(14);
-  const [distanceKm, setDistanceKm] = useState(5.4);
-  const [rideType, setRideType] = useState("standard");
+  const [distanceKm, setDistanceKm] = useState(5.2);
+  const [rideType, setRideType] = useState("taxi");
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -191,6 +204,7 @@ export default function PassengerPanelModern() {
   const pin = currentRide ? currentRide.id.slice(0, 4).toUpperCase() : "----";
   const saving = createRideMutation.isPending || cancelRideMutation.isPending;
   const progress = currentRide?.status === "pending" ? 28 : currentRide?.status === "assigned" ? 64 : currentRide?.status === "in_progress" ? 86 : 0;
+  const activeZones = useMemo(() => market.zones.slice(0, 3), []);
 
   const applyPreset = (index: number) => {
     const preset = presets[index];
@@ -212,7 +226,7 @@ export default function PassengerPanelModern() {
       estimatedFare: fare,
       estimatedDuration: duration,
       distanceKm,
-      paymentMethod: rideType,
+      paymentMethod: selectedOption.id,
     });
   };
 
@@ -237,8 +251,9 @@ export default function PassengerPanelModern() {
         </div>
         <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between bg-gradient-to-b from-slate-950/80 to-transparent px-4 py-4 text-white">
           <div>
-            <p className="text-xs font-black uppercase tracking-[0.25em] text-cyan-200">Taximun</p>
-            <h1 className="text-2xl font-black">¿Dónde vamos?</h1>
+            <p className="text-xs font-black uppercase tracking-[0.25em] text-cyan-200">{market.launchLabel}</p>
+            <h1 className="text-2xl font-black">{market.heroTitle}</h1>
+            <p className="mt-1 max-w-sm text-xs font-semibold text-slate-200">{market.heroSubtitle}</p>
           </div>
           <Button onClick={logout} variant="outline" className="rounded-2xl border-white/20 bg-white/15 font-black text-white hover:bg-white/25">
             <LogOut className="mr-2 h-4 w-4" /> Salir
@@ -246,7 +261,7 @@ export default function PassengerPanelModern() {
         </div>
         <div className="absolute bottom-6 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full bg-white px-4 py-2 shadow-2xl">
           <span className="h-2.5 w-2.5 rounded-full bg-cyan-500" />
-          <span className="text-sm font-black">{currentRide ? statusLabel(currentRide.status) : "Listo para pedir"}</span>
+          <span className="text-sm font-black">{currentRide ? statusLabel(currentRide.status) : "Listo para pedir en Barcelona"}</span>
         </div>
       </section>
 
@@ -262,6 +277,15 @@ export default function PassengerPanelModern() {
           ) : (
             <Card className="rounded-[1.75rem] border-white bg-white shadow-xl">
               <CardContent className="space-y-4 p-4">
+                <div className="flex items-center justify-between gap-3 rounded-3xl bg-slate-950 p-4 text-white">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-[0.22em] text-cyan-200">Mercado activo</p>
+                    <h2 className="text-2xl font-black">{market.city}</h2>
+                    <p className="mt-1 text-xs font-semibold text-slate-300">Preparado para crecer por ciudad y país.</p>
+                  </div>
+                  <Badge className="bg-cyan-100 text-cyan-800 hover:bg-cyan-100">MVP real</Badge>
+                </div>
+
                 <div className="space-y-3 rounded-3xl bg-slate-50 p-3">
                   <Input value={pickupAddress} onChange={(event) => setPickupAddress(event.target.value)} className="h-13 rounded-2xl border-0 bg-white font-bold shadow-sm" placeholder="Origen" />
                   <Input value={dropoffAddress} onChange={(event) => setDropoffAddress(event.target.value)} className="h-13 rounded-2xl border-0 bg-white font-bold shadow-sm" placeholder="¿A dónde vas?" />
@@ -300,10 +324,12 @@ export default function PassengerPanelModern() {
                 </div>
 
                 <div className="grid grid-cols-3 gap-2">
-                  <MiniMetric icon={<Euro className="h-4 w-4" />} title="Precio" value={money(fare)} />
+                  <MiniMetric icon={<Euro className="h-4 w-4" />} title="Estimado" value={money(fare)} />
                   <MiniMetric icon={<Clock3 className="h-4 w-4" />} title="Tiempo" value={`${duration} min`} />
                   <MiniMetric icon={<Route className="h-4 w-4" />} title="Ruta" value={`${distanceKm} km`} />
                 </div>
+
+                <p className="rounded-3xl bg-amber-50 p-3 text-xs font-bold text-amber-800">{market.complianceNote}</p>
 
                 <Button onClick={requestTaxi} disabled={saving} className="h-15 w-full rounded-3xl bg-slate-950 text-base font-black text-white hover:bg-slate-800">
                   {createRideMutation.isPending ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Car className="mr-2 h-5 w-5" />}
@@ -316,12 +342,30 @@ export default function PassengerPanelModern() {
           <Card className="rounded-[1.75rem] border-white bg-white shadow-lg">
             <CardContent className="p-4">
               <div className="mb-3 flex items-center justify-between">
+                <h2 className="font-black">Zonas calientes Barcelona</h2>
+                <MapPin className="h-5 w-5 text-cyan-600" />
+              </div>
+              <div className="grid gap-2 sm:grid-cols-3">
+                {activeZones.map((zone) => (
+                  <div key={zone.id} className="rounded-3xl bg-slate-50 p-3">
+                    <p className="font-black">{zone.name}</p>
+                    <p className="text-xs font-bold text-slate-500">ETA {zone.etaMinutes} min · demanda {zone.demand}</p>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="rounded-[1.75rem] border-white bg-white shadow-lg">
+            <CardContent className="p-4">
+              <div className="mb-3 flex items-center justify-between">
                 <h2 className="font-black">Seguridad y comodidad</h2>
                 <ShieldCheck className="h-5 w-5 text-cyan-600" />
               </div>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-4 gap-2">
                 <ActionPill icon={<Phone className="h-4 w-4" />} title="Llamada" />
                 <ActionPill icon={<MessageCircle className="h-4 w-4" />} title="Chat" />
+                <ActionPill icon={<CreditCard className="h-4 w-4" />} title="Pago" />
                 <ActionPill icon={<Heart className="h-4 w-4" />} title="Favorito" />
               </div>
             </CardContent>

@@ -146,3 +146,48 @@ export const COLORS = {
   NEUTRAL_800: "#1f2937",
   NEUTRAL_900: "#111827",
 };
+
+export const TAXIMUN_MARKETS = {
+  barcelona: {
+    id: "barcelona",
+    city: "Barcelona",
+    country: "Spain",
+    currency: "EUR",
+    timezone: "Europe/Madrid",
+    launchLabel: "Piloto Barcelona · AMB",
+    heroTitle: "Taxi profesional en Barcelona",
+    heroSubtitle:
+      "Pide taxi, comparte tu PIN de recogida y sigue el servicio desde una experiencia tipo Uber/Cabify, pero preparada para taxistas locales.",
+    complianceNote:
+      "Precio estimado orientativo. En operación real de taxi se debe respetar taxímetro, normativa local y verificación de licencia.",
+    supportPhone: "112",
+    zones: [
+      { id: "bcn-eixample", name: "Eixample", etaMinutes: 4, demand: "Alta" },
+      { id: "bcn-sants", name: "Sants Estació", etaMinutes: 5, demand: "Alta" },
+      { id: "bcn-airport-t1", name: "Aeroport T1", etaMinutes: 18, demand: "Muy alta" },
+      { id: "bcn-airport-t2", name: "Aeroport T2", etaMinutes: 17, demand: "Muy alta" },
+      { id: "bcn-port", name: "Port / Cruise", etaMinutes: 9, demand: "Media" },
+      { id: "bcn-gracia", name: "Gràcia", etaMinutes: 6, demand: "Media" },
+    ],
+    popularPlaces: [
+      { id: "home", label: "Casa", pickup: "Mi ubicación actual", dropoff: "Casa", fare: 8.9, minutes: 9, km: 3.1 },
+      { id: "sants", label: "Sants", pickup: "Mi ubicación actual", dropoff: "Barcelona Sants", fare: 12.4, minutes: 14, km: 5.2 },
+      { id: "airport", label: "Aeropuerto", pickup: "Barcelona centro", dropoff: "Aeroport Josep Tarradellas Barcelona-El Prat", fare: 34.5, minutes: 28, km: 21.6 },
+      { id: "fira", label: "Fira", pickup: "Mi ubicación actual", dropoff: "Fira Barcelona Gran Via", fare: 18.6, minutes: 21, km: 9.4 },
+    ],
+    serviceLevels: [
+      { id: "taxi", title: "Taxi", note: "Licencia local", multiplier: 1 },
+      { id: "eco", title: "Eco", note: "ECO/eléctrico", multiplier: 1.08 },
+      { id: "van", title: "Grupo", note: "Hasta 6 plazas", multiplier: 1.45 },
+    ],
+    rolloutChecklist: [
+      "Verificación de licencia y documentación del conductor",
+      "Zonas operativas y cola por aeropuerto/estación",
+      "Tarifa estimada + aviso de taxímetro oficial",
+      "Pagos, facturas, soporte y resolución de incidencias",
+      "Panel admin con conductores, viajes, seguridad y métricas",
+    ],
+  },
+} as const;
+
+export type TaximunMarketId = keyof typeof TAXIMUN_MARKETS;
