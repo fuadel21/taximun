@@ -226,7 +226,9 @@ export default function PassengerPanelModern() {
       estimatedFare: fare,
       estimatedDuration: duration,
       distanceKm,
-      paymentMethod: selectedOption.id,
+      paymentMethod: "cash",
+      serviceType: selectedOption.id as "taxi" | "eco" | "van",
+      pickupZone: "Barcelona",
     });
   };
 
