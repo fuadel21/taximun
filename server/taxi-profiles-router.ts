@@ -28,6 +28,10 @@ const driverDocumentInputSchema = z.object({
   title: z.string().min(2).max(120).optional(),
   documentNumber: z.string().max(120).optional(),
   fileUrl: z.string().url().optional().or(z.literal("")),
+  storageBucket: z.string().max(120).optional(),
+  storagePath: z.string().max(500).optional(),
+  mimeType: z.string().max(120).optional(),
+  fileSizeBytes: z.number().int().nonnegative().optional(),
   issuedAt: z.string().optional().or(z.literal("")),
   expiresAt: z.string().optional().or(z.literal("")),
 });
@@ -110,6 +114,13 @@ export const taxiProfilesRouter = router({
         throw new TRPCError({ code: "FORBIDDEN" });
       }
 
+      if (!input.fileUrl && !input.storagePath && !input.documentNumber) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Añade un archivo, una URL o una referencia del documento.",
+        });
+      }
+
       const { data, error } = await supabase
         .from("taxi_driver_documents")
         .insert({
@@ -118,6 +129,10 @@ export const taxiProfilesRouter = router({
           title: input.title || null,
           document_number: input.documentNumber || null,
           file_url: input.fileUrl || null,
+          storage_bucket: input.storageBucket || null,
+          storage_path: input.storagePath || null,
+          mime_type: input.mimeType || null,
+          file_size_bytes: input.fileSizeBytes ?? null,
           issued_at: input.issuedAt || null,
           expires_at: input.expiresAt || null,
           status: "pending",
