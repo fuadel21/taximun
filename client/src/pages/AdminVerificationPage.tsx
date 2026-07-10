@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { AlertCircle, ArrowLeft, CheckCircle2, FileText, Loader2, Search, ShieldCheck, UserCheck, XCircle } from "lucide-react";
+import { AlertCircle, ArrowLeft, CheckCircle2, ExternalLink, FileText, Loader2, Search, ShieldCheck, UserCheck, XCircle } from "lucide-react";
 
 type DriverVerificationRow = {
   user_id: string;
@@ -33,6 +33,10 @@ type DriverDocumentRow = {
   title?: string | null;
   document_number?: string | null;
   file_url?: string | null;
+  storage_bucket?: string | null;
+  storage_path?: string | null;
+  mime_type?: string | null;
+  file_size_bytes?: number | string | null;
   issued_at?: string | null;
   expires_at?: string | null;
   status: "pending" | "approved" | "rejected" | "expired";
@@ -64,12 +68,20 @@ function dateLabel(value?: string | null) {
   return date.toLocaleDateString("es-ES");
 }
 
+function formatFileSize(value: unknown) {
+  const bytes = Number(value ?? 0);
+  if (!bytes) return "";
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 export default function AdminVerificationPage() {
   const [, setLocation] = useLocation();
   const { user, isGuest } = useAuth() as any;
   const utils = trpc.useUtils();
   const [query, setQuery] = useState("");
   const [note, setNote] = useState("Documentación revisada por administración.");
+  const [openError, setOpenError] = useState("");
   const isRealAdmin = !isGuest && user?.role === "admin";
 
   const verificationQuery = trpc.system.taxiProfiles.adminListDriverDocuments.useQuery(undefined, {
@@ -81,6 +93,7 @@ export default function AdminVerificationPage() {
   const invalidate = () => utils.system.taxiProfiles.adminListDriverDocuments.invalidate();
   const verifyUser = trpc.system.taxiProfiles.adminVerifyUser.useMutation({ onSuccess: invalidate });
   const reviewDocument = trpc.system.taxiProfiles.adminReviewDriverDocument.useMutation({ onSuccess: invalidate });
+  const signedUrl = trpc.system.taxiProfiles.getDocumentSignedUrl.useMutation();
 
   const drivers = (verificationQuery.data?.drivers ?? []) as DriverVerificationRow[];
   const documents = (verificationQuery.data?.documents ?? []) as DriverDocumentRow[];
@@ -104,7 +117,7 @@ export default function AdminVerificationPage() {
   const pendingDrivers = drivers.filter((driver) => !driver.is_verified).length;
   const pendingDocs = documents.filter((doc) => doc.status === "pending").length;
   const approvedDrivers = drivers.filter((driver) => driver.is_verified).length;
-  const isSaving = verifyUser.isPending || reviewDocument.isPending;
+  const isSaving = verifyUser.isPending || reviewDocument.isPending || signedUrl.isPending;
 
   const approveDriver = (driverId: string) => {
     verifyUser.mutate({ userId: driverId, isVerified: true, note });
@@ -112,6 +125,20 @@ export default function AdminVerificationPage() {
 
   const rejectDriver = (driverId: string) => {
     verifyUser.mutate({ userId: driverId, isVerified: false, note: note || "Documentación insuficiente." });
+  };
+
+  const openDocument = async (documentId: string) => {
+    setOpenError("");
+    try {
+      const result = await signedUrl.mutateAsync({ documentId });
+      if (!result?.url) {
+        setOpenError("Este documento no tiene archivo asociado.");
+        return;
+      }
+      window.open(result.url, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      setOpenError(err instanceof Error ? err.message : "No se pudo abrir el documento.");
+    }
   };
 
   if (!isRealAdmin) {
@@ -147,9 +174,9 @@ export default function AdminVerificationPage() {
       </header>
 
       <section className="mx-auto max-w-7xl space-y-5 px-4 py-6">
-        {verificationQuery.error && (
+        {(verificationQuery.error || openError) && (
           <div className="rounded-3xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-800">
-            <AlertCircle className="mr-2 inline h-4 w-4" /> {verificationQuery.error.message}
+            <AlertCircle className="mr-2 inline h-4 w-4" /> {verificationQuery.error?.message || openError}
           </div>
         )}
 
@@ -220,7 +247,12 @@ export default function AdminVerificationPage() {
                               <TableRow key={doc.id}>
                                 <TableCell className="font-bold">
                                   <div>{doc.title || documentLabels[doc.document_type] || doc.document_type}</div>
-                                  {doc.file_url && <a href={doc.file_url} target="_blank" rel="noreferrer" className="text-xs font-black text-cyan-700 underline">Abrir archivo</a>}
+                                  {(doc.storage_path || doc.file_url) && (
+                                    <button type="button" onClick={() => openDocument(doc.id)} className="mt-1 inline-flex items-center gap-1 text-xs font-black text-cyan-700 underline">
+                                      <ExternalLink className="h-3.5 w-3.5" /> Abrir archivo privado
+                                    </button>
+                                  )}
+                                  {doc.mime_type && <p className="text-[11px] font-bold text-slate-400">{doc.mime_type} {formatFileSize(doc.file_size_bytes)}</p>}
                                 </TableCell>
                                 <TableCell>{doc.document_number || "—"}</TableCell>
                                 <TableCell>{dateLabel(doc.expires_at)}</TableCell>
