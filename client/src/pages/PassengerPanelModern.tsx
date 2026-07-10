@@ -21,6 +21,7 @@ import {
   Heart,
   Home,
   Loader2,
+  LocateFixed,
   LockKeyhole,
   LogOut,
   MapPin,
@@ -28,6 +29,7 @@ import {
   Navigation,
   Phone,
   Route,
+  Search,
   Share2,
   ShieldCheck,
   Sparkles,
@@ -64,6 +66,12 @@ type DriverPublicProfile = {
   plate?: string | null;
   vehicle_model?: string | null;
   is_verified?: boolean | null;
+};
+
+type AddressSuggestion = {
+  label: string;
+  lat?: number;
+  lng?: number;
 };
 
 const market = TAXIMUN_MARKETS.barcelona;
@@ -109,6 +117,39 @@ const formatDate = (value: unknown) => {
   return date.toLocaleString("es-ES", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" });
 };
 
+const cleanAddress = (value: unknown) => {
+  const text = String(value || "").trim();
+  if (!text) return "Ubicación detectada";
+  return text.split(",").slice(0, 4).join(",");
+};
+
+async function reverseGeocode(latitude: number, longitude: number) {
+  const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1`);
+  if (!response.ok) throw new Error("No se pudo convertir tu ubicación en dirección.");
+  const data = await response.json();
+  return cleanAddress(data.display_name) || `Ubicación actual (${latitude.toFixed(5)}, ${longitude.toFixed(5)})`;
+}
+
+async function searchAddress(query: string): Promise<AddressSuggestion[]> {
+  if (query.trim().length < 3) return [];
+  const params = new URLSearchParams({
+    format: "jsonv2",
+    q: `${query}, Barcelona, España`,
+    limit: "5",
+    countrycodes: "es",
+    addressdetails: "1",
+  });
+  const response = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`);
+  if (!response.ok) return [];
+  const data = await response.json();
+  if (!Array.isArray(data)) return [];
+  return data.slice(0, 5).map((item: any) => ({
+    label: cleanAddress(item.display_name),
+    lat: Number(item.lat),
+    lng: Number(item.lon),
+  }));
+}
+
 function statusLabel(status: RideStatus) {
   if (status === "pending") return "Buscando conductor";
   if (status === "assigned") return "Conductor asignado";
@@ -140,13 +181,18 @@ export default function PassengerPanelModern() {
   const [checking, setChecking] = useState(true);
   const [sessionOk, setSessionOk] = useState(false);
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
-  const [pickupAddress, setPickupAddress] = useState("Mi ubicación actual");
+  const [pickupAddress, setPickupAddress] = useState("Pulsa “Usar mi ubicación”");
   const [dropoffAddress, setDropoffAddress] = useState("Barcelona Sants");
   const [baseFare, setBaseFare] = useState(12.4);
   const [duration, setDuration] = useState(14);
   const [distanceKm, setDistanceKm] = useState(5.2);
   const [rideType, setRideType] = useState("taxi");
   const [error, setError] = useState("");
+  const [detectingLocation, setDetectingLocation] = useState(false);
+  const [locationMessage, setLocationMessage] = useState("Detecta tu ubicación para rellenar el origen automáticamente.");
+  const [pickupSuggestions, setPickupSuggestions] = useState<AddressSuggestion[]>([]);
+  const [dropoffSuggestions, setDropoffSuggestions] = useState<AddressSuggestion[]>([]);
+  const [focusedField, setFocusedField] = useState<"pickup" | "dropoff" | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -173,13 +219,28 @@ export default function PassengerPanelModern() {
   }, []);
 
   useEffect(() => {
-    if (!navigator.geolocation) return;
-    navigator.geolocation.getCurrentPosition(
-      (position) => setUserLocation({ latitude: position.coords.latitude, longitude: position.coords.longitude }),
-      () => setUserLocation(null),
-      { enableHighAccuracy: true, maximumAge: 30000, timeout: 10000 }
-    );
-  }, []);
+    const timer = window.setTimeout(async () => {
+      if (focusedField !== "pickup" || pickupAddress.trim().length < 3 || pickupAddress.includes("Usar mi ubicación")) {
+        setPickupSuggestions([]);
+        return;
+      }
+      const results = await searchAddress(pickupAddress);
+      setPickupSuggestions(results);
+    }, 450);
+    return () => window.clearTimeout(timer);
+  }, [pickupAddress, focusedField]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(async () => {
+      if (focusedField !== "dropoff" || dropoffAddress.trim().length < 3) {
+        setDropoffSuggestions([]);
+        return;
+      }
+      const results = await searchAddress(dropoffAddress);
+      setDropoffSuggestions(results);
+    }, 450);
+    return () => window.clearTimeout(timer);
+  }, [dropoffAddress, focusedField]);
 
   const currentRideQuery = trpc.system.taxiOps.passenger.getCurrentRide.useQuery(undefined, {
     enabled: sessionOk,
@@ -218,17 +279,71 @@ export default function PassengerPanelModern() {
   const progress = currentRide?.status === "pending" ? 28 : currentRide?.status === "assigned" ? 64 : currentRide?.status === "in_progress" ? 86 : 0;
   const activeZones = useMemo(() => market.zones.slice(0, 3), []);
 
+  const detectCurrentLocation = async () => {
+    if (!navigator.geolocation) {
+      setError("Tu navegador no permite detectar ubicación.");
+      return;
+    }
+
+    setDetectingLocation(true);
+    setError("");
+    setLocationMessage("Pidiendo permiso de ubicación...");
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const latitude = position.coords.latitude;
+        const longitude = position.coords.longitude;
+        setUserLocation({ latitude, longitude });
+        setLocationMessage("Ubicación detectada. Rellenando origen...");
+
+        try {
+          const address = await reverseGeocode(latitude, longitude);
+          setPickupAddress(address);
+          setLocationMessage("Origen rellenado automáticamente.");
+        } catch {
+          setPickupAddress(`Ubicación actual (${latitude.toFixed(5)}, ${longitude.toFixed(5)})`);
+          setLocationMessage("Ubicación detectada, pero no se pudo obtener nombre de calle.");
+        } finally {
+          setDetectingLocation(false);
+        }
+      },
+      () => {
+        setDetectingLocation(false);
+        setLocationMessage("Permiso de ubicación bloqueado. Puedes escribir el origen manualmente.");
+        setError("No se pudo detectar la ubicación. Activa permisos de ubicación en el navegador.");
+      },
+      { enableHighAccuracy: true, maximumAge: 15000, timeout: 12000 }
+    );
+  };
+
+  const selectSuggestion = (field: "pickup" | "dropoff", suggestion: AddressSuggestion) => {
+    if (field === "pickup") {
+      setPickupAddress(suggestion.label);
+      if (suggestion.lat && suggestion.lng) setUserLocation({ latitude: suggestion.lat, longitude: suggestion.lng });
+      setPickupSuggestions([]);
+    } else {
+      setDropoffAddress(suggestion.label);
+      setDropoffSuggestions([]);
+    }
+    setFocusedField(null);
+  };
+
   const applyPreset = (index: number) => {
     const preset = presets[index];
-    setPickupAddress(preset.pickup);
+    if (!userLocation && pickupAddress.includes("Usar mi ubicación")) {
+      setPickupAddress(preset.pickup);
+    }
     setDropoffAddress(preset.dropoff);
     setBaseFare(preset.fare);
     setDuration(preset.time);
     setDistanceKm(preset.km);
+    setDropoffSuggestions([]);
+    setPickupSuggestions([]);
   };
 
   const requestTaxi = async () => {
     if (!pickupAddress.trim() || !dropoffAddress.trim()) return setError("Falta origen o destino.");
+    if (pickupAddress.includes("Usar mi ubicación")) return setError("Detecta tu ubicación o escribe el origen manualmente.");
     if (currentRide) return setError("Ya tienes un viaje activo.");
     await createRideMutation.mutateAsync({
       pickupAddress,
@@ -273,7 +388,7 @@ export default function PassengerPanelModern() {
         </div>
         <div className="absolute bottom-6 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full bg-white px-4 py-2 shadow-2xl">
           <span className={`h-2.5 w-2.5 rounded-full ${currentRide?.status === "pending" ? "animate-pulse bg-amber-500" : "bg-cyan-500"}`} />
-          <span className="text-sm font-black">{currentRide ? statusLabel(currentRide.status) : "Listo para pedir en Barcelona"}</span>
+          <span className="text-sm font-black">{currentRide ? statusLabel(currentRide.status) : userLocation ? "Ubicación lista" : "Detecta tu ubicación"}</span>
         </div>
       </section>
 
@@ -293,14 +408,30 @@ export default function PassengerPanelModern() {
                   <div>
                     <p className="text-xs font-black uppercase tracking-[0.22em] text-cyan-200">Mercado activo</p>
                     <h2 className="text-2xl font-black">{market.city}</h2>
-                    <p className="mt-1 text-xs font-semibold text-slate-300">Preparado para crecer por ciudad y país.</p>
+                    <p className="mt-1 text-xs font-semibold text-slate-300">Origen real, destino automático y taxis verificados.</p>
                   </div>
                   <Badge className="bg-cyan-100 text-cyan-800 hover:bg-cyan-100">MVP real</Badge>
                 </div>
 
+                <div className="rounded-3xl border border-cyan-100 bg-cyan-50 p-3">
+                  <Button onClick={detectCurrentLocation} disabled={detectingLocation} className="h-12 w-full rounded-2xl bg-cyan-600 font-black text-white hover:bg-cyan-700">
+                    {detectingLocation ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <LocateFixed className="mr-2 h-5 w-5" />}
+                    {detectingLocation ? "Detectando ubicación..." : "Usar mi ubicación actual"}
+                  </Button>
+                  <p className="mt-2 text-xs font-bold text-cyan-800">{locationMessage}</p>
+                </div>
+
                 <div className="space-y-3 rounded-3xl bg-slate-50 p-3">
-                  <Input value={pickupAddress} onChange={(event) => setPickupAddress(event.target.value)} className="h-13 rounded-2xl border-0 bg-white font-bold shadow-sm" placeholder="Origen" />
-                  <Input value={dropoffAddress} onChange={(event) => setDropoffAddress(event.target.value)} className="h-13 rounded-2xl border-0 bg-white font-bold shadow-sm" placeholder="¿A dónde vas?" />
+                  <div className="relative">
+                    <MapPin className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-cyan-600" />
+                    <Input value={pickupAddress} onFocus={() => setFocusedField("pickup")} onChange={(event) => setPickupAddress(event.target.value)} className="h-14 rounded-2xl border-0 bg-white pl-12 font-bold shadow-sm" placeholder="Origen" />
+                    {focusedField === "pickup" && pickupSuggestions.length > 0 && <SuggestionList suggestions={pickupSuggestions} onSelect={(item) => selectSuggestion("pickup", item)} />}
+                  </div>
+                  <div className="relative">
+                    <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-blue-600" />
+                    <Input value={dropoffAddress} onFocus={() => setFocusedField("dropoff")} onChange={(event) => setDropoffAddress(event.target.value)} className="h-14 rounded-2xl border-0 bg-white pl-12 font-bold shadow-sm" placeholder="¿A dónde vas?" />
+                    {focusedField === "dropoff" && dropoffSuggestions.length > 0 && <SuggestionList suggestions={dropoffSuggestions} onSelect={(item) => selectSuggestion("dropoff", item)} />}
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-4 gap-2">
@@ -398,6 +529,19 @@ export default function PassengerPanelModern() {
         </div>
       </section>
     </main>
+  );
+}
+
+function SuggestionList({ suggestions, onSelect }: { suggestions: AddressSuggestion[]; onSelect: (suggestion: AddressSuggestion) => void }) {
+  return (
+    <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-50 overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-2xl">
+      {suggestions.map((suggestion) => (
+        <button key={`${suggestion.label}-${suggestion.lat}-${suggestion.lng}`} type="button" onClick={() => onSelect(suggestion)} className="flex w-full items-start gap-3 border-b border-slate-100 p-3 text-left last:border-0 hover:bg-slate-50">
+          <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-cyan-600" />
+          <span className="text-sm font-bold text-slate-700">{suggestion.label}</span>
+        </button>
+      ))}
+    </div>
   );
 }
 
