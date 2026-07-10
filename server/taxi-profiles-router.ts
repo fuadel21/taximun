@@ -151,6 +151,37 @@ export const taxiProfilesRouter = router({
       return data;
     }),
 
+  getDocumentSignedUrl: protectedProcedure
+    .input(z.object({ documentId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const { data: document, error } = await supabase
+        .from("taxi_driver_documents")
+        .select("id,driver_id,file_url,storage_bucket,storage_path")
+        .eq("id", input.documentId)
+        .maybeSingle();
+
+      throwIfSupabaseError(error);
+
+      if (!document) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Documento no encontrado." });
+      }
+
+      if (ctx.user?.role !== "admin" && document.driver_id !== ctx.user.openId) {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+
+      if (document.storage_bucket && document.storage_path) {
+        const { data, error: signedError } = await supabase.storage
+          .from(document.storage_bucket)
+          .createSignedUrl(document.storage_path, 300);
+
+        throwIfSupabaseError(signedError);
+        return { url: data?.signedUrl ?? null, expiresInSeconds: 300 };
+      }
+
+      return { url: document.file_url ?? null, expiresInSeconds: null };
+    }),
+
   getDriverPublicProfile: protectedProcedure
     .input(z.object({ driverId: z.string().min(1) }))
     .query(async ({ input }) => {
