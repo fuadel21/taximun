@@ -127,6 +127,10 @@ function throwAcceptRideError(error: { message: string } | null) {
     throw new TRPCError({ code: "CONFLICT", message: "Este viaje ya fue aceptado o ya no está disponible." });
   }
 
+  if (message.includes("DRIVER_ALREADY_REJECTED_RIDE")) {
+    throw new TRPCError({ code: "CONFLICT", message: "Ya habías rechazado este servicio." });
+  }
+
   if (message.includes("DRIVER_CANNOT_ACCEPT_OWN_RIDE")) {
     throw new TRPCError({ code: "FORBIDDEN", message: "No puedes aceptar tu propio viaje." });
   }
@@ -310,12 +314,9 @@ export const taxiOpsRouter = router({
       const operationState = await getDriverOperationState(ctx.user.openId);
       if (!operationState.canOperate) return [];
 
-      const { data, error } = await supabase
-        .from("taxi_rides")
-        .select("*")
-        .eq("status", "pending")
-        .order("requested_at", { ascending: true })
-        .limit(20);
+      const { data, error } = await supabase.rpc("taximun_find_pending_rides_for_driver", {
+        p_driver_id: ctx.user.openId,
+      });
 
       throwIfSupabaseError(error);
       return data ?? [];
@@ -418,23 +419,39 @@ export const taxiOpsRouter = router({
       .mutation(async ({ ctx, input }) => {
         assertDriver(ctx);
 
-        const { data, error } = await supabase
+        const { data: ride, error: rideError } = await supabase
           .from("taxi_rides")
-          .update({ status: "rejected" })
+          .select("*")
           .eq("id", input.rideId)
           .eq("status", "pending")
-          .select()
-          .single();
+          .maybeSingle();
+
+        throwIfSupabaseError(rideError);
+
+        if (!ride) {
+          throw new TRPCError({ code: "CONFLICT", message: "Este viaje ya no está disponible." });
+        }
+
+        const { error } = await supabase
+          .from("taxi_ride_rejections")
+          .upsert(
+            {
+              ride_id: input.rideId,
+              driver_id: ctx.user.openId,
+              reason: "driver_declined",
+            },
+            { onConflict: "ride_id,driver_id" }
+          );
 
         throwIfSupabaseError(error);
         await logActivity({
           actorId: ctx.user.openId,
           actorRole: actorRole(ctx),
-          message: "Viaje rechazado por conductor",
+          message: "Viaje descartado por conductor",
           rideId: input.rideId,
         });
 
-        return data;
+        return ride;
       }),
 
     completeRide: protectedProcedure
