@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { estimateTaximunFare, type Coordinates, type FareEstimate } from "@/lib/taximunFare";
 import { TAXIMUN_MARKETS } from "@shared/constants";
 import {
   AlertCircle,
@@ -178,7 +179,8 @@ export default function PassengerPanelModern() {
   const utils = trpc.useUtils();
   const [checking, setChecking] = useState(true);
   const [sessionOk, setSessionOk] = useState(false);
-  const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [userLocation, setUserLocation] = useState<Coordinates | null>(null);
+  const [dropoffLocation, setDropoffLocation] = useState<Coordinates | null>(null);
   const [pickupAddress, setPickupAddress] = useState("Pulsa “Usar mi ubicación”");
   const [dropoffAddress, setDropoffAddress] = useState("Barcelona Sants");
   const [baseFare, setBaseFare] = useState(12.4);
@@ -279,7 +281,25 @@ export default function PassengerPanelModern() {
   const currentRide = (currentRideQuery.data ?? null) as TaxiRideRow | null;
   const history = (historyQuery.data ?? []) as TaxiRideRow[];
   const selectedOption = rideOptions.find((item) => item.id === rideType) ?? rideOptions[0];
-  const fare = Number((baseFare * selectedOption.multiplier).toFixed(2));
+  const fareEstimate = useMemo(() => estimateTaximunFare({
+    pickup: userLocation,
+    dropoff: dropoffLocation,
+    pickupAddress,
+    dropoffAddress,
+    serviceType: rideType,
+    fallbackDistanceKm: distanceKm,
+    fallbackDurationMinutes: duration,
+  }), [userLocation, dropoffLocation, pickupAddress, dropoffAddress, rideType, distanceKm, duration]);
+  const estimateForService = (serviceType: string) => estimateTaximunFare({
+    pickup: userLocation,
+    dropoff: dropoffLocation,
+    pickupAddress,
+    dropoffAddress,
+    serviceType,
+    fallbackDistanceKm: distanceKm,
+    fallbackDurationMinutes: duration,
+  });
+  const fare = fareEstimate.estimatedFare;
   const pin = currentRide ? currentRide.id.slice(0, 4).toUpperCase() : "----";
   const saving = createRideMutation.isPending || cancelRideMutation.isPending;
   const progress = currentRide?.status === "pending" ? 28 : currentRide?.status === "assigned" ? 64 : currentRide?.status === "in_progress" ? 86 : 0;
@@ -325,10 +345,11 @@ export default function PassengerPanelModern() {
   const selectSuggestion = (field: "pickup" | "dropoff", suggestion: AddressSuggestion) => {
     if (field === "pickup") {
       setPickupAddress(suggestion.label);
-      if (suggestion.lat && suggestion.lng) setUserLocation({ latitude: suggestion.lat, longitude: suggestion.lng });
+      if (Number.isFinite(suggestion.lat) && Number.isFinite(suggestion.lng)) setUserLocation({ latitude: suggestion.lat!, longitude: suggestion.lng! });
       setPickupSuggestions([]);
     } else {
       setDropoffAddress(suggestion.label);
+      if (Number.isFinite(suggestion.lat) && Number.isFinite(suggestion.lng)) setDropoffLocation({ latitude: suggestion.lat!, longitude: suggestion.lng! });
       setDropoffSuggestions([]);
     }
     setFocusedField(null);
@@ -340,6 +361,7 @@ export default function PassengerPanelModern() {
       setPickupAddress(preset.pickup);
     }
     setDropoffAddress(preset.dropoff);
+    setDropoffLocation(null);
     setBaseFare(preset.fare);
     setDuration(preset.time);
     setDistanceKm(preset.km);
@@ -350,6 +372,7 @@ export default function PassengerPanelModern() {
   const applyZone = (zone: { name: string; etaMinutes?: number }) => {
     const eta = Number(zone.etaMinutes ?? 8);
     setDropoffAddress(zone.name);
+    setDropoffLocation(null);
     setBaseFare(Number(Math.max(8, eta * 1.15).toFixed(2)));
     setDuration(eta + 8);
     setDistanceKm(Number(Math.max(2.5, eta * 0.8).toFixed(1)));
@@ -374,6 +397,7 @@ export default function PassengerPanelModern() {
   const useSavedDestination = () => {
     if (!savedDestination) return;
     setDropoffAddress(savedDestination);
+    setDropoffLocation(null);
     setError("");
   };
 
@@ -386,9 +410,9 @@ export default function PassengerPanelModern() {
       dropoffAddress,
       pickupLat: userLocation?.latitude,
       pickupLng: userLocation?.longitude,
-      estimatedFare: fare,
-      estimatedDuration: duration,
-      distanceKm,
+      estimatedFare: fareEstimate.estimatedFare,
+      estimatedDuration: fareEstimate.durationMinutes,
+      distanceKm: fareEstimate.distanceKm,
       paymentMethod: selectedOption.id,
     });
   };
@@ -465,7 +489,7 @@ export default function PassengerPanelModern() {
                   </div>
                   <div className="relative">
                     <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-blue-600" />
-                    <Input value={dropoffAddress} onFocus={() => setFocusedField("dropoff")} onChange={(event) => setDropoffAddress(event.target.value)} className="h-14 rounded-2xl border-0 bg-white pl-12 font-bold shadow-sm" placeholder="¿A dónde vas?" />
+                    <Input value={dropoffAddress} onFocus={() => setFocusedField("dropoff")} onChange={(event) => { setDropoffAddress(event.target.value); setDropoffLocation(null); }} className="h-14 rounded-2xl border-0 bg-white pl-12 font-bold shadow-sm" placeholder="¿A dónde vas?" />
                     {focusedField === "dropoff" && dropoffSuggestions.length > 0 && <SuggestionList suggestions={dropoffSuggestions} onSelect={(item) => selectSuggestion("dropoff", item)} />}
                   </div>
                 </div>
@@ -494,14 +518,15 @@ export default function PassengerPanelModern() {
                     {rideOptions.map((option) => {
                       const Icon = option.icon;
                       const active = rideType === option.id;
+                      const optionEstimate = estimateForService(option.id);
                       return (
                         <button key={option.id} onClick={() => setRideType(option.id)} className={`rounded-3xl border p-4 text-left transition active:scale-95 ${active ? "border-slate-950 bg-slate-950 text-white shadow-xl" : "border-slate-100 bg-white"}`}>
                           <div className="flex items-center justify-between gap-3">
                             <Icon className="h-6 w-6" />
-                            <span className="text-lg font-black">{money(baseFare * option.multiplier)}</span>
+                            <span className="text-lg font-black">{money(optionEstimate.estimatedFare)}</span>
                           </div>
                           <p className="mt-3 font-black">{option.title}</p>
-                          <p className={`text-xs font-bold ${active ? "text-slate-300" : "text-slate-500"}`}>{option.note} · {duration} min</p>
+                          <p className={`text-xs font-bold ${active ? "text-slate-300" : "text-slate-500"}`}>{option.note} · {optionEstimate.durationMinutes} min · {optionEstimate.distanceKm} km</p>
                         </button>
                       );
                     })}
@@ -510,9 +535,11 @@ export default function PassengerPanelModern() {
 
                 <div className="grid grid-cols-3 gap-2">
                   <MiniMetric icon={<Euro className="h-4 w-4" />} title="Estimado" value={money(fare)} />
-                  <MiniMetric icon={<Clock3 className="h-4 w-4" />} title="Tiempo" value={`${duration} min`} />
-                  <MiniMetric icon={<Route className="h-4 w-4" />} title="Ruta" value={`${distanceKm} km`} />
+                  <MiniMetric icon={<Clock3 className="h-4 w-4" />} title="Tiempo" value={`${fareEstimate.durationMinutes} min`} />
+                  <MiniMetric icon={<Route className="h-4 w-4" />} title="Ruta" value={`${fareEstimate.distanceKm} km`} />
                 </div>
+
+                <FareBreakdownCard estimate={fareEstimate} />
 
                 <p className="rounded-3xl bg-amber-50 p-3 text-xs font-bold text-amber-800">{market.complianceNote}</p>
 
@@ -571,6 +598,30 @@ export default function PassengerPanelModern() {
         </div>
       </section>
     </main>
+  );
+}
+
+function FareBreakdownCard({ estimate }: { estimate: FareEstimate }) {
+  return (
+    <div className="rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-black">Cálculo estimado</p>
+          <p className="text-xs font-bold text-slate-500">Rango aproximado: {money(estimate.lowerFare)} - {money(estimate.upperFare)}</p>
+        </div>
+        <Badge className="bg-slate-100 text-slate-700 hover:bg-slate-100">Orientativo</Badge>
+      </div>
+      <div className="grid gap-2 text-xs font-bold text-slate-600 sm:grid-cols-2">
+        <p>Salida: <span className="text-slate-950">{money(estimate.baseFare)}</span></p>
+        <p>Distancia: <span className="text-slate-950">{money(estimate.distanceFare)}</span></p>
+        <p>Tiempo: <span className="text-slate-950">{money(estimate.timeFare)}</span></p>
+        <p>Gestión app: <span className="text-slate-950">{money(estimate.bookingFee)}</span></p>
+        {estimate.isAirport && <p>Aeropuerto: <span className="text-slate-950">{money(estimate.airportSupplement)}</span></p>}
+        {estimate.isNightOrHoliday && <p>Nocturno/festivo: <span className="text-slate-950">x{estimate.nightSupplement}</span></p>}
+        {estimate.serviceMultiplier !== 1 && <p>Servicio {estimate.serviceLabel}: <span className="text-slate-950">x{estimate.serviceMultiplier}</span></p>}
+      </div>
+      <p className="mt-3 rounded-2xl bg-amber-50 p-3 text-xs font-bold text-amber-800">El importe final puede variar por tráfico, ruta real, espera, suplementos y taxímetro.</p>
+    </div>
   );
 }
 
