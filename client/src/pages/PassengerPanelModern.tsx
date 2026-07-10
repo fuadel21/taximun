@@ -38,6 +38,7 @@ import {
 } from "lucide-react";
 
 type RideStatus = "pending" | "assigned" | "in_progress" | "completed" | "cancelled" | "rejected";
+type PaymentMethod = "cash" | "card" | "bizum";
 
 type TaxiRideRow = {
   id: string;
@@ -99,6 +100,12 @@ const rideOptions = market.serviceLevels.map((item) => ({
   ...item,
   icon: serviceIconById[item.id as keyof typeof serviceIconById] ?? Car,
 }));
+
+const paymentOptions: Array<{ id: PaymentMethod; title: string; note: string }> = [
+  { id: "cash", title: "Efectivo", note: "Pagas al conductor" },
+  { id: "card", title: "Tarjeta", note: "Marcado para pago con tarjeta" },
+  { id: "bizum", title: "Bizum", note: "Acuerdo directo con conductor" },
+];
 
 const clearGuest = () => {
   try {
@@ -187,6 +194,7 @@ export default function PassengerPanelModern() {
   const [duration, setDuration] = useState(14);
   const [distanceKm, setDistanceKm] = useState(5.2);
   const [rideType, setRideType] = useState("taxi");
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
   const [error, setError] = useState("");
   const [detectingLocation, setDetectingLocation] = useState(false);
   const [locationMessage, setLocationMessage] = useState("Detecta tu ubicación para rellenar el origen automáticamente.");
@@ -281,6 +289,7 @@ export default function PassengerPanelModern() {
   const currentRide = (currentRideQuery.data ?? null) as TaxiRideRow | null;
   const history = (historyQuery.data ?? []) as TaxiRideRow[];
   const selectedOption = rideOptions.find((item) => item.id === rideType) ?? rideOptions[0];
+  const selectedPayment = paymentOptions.find((item) => item.id === paymentMethod) ?? paymentOptions[0];
   const fareEstimate = useMemo(() => estimateTaximunFare({
     pickup: userLocation,
     dropoff: dropoffLocation,
@@ -413,7 +422,7 @@ export default function PassengerPanelModern() {
       estimatedFare: fareEstimate.estimatedFare,
       estimatedDuration: fareEstimate.durationMinutes,
       distanceKm: fareEstimate.distanceKm,
-      paymentMethod: selectedOption.id,
+      paymentMethod,
     });
   };
 
@@ -533,6 +542,8 @@ export default function PassengerPanelModern() {
                   </div>
                 </div>
 
+                <PaymentMethodCard selected={paymentMethod} options={paymentOptions} onChange={setPaymentMethod} />
+
                 <div className="grid grid-cols-3 gap-2">
                   <MiniMetric icon={<Euro className="h-4 w-4" />} title="Estimado" value={money(fare)} />
                   <MiniMetric icon={<Clock3 className="h-4 w-4" />} title="Tiempo" value={`${fareEstimate.durationMinutes} min`} />
@@ -540,12 +551,13 @@ export default function PassengerPanelModern() {
                 </div>
 
                 <FareBreakdownCard estimate={fareEstimate} />
+                <BookingSummaryCard serviceTitle={selectedOption.title} paymentTitle={selectedPayment.title} estimate={fareEstimate} pickupAddress={pickupAddress} dropoffAddress={dropoffAddress} />
 
                 <p className="rounded-3xl bg-amber-50 p-3 text-xs font-bold text-amber-800">{market.complianceNote}</p>
 
                 <Button onClick={requestTaxi} disabled={saving} className="h-15 w-full rounded-3xl bg-slate-950 text-base font-black text-white hover:bg-slate-800">
                   {createRideMutation.isPending ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Car className="mr-2 h-5 w-5" />}
-                  Confirmar taxi · {money(fare)}
+                  Solicitar taxi · {money(fare)}
                 </Button>
               </CardContent>
             </Card>
@@ -598,6 +610,47 @@ export default function PassengerPanelModern() {
         </div>
       </section>
     </main>
+  );
+}
+
+function PaymentMethodCard({ selected, options, onChange }: { selected: PaymentMethod; options: Array<{ id: PaymentMethod; title: string; note: string }>; onChange: (value: PaymentMethod) => void }) {
+  return (
+    <div className="space-y-2">
+      <p className="text-sm font-black text-slate-500">Método de pago</p>
+      <div className="grid gap-2 sm:grid-cols-3">
+        {options.map((option) => {
+          const active = option.id === selected;
+          return (
+            <button key={option.id} onClick={() => onChange(option.id)} className={`rounded-3xl border p-4 text-left transition active:scale-95 ${active ? "border-emerald-500 bg-emerald-50 text-emerald-900" : "border-slate-100 bg-white"}`}>
+              <div className="flex items-center justify-between gap-2">
+                <p className="font-black">{option.title}</p>
+                {active && <CheckCircle2 className="h-5 w-5 text-emerald-600" />}
+              </div>
+              <p className="mt-1 text-xs font-bold text-slate-500">{option.note}</p>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function BookingSummaryCard({ serviceTitle, paymentTitle, estimate, pickupAddress, dropoffAddress }: { serviceTitle: string; paymentTitle: string; estimate: FareEstimate; pickupAddress: string; dropoffAddress: string }) {
+  return (
+    <div className="rounded-3xl bg-slate-950 p-4 text-white">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.22em] text-cyan-200">Resumen antes de solicitar</p>
+          <h3 className="mt-1 text-2xl font-black">{money(estimate.estimatedFare)}</h3>
+          <p className="text-xs font-bold text-slate-300">{serviceTitle} · {paymentTitle} · {estimate.durationMinutes} min · {estimate.distanceKm} km</p>
+        </div>
+        <Badge className="bg-white text-slate-950 hover:bg-white">Estimado</Badge>
+      </div>
+      <div className="mt-4 space-y-2 text-xs font-bold text-slate-300">
+        <p><MapPin className="mr-2 inline h-4 w-4 text-cyan-300" />{pickupAddress}</p>
+        <p><Navigation className="mr-2 inline h-4 w-4 text-blue-300" />{dropoffAddress}</p>
+      </div>
+    </div>
   );
 }
 
