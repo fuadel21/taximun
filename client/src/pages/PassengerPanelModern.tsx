@@ -16,7 +16,6 @@ import {
   CircleDot,
   Clock3,
   Copy,
-  CreditCard,
   Euro,
   Heart,
   Home,
@@ -25,7 +24,6 @@ import {
   LockKeyhole,
   LogOut,
   MapPin,
-  MessageCircle,
   Navigation,
   Phone,
   Route,
@@ -193,6 +191,7 @@ export default function PassengerPanelModern() {
   const [pickupSuggestions, setPickupSuggestions] = useState<AddressSuggestion[]>([]);
   const [dropoffSuggestions, setDropoffSuggestions] = useState<AddressSuggestion[]>([]);
   const [focusedField, setFocusedField] = useState<"pickup" | "dropoff" | null>(null);
+  const [savedDestination, setSavedDestination] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -216,6 +215,13 @@ export default function PassengerPanelModern() {
     };
     prepare();
     return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("taximun_passenger_favorite_destination");
+      if (stored) setSavedDestination(stored);
+    } catch {}
   }, []);
 
   useEffect(() => {
@@ -341,6 +347,36 @@ export default function PassengerPanelModern() {
     setPickupSuggestions([]);
   };
 
+  const applyZone = (zone: { name: string; etaMinutes?: number }) => {
+    const eta = Number(zone.etaMinutes ?? 8);
+    setDropoffAddress(zone.name);
+    setBaseFare(Number(Math.max(8, eta * 1.15).toFixed(2)));
+    setDuration(eta + 8);
+    setDistanceKm(Number(Math.max(2.5, eta * 0.8).toFixed(1)));
+    setDropoffSuggestions([]);
+    setError("");
+  };
+
+  const saveFavoriteDestination = () => {
+    if (!dropoffAddress.trim()) {
+      setError("Escribe primero un destino para guardarlo como favorito.");
+      return;
+    }
+    try {
+      localStorage.setItem("taximun_passenger_favorite_destination", dropoffAddress.trim());
+      setSavedDestination(dropoffAddress.trim());
+      setError("");
+    } catch {
+      setError("No se pudo guardar el destino en este dispositivo.");
+    }
+  };
+
+  const useSavedDestination = () => {
+    if (!savedDestination) return;
+    setDropoffAddress(savedDestination);
+    setError("");
+  };
+
   const requestTaxi = async () => {
     if (!pickupAddress.trim() || !dropoffAddress.trim()) return setError("Falta origen o destino.");
     if (pickupAddress.includes("Usar mi ubicación")) return setError("Detecta tu ubicación o escribe el origen manualmente.");
@@ -434,6 +470,12 @@ export default function PassengerPanelModern() {
                   </div>
                 </div>
 
+                {savedDestination && (
+                  <button onClick={useSavedDestination} className="w-full rounded-3xl border border-emerald-100 bg-emerald-50 p-3 text-left text-sm font-black text-emerald-800 active:scale-95">
+                    <Heart className="mr-2 inline h-4 w-4" /> Usar destino guardado: {savedDestination}
+                  </button>
+                )}
+
                 <div className="grid grid-cols-4 gap-2">
                   {presets.map((item, index) => {
                     const Icon = item.icon;
@@ -485,15 +527,15 @@ export default function PassengerPanelModern() {
           <Card className="rounded-[1.75rem] border-white bg-white shadow-lg">
             <CardContent className="p-4">
               <div className="mb-3 flex items-center justify-between">
-                <h2 className="font-black">Zonas calientes Barcelona</h2>
+                <h2 className="font-black">Zonas sugeridas</h2>
                 <MapPin className="h-5 w-5 text-cyan-600" />
               </div>
               <div className="grid gap-2 sm:grid-cols-3">
                 {activeZones.map((zone) => (
-                  <div key={zone.id} className="rounded-3xl bg-slate-50 p-3">
+                  <button key={zone.id} onClick={() => applyZone(zone)} className="rounded-3xl bg-slate-50 p-3 text-left transition hover:bg-cyan-50 active:scale-95">
                     <p className="font-black">{zone.name}</p>
-                    <p className="text-xs font-bold text-slate-500">ETA {zone.etaMinutes} min · demanda {zone.demand}</p>
-                  </div>
+                    <p className="text-xs font-bold text-slate-500">Rellenar destino · ETA {zone.etaMinutes} min · demanda {zone.demand}</p>
+                  </button>
                 ))}
               </div>
             </CardContent>
@@ -502,14 +544,14 @@ export default function PassengerPanelModern() {
           <Card className="rounded-[1.75rem] border-white bg-white shadow-lg">
             <CardContent className="p-4">
               <div className="mb-3 flex items-center justify-between">
-                <h2 className="font-black">Seguridad y comodidad</h2>
+                <h2 className="font-black">Acciones útiles</h2>
                 <ShieldCheck className="h-5 w-5 text-cyan-600" />
               </div>
               <div className="grid grid-cols-4 gap-2">
-                <ActionPill icon={<Phone className="h-4 w-4" />} title="Llamada" />
-                <ActionPill icon={<MessageCircle className="h-4 w-4" />} title="Chat" />
-                <ActionPill icon={<CreditCard className="h-4 w-4" />} title="Pago" />
-                <ActionPill icon={<Heart className="h-4 w-4" />} title="Favorito" />
+                <ActionPill icon={<Phone className="h-4 w-4" />} title="Soporte" note="Incidencia" onClick={() => setLocation("/passenger/security")} />
+                <ActionPill icon={<BellRing className="h-4 w-4" />} title="Avisos" note="Ver" onClick={() => setLocation("/notifications")} />
+                <ActionPill icon={<Heart className="h-4 w-4" />} title={savedDestination ? "Guardado" : "Favorito"} note="Destino" onClick={saveFavoriteDestination} />
+                <ActionPill icon={<LocateFixed className="h-4 w-4" />} title="Ubicación" note="Detectar" onClick={detectCurrentLocation} disabled={detectingLocation} />
               </div>
             </CardContent>
           </Card>
@@ -559,7 +601,6 @@ function ActiveRideCard({ ride, pin, progress, saving, onCancel }: { ride: TaxiR
   const rating = Number(profile?.rating ?? 5).toFixed(1).replace(".", ",");
   const rides = Number(profile?.completed_rides ?? 0);
   const initials = driverName.split(" ").filter(Boolean).slice(0, 2).map((item) => item[0]).join("").toUpperCase() || "TX";
-  const hasDriver = Boolean(ride.driver_id);
   const pickupEta = ride.status === "pending" ? "Asignando" : ride.status === "assigned" ? "3-6 min" : ride.status === "in_progress" ? "En ruta" : "—";
 
   const shareTrip = async () => {
@@ -650,8 +691,8 @@ function ActiveRideCard({ ride, pin, progress, saving, onCancel }: { ride: TaxiR
         </div>
 
         <div className="grid grid-cols-3 gap-2">
-          <Button disabled={!hasDriver} variant="outline" className="h-12 rounded-2xl bg-white font-black"><Phone className="mr-2 h-4 w-4" />Llamar</Button>
-          <Button disabled={!hasDriver} variant="outline" className="h-12 rounded-2xl bg-white font-black"><MessageCircle className="mr-2 h-4 w-4" />Chat</Button>
+          <Button onClick={() => { window.location.href = "/passenger/security"; }} variant="outline" className="h-12 rounded-2xl bg-white font-black"><Phone className="mr-2 h-4 w-4" />Soporte</Button>
+          <Button onClick={() => { window.location.href = "/notifications"; }} variant="outline" className="h-12 rounded-2xl bg-white font-black"><BellRing className="mr-2 h-4 w-4" />Avisos</Button>
           <Button onClick={shareTrip} variant="outline" className="h-12 rounded-2xl bg-white font-black"><Share2 className="mr-2 h-4 w-4" />{shared ? "Copiado" : "Compartir"}</Button>
         </div>
 
@@ -692,8 +733,8 @@ function TripTimeline({ status }: { status: RideStatus }) {
 function MiniMetric({ icon, title, value }: { icon: ReactNode; title: string; value: string }) {
   return <div className="rounded-3xl bg-slate-50 p-3 text-center"><div className="mx-auto mb-1 flex h-7 w-7 items-center justify-center rounded-full bg-white text-cyan-600 shadow-sm">{icon}</div><p className="text-xs font-bold text-slate-400">{title}</p><p className="font-black">{value}</p></div>;
 }
-function ActionPill({ icon, title }: { icon: ReactNode; title: string }) {
-  return <button className="rounded-2xl bg-slate-50 p-3 text-center text-sm font-black text-slate-700 active:scale-95"><span className="mx-auto mb-1 flex justify-center text-cyan-600">{icon}</span>{title}</button>;
+function ActionPill({ icon, title, note, onClick, disabled }: { icon: ReactNode; title: string; note?: string; onClick?: () => void; disabled?: boolean }) {
+  return <button disabled={disabled} onClick={onClick} className={`rounded-2xl bg-slate-50 p-3 text-center text-sm font-black text-slate-700 active:scale-95 ${disabled ? "opacity-60" : "hover:bg-cyan-50"}`}><span className="mx-auto mb-1 flex justify-center text-cyan-600">{icon}</span>{title}{note && <span className="mt-0.5 block text-[10px] font-bold text-slate-400">{note}</span>}</button>;
 }
 function HistoryItem({ ride }: { ride: TaxiRideRow }) {
   return <div className="rounded-2xl bg-slate-50 p-3"><div className="flex items-center justify-between gap-2"><p className="truncate font-black">{ride.dropoff_address}</p>{statusBadge(ride.status)}</div><p className="mt-1 text-xs font-bold text-slate-500">{formatDate(ride.requested_at)} · {money(ride.estimated_fare)}</p></div>;
