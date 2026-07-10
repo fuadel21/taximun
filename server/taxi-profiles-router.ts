@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { protectedProcedure, router } from "./_core/trpc";
+import { createTaxiNotification, notifyAdmins } from "./taxi-notifications-router";
 import { supabase } from "./supabase-client";
 
 const profileRoleSchema = z.enum(["passenger", "driver", "admin"]);
@@ -148,6 +149,16 @@ export const taxiProfilesRouter = router({
         .eq("user_id", ctx.user.openId)
         .eq("role", "driver");
 
+      await notifyAdmins({
+        actorId: ctx.user.openId,
+        actorRole: "driver",
+        type: "document_uploaded",
+        title: "Nuevo documento de conductor",
+        body: `${ctx.user.name || "Un conductor"} ha enviado ${input.title || input.documentType} para revisión.`,
+        actionUrl: "/admin/verification",
+        metadata: { documentId: data.id, documentType: input.documentType },
+      });
+
       return data;
     }),
 
@@ -253,6 +264,21 @@ export const taxiProfilesRouter = router({
         .single();
 
       throwIfSupabaseError(error);
+
+      await createTaxiNotification({
+        recipientId: input.userId,
+        recipientRole: "driver",
+        actorId: ctx.user.openId,
+        actorRole: "admin",
+        type: input.isVerified ? "driver_approved" : "driver_rejected",
+        title: input.isVerified ? "Cuenta de conductor aprobada" : "Cuenta de conductor rechazada",
+        body: input.isVerified
+          ? "Tu cuenta ya está verificada. Ya puedes ponerte online y aceptar servicios."
+          : input.note || "Tu cuenta necesita revisión. Corrige la documentación y vuelve a enviarla.",
+        actionUrl: input.isVerified ? "/driver" : "/driver/profile",
+        metadata: { userId: input.userId },
+      });
+
       return data;
     }),
 
@@ -274,6 +300,21 @@ export const taxiProfilesRouter = router({
         .single();
 
       throwIfSupabaseError(error);
+
+      await createTaxiNotification({
+        recipientId: data.driver_id,
+        recipientRole: "driver",
+        actorId: ctx.user.openId,
+        actorRole: "admin",
+        type: input.status === "approved" ? "document_approved" : input.status === "rejected" ? "document_rejected" : "info",
+        title: input.status === "approved" ? "Documento aprobado" : input.status === "rejected" ? "Documento rechazado" : "Documento revisado",
+        body: input.status === "approved"
+          ? `${data.title || "Tu documento"} ha sido aprobado.`
+          : input.rejectionReason || `${data.title || "Tu documento"} necesita revisión.`,
+        actionUrl: "/driver/profile",
+        metadata: { documentId: data.id, documentType: data.document_type, status: input.status },
+      });
+
       return data;
     }),
 });

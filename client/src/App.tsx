@@ -7,6 +7,7 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
 import AuthReal from "./pages/AuthReal";
 import TestHub from "./pages/TestHub";
+import NotificationsPage from "./pages/NotificationsPage";
 import PassengerApp from "./pages/PassengerApp";
 import PassengerProfile from "./pages/PassengerProfile";
 import DriverApp from "./pages/DriverApp";
@@ -22,6 +23,7 @@ function Router() {
       <Route path={"/"} component={Home} />
       <Route path={"/auth"} component={AuthReal} />
       <Route path={"/test"} component={TestHub} />
+      <Route path={"/notifications"} component={NotificationsPage} />
       {/* Passenger routes */}
       <Route path={"/passenger"} component={PassengerApp} />
       <Route path={"/passenger/rides"} component={PassengerApp} />

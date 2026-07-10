@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { adminControlRouter } from "../admin-control-router";
+import { taxiNotificationsRouter } from "../taxi-notifications-router";
 import { taxiOpsRouter } from "../taxi-ops-router";
 import { taxiProfilesRouter } from "../taxi-profiles-router";
 import { taxiSafetyRouter } from "../taxi-safety-router";
@@ -8,6 +9,7 @@ import { adminProcedure, publicProcedure, router } from "./trpc";
 
 export const systemRouter = router({
   adminControl: adminControlRouter,
+  taxiNotifications: taxiNotificationsRouter,
   taxiOps: taxiOpsRouter,
   taxiProfiles: taxiProfilesRouter,
   taxiSafety: taxiSafetyRouter,
