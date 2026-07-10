@@ -107,6 +107,33 @@ function actorRole(ctx: any): "passenger" | "driver" | "admin" {
   return "passenger";
 }
 
+function throwAcceptRideError(error: { message: string } | null) {
+  if (!error) return;
+  const message = String(error.message || "");
+
+  if (message.includes("DRIVER_NOT_VERIFIED")) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Tu cuenta de conductor todavía no está verificada." });
+  }
+
+  if (message.includes("DRIVER_ALREADY_HAS_ACTIVE_RIDE") || message.includes("DRIVER_IS_BUSY")) {
+    throw new TRPCError({ code: "CONFLICT", message: "Ya tienes un servicio activo o estás marcado como ocupado." });
+  }
+
+  if (message.includes("RIDE_NOT_FOUND")) {
+    throw new TRPCError({ code: "NOT_FOUND", message: "El viaje ya no existe." });
+  }
+
+  if (message.includes("RIDE_NOT_AVAILABLE")) {
+    throw new TRPCError({ code: "CONFLICT", message: "Este viaje ya fue aceptado o ya no está disponible." });
+  }
+
+  if (message.includes("DRIVER_CANNOT_ACCEPT_OWN_RIDE")) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "No puedes aceptar tu propio viaje." });
+  }
+
+  throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message });
+}
+
 export const taxiOpsRouter = router({
   passenger: router({
     createRide: protectedProcedure
@@ -337,32 +364,19 @@ export const taxiOpsRouter = router({
         assertDriver(ctx);
         await assertDriverCanOperate(ctx.user.openId);
 
-        const { data, error } = await supabase
-          .from("taxi_rides")
-          .update({
-            driver_id: ctx.user.openId,
-            driver_name: ctx.user.name || "Conductor",
-            taxi_code: input.taxiCode,
-            plate: input.plate,
-            status: "assigned",
-            assigned_at: new Date().toISOString(),
-          })
-          .eq("id", input.rideId)
-          .eq("status", "pending")
-          .select()
-          .single();
+        const { data, error } = await supabase.rpc("taximun_accept_ride_transactional", {
+          p_ride_id: input.rideId,
+          p_driver_id: ctx.user.openId,
+          p_driver_name: ctx.user.name || "Conductor",
+          p_taxi_code: input.taxiCode,
+          p_plate: input.plate,
+        });
 
-        throwIfSupabaseError(error);
+        throwAcceptRideError(error);
 
-        await supabase
-          .from("driver_live_status")
-          .upsert({
-            driver_id: ctx.user.openId,
-            driver_name: ctx.user.name || "Conductor",
-            taxi_code: input.taxiCode,
-            plate: input.plate,
-            status: "busy",
-          });
+        if (!data) {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "No se pudo aceptar el viaje." });
+        }
 
         await logActivity({
           actorId: ctx.user.openId,
