@@ -10,20 +10,25 @@ import { Badge } from "@/components/ui/badge";
 import { TAXIMUN_MARKETS } from "@shared/constants";
 import {
   AlertCircle,
+  BellRing,
   Car,
   CheckCircle2,
+  CircleDot,
   Clock3,
+  Copy,
   CreditCard,
   Euro,
   Heart,
   Home,
   Loader2,
+  LockKeyhole,
   LogOut,
   MapPin,
   MessageCircle,
   Navigation,
   Phone,
   Route,
+  Share2,
   ShieldCheck,
   Sparkles,
   Star,
@@ -111,6 +116,13 @@ function statusLabel(status: RideStatus) {
   if (status === "completed") return "Finalizado";
   if (status === "cancelled") return "Cancelado";
   return "Rechazado";
+}
+
+function statusSubtitle(status: RideStatus) {
+  if (status === "pending") return "Estamos avisando a conductores verificados cerca de ti.";
+  if (status === "assigned") return "Tu taxi está asignado. Revisa matrícula, código y PIN antes de subir.";
+  if (status === "in_progress") return "Viaje iniciado. Puedes compartir los datos del trayecto.";
+  return "Consulta el detalle del servicio en tu historial.";
 }
 
 function statusBadge(status: RideStatus) {
@@ -260,7 +272,7 @@ export default function PassengerPanelModern() {
           </Button>
         </div>
         <div className="absolute bottom-6 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full bg-white px-4 py-2 shadow-2xl">
-          <span className="h-2.5 w-2.5 rounded-full bg-cyan-500" />
+          <span className={`h-2.5 w-2.5 rounded-full ${currentRide?.status === "pending" ? "animate-pulse bg-amber-500" : "bg-cyan-500"}`} />
           <span className="text-sm font-black">{currentRide ? statusLabel(currentRide.status) : "Listo para pedir en Barcelona"}</span>
         </div>
       </section>
@@ -390,6 +402,7 @@ export default function PassengerPanelModern() {
 }
 
 function ActiveRideCard({ ride, pin, progress, saving, onCancel }: { ride: TaxiRideRow; pin: string; progress: number; saving: boolean; onCancel: () => void }) {
+  const [shared, setShared] = useState(false);
   const driverProfileQuery = trpc.system.taxiProfiles.getDriverPublicProfile.useQuery(
     { driverId: ride.driver_id ?? "" },
     { enabled: Boolean(ride.driver_id), retry: false, refetchInterval: 10000 }
@@ -397,27 +410,63 @@ function ActiveRideCard({ ride, pin, progress, saving, onCancel }: { ride: TaxiR
   const profile = (driverProfileQuery.data ?? null) as DriverPublicProfile | null;
   const driverName = profile?.full_name || ride.driver_name || "Buscando conductor";
   const taxiCode = profile?.taxi_code || ride.taxi_code || "Taxi pendiente";
-  const plate = profile?.plate || ride.plate || "";
+  const plate = profile?.plate || ride.plate || "Pendiente";
   const vehicleModel = profile?.vehicle_model || "Vehículo pendiente";
   const rating = Number(profile?.rating ?? 5).toFixed(1).replace(".", ",");
   const rides = Number(profile?.completed_rides ?? 0);
   const initials = driverName.split(" ").filter(Boolean).slice(0, 2).map((item) => item[0]).join("").toUpperCase() || "TX";
+  const hasDriver = Boolean(ride.driver_id);
+  const pickupEta = ride.status === "pending" ? "Asignando" : ride.status === "assigned" ? "3-6 min" : ride.status === "in_progress" ? "En ruta" : "—";
+
+  const shareTrip = async () => {
+    const text = `Taximun · Viaje ${pin}\nEstado: ${statusLabel(ride.status)}\nOrigen: ${ride.pickup_address}\nDestino: ${ride.dropoff_address}\nTaxi: ${taxiCode}\nMatrícula: ${plate}`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: "Mi viaje Taximun", text });
+      } else if (navigator.clipboard) {
+        await navigator.clipboard.writeText(text);
+      }
+      setShared(true);
+      setTimeout(() => setShared(false), 2200);
+    } catch {}
+  };
 
   return (
-    <Card className="rounded-[1.75rem] border-white bg-white shadow-xl">
+    <Card className="overflow-hidden rounded-[1.75rem] border-white bg-white shadow-xl">
       <CardContent className="space-y-4 p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-sm font-black text-slate-500">Viaje activo</p>
-            <h2 className="text-2xl font-black">{statusLabel(ride.status)}</h2>
+        <div className="rounded-[1.5rem] bg-slate-950 p-4 text-white">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.22em] text-cyan-200">Viaje activo</p>
+              <h2 className="mt-1 text-2xl font-black">{statusLabel(ride.status)}</h2>
+              <p className="mt-1 text-sm font-semibold text-slate-300">{statusSubtitle(ride.status)}</p>
+            </div>
+            {statusBadge(ride.status)}
           </div>
-          {statusBadge(ride.status)}
+          <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10">
+            <div className="h-full rounded-full bg-gradient-to-r from-cyan-300 to-blue-400 transition-all" style={{ width: `${progress}%` }} />
+          </div>
+          <TripTimeline status={ride.status} />
         </div>
-        <div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-blue-600" style={{ width: `${progress}%` }} /></div>
+
+        {ride.status === "pending" && (
+          <div className="rounded-3xl border border-amber-100 bg-amber-50 p-4 text-amber-900">
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-amber-600 shadow-sm">
+                <Loader2 className="h-5 w-5 animate-spin" />
+              </div>
+              <div>
+                <p className="font-black">Buscando taxi verificado cerca de ti</p>
+                <p className="text-xs font-bold text-amber-700">Te avisaremos cuando un conductor acepte el servicio.</p>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="grid gap-3 sm:grid-cols-[1fr_0.8fr]">
           <div className="rounded-3xl bg-slate-50 p-4">
             <div className="flex items-start gap-3">
-              <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-slate-950 text-lg font-black text-white shadow-lg">
+              <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-slate-950 text-lg font-black text-white shadow-lg">
                 {profile?.avatar_url ? <img src={profile.avatar_url} alt={driverName} className="h-full w-full object-cover" /> : initials}
               </div>
               <div className="min-w-0 flex-1">
@@ -425,33 +474,74 @@ function ActiveRideCard({ ride, pin, progress, saving, onCancel }: { ride: TaxiR
                   <p className="truncate text-xl font-black">{driverName}</p>
                   {profile?.is_verified ? <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100"><ShieldCheck className="mr-1 h-3.5 w-3.5" />Verificado</Badge> : <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">Pendiente</Badge>}
                 </div>
-                <p className="text-sm font-bold text-slate-500">{taxiCode}{plate ? ` · ${plate}` : ""}</p>
+                <p className="text-sm font-bold text-slate-500">{taxiCode} · {plate}</p>
                 <p className="text-sm font-bold text-slate-500">{vehicleModel}</p>
               </div>
             </div>
-            <div className="mt-3 grid grid-cols-2 gap-2">
+            <div className="mt-3 grid grid-cols-3 gap-2">
               <MiniMetric icon={<Star className="h-4 w-4" />} title="Rating" value={rating} />
               <MiniMetric icon={<CheckCircle2 className="h-4 w-4" />} title="Viajes" value={String(rides)} />
+              <MiniMetric icon={<Clock3 className="h-4 w-4" />} title="Llegada" value={pickupEta} />
             </div>
           </div>
           <div className="rounded-3xl bg-slate-950 p-4 text-white">
             <p className="text-xs font-bold uppercase text-slate-400">PIN de recogida</p>
-            <p className="mt-1 text-3xl font-black tracking-widest">{pin}</p>
-            <p className="mt-3 text-xs font-bold text-slate-400">Comparte este PIN solo al subir al taxi.</p>
+            <p className="mt-1 text-4xl font-black tracking-widest">{pin}</p>
+            <p className="mt-3 text-xs font-bold text-slate-400">Compártelo solo cuando matrícula y conductor coincidan.</p>
+            <div className="mt-4 rounded-2xl bg-white/10 p-3 text-xs font-bold text-cyan-100">
+              <LockKeyhole className="mr-1 inline h-3.5 w-3.5" /> Viaje protegido por verificación Taximun.
+            </div>
           </div>
         </div>
+
         <div className="space-y-2 rounded-3xl bg-slate-50 p-4 text-sm font-bold text-slate-700">
           <p><MapPin className="mr-2 inline h-4 w-4 text-cyan-600" />{ride.pickup_address}</p>
           <p><Navigation className="mr-2 inline h-4 w-4 text-blue-600" />{ride.dropoff_address}</p>
         </div>
+
         <div className="grid grid-cols-3 gap-2">
           <MiniMetric icon={<Euro className="h-4 w-4" />} title="Precio" value={money(ride.estimated_fare)} />
           <MiniMetric icon={<Clock3 className="h-4 w-4" />} title="Tiempo" value={`${ride.estimated_duration} min`} />
           <MiniMetric icon={<Route className="h-4 w-4" />} title="Ruta" value={`${ride.distance_km} km`} />
         </div>
+
+        <div className="grid grid-cols-3 gap-2">
+          <Button disabled={!hasDriver} variant="outline" className="h-12 rounded-2xl bg-white font-black"><Phone className="mr-2 h-4 w-4" />Llamar</Button>
+          <Button disabled={!hasDriver} variant="outline" className="h-12 rounded-2xl bg-white font-black"><MessageCircle className="mr-2 h-4 w-4" />Chat</Button>
+          <Button onClick={shareTrip} variant="outline" className="h-12 rounded-2xl bg-white font-black"><Share2 className="mr-2 h-4 w-4" />{shared ? "Copiado" : "Compartir"}</Button>
+        </div>
+
+        <div className="grid gap-2 sm:grid-cols-2">
+          <div className="rounded-3xl bg-cyan-50 p-3 text-xs font-bold text-cyan-800"><BellRing className="mr-1 inline h-4 w-4" /> Recibirás aviso cuando el estado cambie.</div>
+          <div className="rounded-3xl bg-emerald-50 p-3 text-xs font-bold text-emerald-800"><Copy className="mr-1 inline h-4 w-4" /> Código viaje: {ride.id.slice(0, 8).toUpperCase()}</div>
+        </div>
+
         {(ride.status === "pending" || ride.status === "assigned") && <Button onClick={onCancel} disabled={saving} variant="outline" className="h-13 w-full rounded-3xl border-red-200 bg-white font-black text-red-700 hover:bg-red-50"><XCircle className="mr-2 h-5 w-5" />Cancelar viaje</Button>}
       </CardContent>
     </Card>
+  );
+}
+
+function TripTimeline({ status }: { status: RideStatus }) {
+  const steps = [
+    { id: "pending", label: "Solicitud" },
+    { id: "assigned", label: "Asignado" },
+    { id: "in_progress", label: "En viaje" },
+  ];
+  const currentIndex = status === "pending" ? 0 : status === "assigned" ? 1 : status === "in_progress" || status === "completed" ? 2 : 0;
+
+  return (
+    <div className="mt-4 grid grid-cols-3 gap-2">
+      {steps.map((step, index) => {
+        const active = index <= currentIndex;
+        return (
+          <div key={step.id} className={`rounded-2xl p-2 text-xs font-black ${active ? "bg-white text-slate-950" : "bg-white/10 text-slate-400"}`}>
+            <CircleDot className={`mb-1 h-4 w-4 ${active ? "text-cyan-600" : "text-slate-500"}`} />
+            {step.label}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
