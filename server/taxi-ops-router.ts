@@ -14,10 +14,21 @@ const rideStatusSchema = z.enum([
 
 const driverStatusSchema = z.enum(["available", "busy", "offline"]);
 
+type DriverOperationState = {
+  canOperate: boolean;
+  message: string;
+  verificationStatus: string;
+  isVerified: boolean;
+};
+
 function throwIfSupabaseError(error: { message: string } | null) {
   if (error) {
     throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: error.message });
   }
+}
+
+function throwDriverBlocked(message: string) {
+  throw new TRPCError({ code: "FORBIDDEN", message });
 }
 
 function assertPassenger(ctx: any) {
@@ -30,6 +41,50 @@ function assertDriver(ctx: any) {
   if (ctx.user?.role !== "driver" && ctx.user?.role !== "admin") {
     throw new TRPCError({ code: "FORBIDDEN" });
   }
+}
+
+async function getDriverOperationState(driverId: string): Promise<DriverOperationState> {
+  const { data: canOperate, error: canOperateError } = await supabase.rpc("taximun_driver_can_operate", {
+    p_driver_id: driverId,
+  });
+  throwIfSupabaseError(canOperateError);
+
+  const { data: profile, error: profileError } = await supabase
+    .from("taxi_user_profiles")
+    .select("is_verified,verification_status,verification_note")
+    .eq("user_id", driverId)
+    .eq("role", "driver")
+    .maybeSingle();
+  throwIfSupabaseError(profileError);
+
+  if (canOperate === true) {
+    return {
+      canOperate: true,
+      message: "Conductor verificado y autorizado para operar.",
+      verificationStatus: String(profile?.verification_status ?? "approved"),
+      isVerified: true,
+    };
+  }
+
+  const { data: message, error: messageError } = await supabase.rpc("taximun_driver_operation_message", {
+    p_driver_id: driverId,
+  });
+  throwIfSupabaseError(messageError);
+
+  return {
+    canOperate: false,
+    message: String(profile?.verification_note || message || "Tu cuenta de conductor todavía no está verificada."),
+    verificationStatus: String(profile?.verification_status ?? "missing"),
+    isVerified: Boolean(profile?.is_verified),
+  };
+}
+
+async function assertDriverCanOperate(driverId: string) {
+  const state = await getDriverOperationState(driverId);
+  if (!state.canOperate) {
+    throwDriverBlocked(state.message);
+  }
+  return state;
 }
 
 async function logActivity(input: {
@@ -161,6 +216,11 @@ export const taxiOpsRouter = router({
   }),
 
   driver: router({
+    getOperationalStatus: protectedProcedure.query(async ({ ctx }) => {
+      assertDriver(ctx);
+      return getDriverOperationState(ctx.user.openId);
+    }),
+
     upsertStatus: protectedProcedure
       .input(
         z.object({
@@ -174,6 +234,10 @@ export const taxiOpsRouter = router({
       )
       .mutation(async ({ ctx, input }) => {
         assertDriver(ctx);
+
+        if (input.status !== "offline") {
+          await assertDriverCanOperate(ctx.user.openId);
+        }
 
         const { data, error } = await supabase
           .from("driver_live_status")
@@ -215,6 +279,9 @@ export const taxiOpsRouter = router({
 
     getPendingRides: protectedProcedure.query(async ({ ctx }) => {
       assertDriver(ctx);
+
+      const operationState = await getDriverOperationState(ctx.user.openId);
+      if (!operationState.canOperate) return [];
 
       const { data, error } = await supabase
         .from("taxi_rides")
@@ -268,6 +335,7 @@ export const taxiOpsRouter = router({
       )
       .mutation(async ({ ctx, input }) => {
         assertDriver(ctx);
+        await assertDriverCanOperate(ctx.user.openId);
 
         const { data, error } = await supabase
           .from("taxi_rides")
