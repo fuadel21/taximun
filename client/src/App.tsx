@@ -14,6 +14,7 @@ import DriverProfile from "./pages/DriverProfile";
 import AdminPanel from "./pages/AdminPanel";
 import AdminSafetyPage from "./pages/AdminSafetyPage";
 import AdminAlertsPanel from "./pages/AdminAlertsPanel";
+import AdminVerificationPage from "./pages/AdminVerificationPage";
 
 function Router() {
   return (
@@ -37,6 +38,7 @@ function Router() {
       <Route path={"/admin"} component={AdminPanel} />
       <Route path={"/admin/dashboard"} component={AdminPanel} />
       <Route path={"/admin/users"} component={AdminPanel} />
+      <Route path={"/admin/verification"} component={AdminVerificationPage} />
       <Route path={"/admin/safety"} component={AdminSafetyPage} />
       <Route path={"/admin/alerts"} component={AdminAlertsPanel} />
       <Route path={"/admin/incidents"} component={AdminAlertsPanel} />
