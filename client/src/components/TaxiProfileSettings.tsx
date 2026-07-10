@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { trpc } from "@/lib/trpc";
+import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -36,12 +37,19 @@ type DriverDocumentRow = {
   title?: string | null;
   document_number?: string | null;
   file_url?: string | null;
+  storage_path?: string | null;
+  mime_type?: string | null;
+  file_size_bytes?: number | string | null;
   issued_at?: string | null;
   expires_at?: string | null;
   status: "pending" | "approved" | "rejected" | "expired";
   rejection_reason?: string | null;
   created_at?: string | null;
 };
+
+const DOCUMENT_BUCKET = "taxi-driver-documents";
+const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+const ALLOWED_FILE_TYPES = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
 
 const requiredDriverDocs: Array<{ type: DocumentType; label: string; help: string }> = [
   { type: "identity", label: "Identidad / DNI / NIE", help: "Documento de identidad del conductor" },
@@ -51,18 +59,27 @@ const requiredDriverDocs: Array<{ type: DocumentType; label: string; help: strin
   { type: "vehicle_inspection", label: "Inspección / ITV", help: "Revisión técnica vigente" },
 ];
 
-const docStatusLabel: Record<DriverDocumentRow["status"], string> = {
-  pending: "Pendiente",
-  approved: "Aprobado",
-  rejected: "Rechazado",
-  expired: "Caducado",
-};
-
 function docStatusBadge(status: DriverDocumentRow["status"]) {
   if (status === "approved") return <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100">Aprobado</Badge>;
   if (status === "rejected") return <Badge className="bg-red-100 text-red-800 hover:bg-red-100">Rechazado</Badge>;
   if (status === "expired") return <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">Caducado</Badge>;
   return <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">Pendiente</Badge>;
+}
+
+function sanitizeFileName(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9._-]/g, "-")
+    .replace(/-+/g, "-")
+    .slice(0, 120);
+}
+
+function formatFileSize(value: unknown) {
+  const bytes = Number(value ?? 0);
+  if (!bytes) return "";
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 export function TaxiProfileSettings({ role }: { role: ProfileRole }) {
@@ -90,6 +107,7 @@ export function TaxiProfileSettings({ role }: { role: ProfileRole }) {
       setDocumentNumber("");
       setDocumentExpiresAt("");
       setDocumentIssuedAt("");
+      setSelectedFile(null);
       setDocumentSaved(true);
       utils.system.taxiProfiles.getMyDocuments.invalidate();
       utils.system.taxiProfiles.getMe.invalidate();
@@ -117,6 +135,8 @@ export function TaxiProfileSettings({ role }: { role: ProfileRole }) {
   const [documentUrl, setDocumentUrl] = useState("");
   const [documentIssuedAt, setDocumentIssuedAt] = useState("");
   const [documentExpiresAt, setDocumentExpiresAt] = useState("");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploadingFile, setUploadingFile] = useState(false);
   const [saved, setSaved] = useState(false);
   const [documentSaved, setDocumentSaved] = useState(false);
   const [error, setError] = useState("");
@@ -170,20 +190,65 @@ export function TaxiProfileSettings({ role }: { role: ProfileRole }) {
 
   const submitDriverDocument = async () => {
     setError("");
-    if (!documentNumber.trim() && !documentUrl.trim()) {
-      setError("Introduce número/referencia o URL del documento.");
+    if (!documentNumber.trim() && !documentUrl.trim() && !selectedFile) {
+      setError("Añade un archivo, una URL o una referencia del documento.");
+      return;
+    }
+
+    if (selectedFile && !ALLOWED_FILE_TYPES.includes(selectedFile.type)) {
+      setError("Formato no permitido. Usa PDF, JPG, PNG o WEBP.");
+      return;
+    }
+
+    if (selectedFile && selectedFile.size > MAX_FILE_SIZE_BYTES) {
+      setError("El archivo supera 10 MB.");
       return;
     }
 
     const definition = requiredDriverDocs.find((item) => item.type === selectedDocumentType);
-    await submitDocument.mutateAsync({
-      documentType: selectedDocumentType,
-      title: definition?.label ?? "Documento conductor",
-      documentNumber,
-      fileUrl: documentUrl,
-      issuedAt: documentIssuedAt,
-      expiresAt: documentExpiresAt,
-    });
+    let storagePath: string | undefined;
+    let storageBucket: string | undefined;
+
+    try {
+      setUploadingFile(Boolean(selectedFile));
+      if (selectedFile) {
+        const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError) throw sessionError;
+        const authUserId = sessionData.session?.user.id;
+        if (!authUserId) throw new Error("Sesión no disponible para subir el archivo.");
+
+        const safeName = sanitizeFileName(selectedFile.name || `${selectedDocumentType}.pdf`);
+        const path = `${authUserId}/${selectedDocumentType}/${Date.now()}-${safeName}`;
+        const { error: uploadError } = await supabase.storage
+          .from(DOCUMENT_BUCKET)
+          .upload(path, selectedFile, {
+            cacheControl: "3600",
+            upsert: false,
+            contentType: selectedFile.type,
+          });
+
+        if (uploadError) throw uploadError;
+        storageBucket = DOCUMENT_BUCKET;
+        storagePath = path;
+      }
+
+      await submitDocument.mutateAsync({
+        documentType: selectedDocumentType,
+        title: definition?.label ?? "Documento conductor",
+        documentNumber,
+        fileUrl: documentUrl,
+        storageBucket,
+        storagePath,
+        mimeType: selectedFile?.type,
+        fileSizeBytes: selectedFile?.size,
+        issuedAt: documentIssuedAt,
+        expiresAt: documentExpiresAt,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo subir el documento.");
+    } finally {
+      setUploadingFile(false);
+    }
   };
 
   const verificationLabel = profile?.is_verified
@@ -193,6 +258,8 @@ export function TaxiProfileSettings({ role }: { role: ProfileRole }) {
       : profile?.verification_status === "in_review"
         ? "En revisión"
         : "Pendiente";
+
+  const documentSaving = submitDocument.isPending || uploadingFile;
 
   return (
     <section className="bg-[#f7f8fb] px-4 pb-8 pt-2">
@@ -256,7 +323,7 @@ export function TaxiProfileSettings({ role }: { role: ProfileRole }) {
                   <FileText className="h-5 w-5 text-cyan-300" />
                   <h3 className="font-black">Documentación para operar</h3>
                 </div>
-                <p className="mb-4 text-sm font-semibold text-slate-300">Sube o registra la referencia de cada documento. Un admin debe aprobarlos antes de marcarte como verificado.</p>
+                <p className="mb-4 text-sm font-semibold text-slate-300">Sube foto/PDF desde el móvil. El bucket es privado y admin generará enlaces temporales para revisar.</p>
                 <div className="grid gap-3 lg:grid-cols-[0.8fr_1fr]">
                   <div className="space-y-2">
                     {requiredDriverDocs.map((item) => {
@@ -268,20 +335,32 @@ export function TaxiProfileSettings({ role }: { role: ProfileRole }) {
                             {latest ? docStatusBadge(latest.status) : <Badge className="bg-white/10 text-white hover:bg-white/10">Falta</Badge>}
                           </div>
                           <p className="mt-1 text-xs font-semibold text-slate-400">{item.help}</p>
+                          {latest?.storage_path && <p className="mt-1 text-[11px] font-bold text-cyan-200">Archivo privado · {formatFileSize(latest.file_size_bytes)}</p>}
                         </button>
                       );
                     })}
                   </div>
                   <div className="space-y-3 rounded-3xl bg-white p-4 text-slate-950">
                     <Field label="Número o referencia" icon={<FileText className="h-4 w-4" />} value={documentNumber} onChange={setDocumentNumber} placeholder="Número licencia, póliza, referencia..." />
-                    <Field label="URL del documento" icon={<Upload className="h-4 w-4" />} value={documentUrl} onChange={setDocumentUrl} placeholder="https://..." />
+                    <div className="space-y-2">
+                      <Label className="flex items-center gap-2 text-sm font-black text-slate-700"><Upload className="h-4 w-4" />Archivo PDF/foto</Label>
+                      <Input
+                        type="file"
+                        accept="application/pdf,image/jpeg,image/png,image/webp"
+                        onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)}
+                        className="h-13 rounded-2xl border-slate-100 bg-slate-50 font-bold"
+                      />
+                      <p className="text-xs font-bold text-slate-500">Máximo 10 MB. Formatos: PDF, JPG, PNG, WEBP.</p>
+                      {selectedFile && <p className="rounded-2xl bg-cyan-50 p-2 text-xs font-black text-cyan-800">Seleccionado: {selectedFile.name} · {formatFileSize(selectedFile.size)}</p>}
+                    </div>
+                    <Field label="URL opcional" icon={<Upload className="h-4 w-4" />} value={documentUrl} onChange={setDocumentUrl} placeholder="https://..." />
                     <div className="grid gap-3 sm:grid-cols-2">
                       <Field label="Fecha emisión" icon={<FileText className="h-4 w-4" />} value={documentIssuedAt} onChange={setDocumentIssuedAt} placeholder="2026-01-01" />
                       <Field label="Caducidad" icon={<FileText className="h-4 w-4" />} value={documentExpiresAt} onChange={setDocumentExpiresAt} placeholder="2027-01-01" />
                     </div>
-                    <Button onClick={submitDriverDocument} disabled={submitDocument.isPending} className="h-12 w-full rounded-2xl bg-cyan-600 font-black text-white hover:bg-cyan-500">
-                      {submitDocument.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
-                      Enviar documento
+                    <Button onClick={submitDriverDocument} disabled={documentSaving} className="h-12 w-full rounded-2xl bg-cyan-600 font-black text-white hover:bg-cyan-500">
+                      {documentSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
+                      {uploadingFile ? "Subiendo archivo..." : "Enviar documento"}
                     </Button>
                   </div>
                 </div>
@@ -299,7 +378,7 @@ export function TaxiProfileSettings({ role }: { role: ProfileRole }) {
   );
 }
 
-function Field({ label, icon, value, onChange, placeholder }: { label: string; icon: React.ReactNode; value: string; onChange: (value: string) => void; placeholder: string }) {
+function Field({ label, icon, value, onChange, placeholder }: { label: string; icon: ReactNode; value: string; onChange: (value: string) => void; placeholder: string }) {
   return (
     <div className="space-y-2">
       <Label className="flex items-center gap-2 text-sm font-black text-slate-700">{icon}{label}</Label>
