@@ -1,1 +1,1 @@
-export { default } from "./[trpc]";
+export { default } from "./[...trpc]";
