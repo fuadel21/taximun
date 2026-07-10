@@ -3,6 +3,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
+import { GlobalNotificationDock } from "./components/GlobalNotificationDock";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
 import AuthReal from "./pages/AuthReal";
@@ -58,6 +59,7 @@ function App() {
         <TooltipProvider>
           <Toaster />
           <Router />
+          <GlobalNotificationDock />
         </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>
