@@ -40,8 +40,8 @@ begin
       for select
       to authenticated
       using (
-        passenger_id = 'supabase:' || auth.uid()::text
-        or driver_id = 'supabase:' || auth.uid()::text
+        taxi_ride_ratings.passenger_id = 'supabase:' || auth.uid()::text
+        or taxi_ride_ratings.driver_id = 'supabase:' || auth.uid()::text
         or exists (
           select 1 from public.taxi_user_profiles p
           where p.user_id = 'supabase:' || auth.uid()::text
@@ -61,12 +61,12 @@ begin
       for insert
       to authenticated
       with check (
-        passenger_id = 'supabase:' || auth.uid()::text
+        taxi_ride_ratings.passenger_id = 'supabase:' || auth.uid()::text
         and exists (
           select 1 from public.taxi_rides r
-          where r.id = ride_id
-            and r.passenger_id = passenger_id
-            and r.driver_id = driver_id
+          where r.id = taxi_ride_ratings.ride_id
+            and r.passenger_id = taxi_ride_ratings.passenger_id
+            and r.driver_id = taxi_ride_ratings.driver_id
             and r.status = 'completed'
         )
       );
