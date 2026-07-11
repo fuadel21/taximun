@@ -103,10 +103,49 @@ async function logActivity(input: {
   });
 }
 
+async function notifyUser(input: {
+  recipientId: string;
+  recipientRole: "passenger" | "driver" | "admin" | "user";
+  actorId?: string | null;
+  actorRole?: "passenger" | "driver" | "admin" | "system";
+  type?: "info" | "success" | "warning" | "error";
+  title: string;
+  body?: string | null;
+  actionUrl?: string | null;
+  metadata?: Record<string, unknown>;
+}) {
+  if (!input.recipientId) return;
+
+  const { error } = await supabase.from("taxi_notifications").insert({
+    recipient_id: input.recipientId,
+    recipient_role: input.recipientRole,
+    actor_id: input.actorId ?? null,
+    actor_role: input.actorRole ?? "system",
+    type: input.type ?? "info",
+    title: input.title,
+    body: input.body ?? null,
+    action_url: input.actionUrl ?? null,
+    metadata: input.metadata ?? {},
+  });
+
+  if (error) {
+    console.warn("Taximun notification skipped", { title: input.title, message: error.message });
+  }
+}
+
 function actorRole(ctx: any): "passenger" | "driver" | "admin" {
   if (ctx.user?.role === "admin") return "admin";
   if (ctx.user?.role === "driver") return "driver";
   return "passenger";
+}
+
+function statusTitle(status: string) {
+  if (status === "assigned") return "Taxi asignado";
+  if (status === "in_progress") return "Viaje iniciado";
+  if (status === "completed") return "Viaje finalizado";
+  if (status === "cancelled") return "Viaje cancelado";
+  if (status === "rejected") return "Viaje rechazado";
+  return "Estado del viaje actualizado";
 }
 
 function throwAcceptRideError(error: { message: string } | null) {
@@ -396,6 +435,23 @@ export const taxiOpsRouter = router({
           rideId: input.rideId,
         });
 
+        await notifyUser({
+          recipientId: data.passenger_id,
+          recipientRole: "passenger",
+          actorId: ctx.user.openId,
+          actorRole: actorRole(ctx),
+          type: "success",
+          title: "Taxi asignado",
+          body: `${data.driver_name || ctx.user.name || "Tu conductor"} ha aceptado tu viaje. Taxi ${data.taxi_code || input.taxiCode} · matrícula ${data.plate || input.plate}.`,
+          actionUrl: "/passenger",
+          metadata: {
+            rideId: data.id,
+            status: data.status,
+            taxiCode: data.taxi_code || input.taxiCode,
+            plate: data.plate || input.plate,
+          },
+        });
+
         return data;
       }),
 
@@ -419,6 +475,18 @@ export const taxiOpsRouter = router({
           actorRole: actorRole(ctx),
           message: "Viaje iniciado",
           rideId: input.rideId,
+        });
+
+        await notifyUser({
+          recipientId: data.passenger_id,
+          recipientRole: "passenger",
+          actorId: ctx.user.openId,
+          actorRole: actorRole(ctx),
+          type: "info",
+          title: "Viaje iniciado",
+          body: `Tu viaje hacia ${data.dropoff_address || "tu destino"} ha comenzado.`,
+          actionUrl: "/passenger",
+          metadata: { rideId: data.id, status: data.status },
         });
 
         return data;
@@ -504,6 +572,18 @@ export const taxiOpsRouter = router({
           rideId: input.rideId,
         });
 
+        await notifyUser({
+          recipientId: data.passenger_id,
+          recipientRole: "passenger",
+          actorId: ctx.user.openId,
+          actorRole: actorRole(ctx),
+          type: "success",
+          title: "Viaje finalizado",
+          body: `Tu viaje ha finalizado. Importe estimado: ${fare.toFixed(2)} €.",
+          actionUrl: "/passenger",
+          metadata: { rideId: data.id, status: data.status, estimatedFare: fare },
+        });
+
         return data;
       }),
   }),
@@ -553,6 +633,19 @@ export const taxiOpsRouter = router({
           message: `Admin cambió estado a ${input.status}`,
           rideId: input.rideId,
         });
+
+        await notifyUser({
+          recipientId: data.passenger_id,
+          recipientRole: "passenger",
+          actorId: ctx.user.openId,
+          actorRole: "admin",
+          type: input.status === "cancelled" || input.status === "rejected" ? "warning" : input.status === "completed" ? "success" : "info",
+          title: statusTitle(input.status),
+          body: `El estado de tu viaje cambió a ${input.status}.`,
+          actionUrl: "/passenger",
+          metadata: { rideId: data.id, status: data.status },
+        });
+
         return data;
       }),
   }),
