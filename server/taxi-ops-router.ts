@@ -579,7 +579,7 @@ export const taxiOpsRouter = router({
           actorRole: actorRole(ctx),
           type: "success",
           title: "Viaje finalizado",
-          body: `Tu viaje ha finalizado. Importe estimado: ${fare.toFixed(2)} €.",
+          body: `Tu viaje ha finalizado. Importe estimado: ${fare.toFixed(2)} €.`,
           actionUrl: "/passenger",
           metadata: { rideId: data.id, status: data.status, estimatedFare: fare },
         });
