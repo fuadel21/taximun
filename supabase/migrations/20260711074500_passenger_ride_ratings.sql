@@ -1,0 +1,77 @@
+-- Passenger post-trip ratings for completed taxi rides.
+
+alter table public.taxi_user_profiles
+  add column if not exists rating numeric(3,2) not null default 5.00,
+  add column if not exists rating_count integer not null default 0;
+
+create table if not exists public.taxi_ride_ratings (
+  id uuid primary key default gen_random_uuid(),
+  ride_id uuid not null references public.taxi_rides(id) on delete cascade,
+  passenger_id text not null,
+  driver_id text not null,
+  score integer not null check (score between 1 and 5),
+  comment text,
+  tags text[] not null default '{}'::text[],
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint taxi_ride_ratings_one_per_passenger unique (ride_id, passenger_id)
+);
+
+create index if not exists taxi_ride_ratings_driver_created_idx
+  on public.taxi_ride_ratings(driver_id, created_at desc);
+
+create index if not exists taxi_ride_ratings_passenger_created_idx
+  on public.taxi_ride_ratings(passenger_id, created_at desc);
+
+alter table public.taxi_ride_ratings enable row level security;
+
+-- The application server normally writes with service_role. These policies also
+-- keep direct authenticated access restricted to participants and admins.
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public'
+      and tablename = 'taxi_ride_ratings'
+      and policyname = 'ratings_participants_select'
+  ) then
+    create policy ratings_participants_select
+      on public.taxi_ride_ratings
+      for select
+      to authenticated
+      using (
+        passenger_id = 'supabase:' || auth.uid()::text
+        or driver_id = 'supabase:' || auth.uid()::text
+        or exists (
+          select 1 from public.taxi_user_profiles p
+          where p.user_id = 'supabase:' || auth.uid()::text
+            and p.role = 'admin'
+        )
+      );
+  end if;
+
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public'
+      and tablename = 'taxi_ride_ratings'
+      and policyname = 'ratings_passenger_insert'
+  ) then
+    create policy ratings_passenger_insert
+      on public.taxi_ride_ratings
+      for insert
+      to authenticated
+      with check (
+        passenger_id = 'supabase:' || auth.uid()::text
+        and exists (
+          select 1 from public.taxi_rides r
+          where r.id = ride_id
+            and r.passenger_id = passenger_id
+            and r.driver_id = driver_id
+            and r.status = 'completed'
+        )
+      );
+  end if;
+end $$;
+
+grant select, insert on public.taxi_ride_ratings to authenticated;
+grant all on public.taxi_ride_ratings to service_role;
