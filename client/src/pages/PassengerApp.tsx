@@ -1,4 +1,5 @@
 import { AppBottomNav } from "@/components/AppBottomNav";
+import { PassengerLiveTrackingSection } from "@/components/PassengerLiveTrackingSection";
 import { TaxiProfileSettings } from "@/components/TaxiProfileSettings";
 import { TaxiSupportActions } from "@/components/TaxiSupportActions";
 import { Car, Clock3, Home, ShieldCheck } from "lucide-react";
@@ -28,7 +29,10 @@ export default function PassengerApp() {
           </div>
         </main>
       ) : isRides ? (
-        <PassengerRidesPage />
+        <div className="min-h-screen bg-[#f7f8fb]">
+          <PassengerLiveTrackingSection />
+          <PassengerRidesPage />
+        </div>
       ) : (
         <PassengerPanelModern />
       )}
