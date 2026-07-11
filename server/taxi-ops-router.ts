@@ -13,6 +13,8 @@ const rideStatusSchema = z.enum([
 ]);
 
 const driverStatusSchema = z.enum(["available", "busy", "offline"]);
+const serviceTypeSchema = z.enum(["taxi", "eco", "van"]);
+const paymentMethodSchema = z.enum(["cash", "card", "bizum"]);
 
 type DriverOperationState = {
   canOperate: boolean;
@@ -152,7 +154,11 @@ export const taxiOpsRouter = router({
           estimatedFare: z.number().min(0),
           estimatedDuration: z.number().int().min(0),
           distanceKm: z.number().min(0),
-          paymentMethod: z.string().min(2).default("cash"),
+          paymentMethod: paymentMethodSchema.default("cash"),
+          serviceType: serviceTypeSchema.default("taxi"),
+          fareRangeMin: z.number().min(0).optional(),
+          fareRangeMax: z.number().min(0).optional(),
+          fareBreakdown: z.record(z.unknown()).default({}),
         })
       )
       .mutation(async ({ ctx, input }) => {
@@ -173,6 +179,10 @@ export const taxiOpsRouter = router({
             estimated_duration: input.estimatedDuration,
             distance_km: input.distanceKm,
             payment_method: input.paymentMethod,
+            service_type: input.serviceType,
+            fare_range_min: input.fareRangeMin ?? null,
+            fare_range_max: input.fareRangeMax ?? null,
+            fare_breakdown: input.fareBreakdown ?? {},
             status: "pending",
           })
           .select()
@@ -182,7 +192,7 @@ export const taxiOpsRouter = router({
         await logActivity({
           actorId: ctx.user.openId,
           actorRole: actorRole(ctx),
-          message: "Taxi solicitado",
+          message: `Taxi solicitado (${input.serviceType})`,
           rideId: data.id,
         });
 
