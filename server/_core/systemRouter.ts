@@ -4,6 +4,7 @@ import { taxiNotificationsRouter } from "../taxi-notifications-router";
 import { taxiOpsRouter } from "../taxi-ops-router";
 import { taxiPassengerTrackingRouter } from "../taxi-passenger-tracking-router";
 import { taxiProfilesRouter } from "../taxi-profiles-router";
+import { taxiRatingsRouter } from "../taxi-ratings-router";
 import { taxiSafetyRouter } from "../taxi-safety-router";
 import { notifyOwner } from "./notification";
 import { adminProcedure, publicProcedure, router } from "./trpc";
@@ -14,6 +15,7 @@ export const systemRouter = router({
   taxiOps: taxiOpsRouter,
   taxiPassengerTracking: taxiPassengerTrackingRouter,
   taxiProfiles: taxiProfilesRouter,
+  taxiRatings: taxiRatingsRouter,
   taxiSafety: taxiSafetyRouter,
 
   health: publicProcedure
