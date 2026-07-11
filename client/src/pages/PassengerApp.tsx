@@ -4,11 +4,13 @@ import { TaxiSupportActions } from "@/components/TaxiSupportActions";
 import { Car, Clock3, Home, ShieldCheck } from "lucide-react";
 import { useLocation } from "wouter";
 import PassengerPanelModern from "./PassengerPanelModern";
+import PassengerRidesPage from "./PassengerRidesPage";
 
 export default function PassengerApp() {
   const [location, setLocation] = useLocation();
   const isProfile = location.includes("/profile");
   const isSecurity = location.includes("/security");
+  const isRides = location.includes("/rides");
 
   return (
     <div className="pb-24 md:pb-0">
@@ -25,13 +27,15 @@ export default function PassengerApp() {
             <TaxiSupportActions role="passenger" />
           </div>
         </main>
+      ) : isRides ? (
+        <PassengerRidesPage />
       ) : (
         <PassengerPanelModern />
       )}
       <AppBottomNav
         items={[
-          { label: "Inicio", active: !isProfile && !isSecurity, icon: <Home className="h-5 w-5" />, onClick: () => setLocation("/passenger") },
-          { label: "Viaje", icon: <Car className="h-5 w-5" />, onClick: () => setLocation("/passenger") },
+          { label: "Inicio", active: !isProfile && !isSecurity && !isRides, icon: <Home className="h-5 w-5" />, onClick: () => setLocation("/passenger") },
+          { label: "Viaje", active: isRides, icon: <Car className="h-5 w-5" />, onClick: () => setLocation("/passenger/rides") },
           { label: "Seguro", active: isSecurity, icon: <ShieldCheck className="h-5 w-5" />, onClick: () => setLocation("/passenger/security") },
           { label: "Perfil", active: isProfile, icon: <Clock3 className="h-5 w-5" />, onClick: () => setLocation("/passenger/profile") },
         ]}
