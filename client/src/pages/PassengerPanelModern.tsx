@@ -52,6 +52,10 @@ type TaxiRideRow = {
   estimated_fare: number | string;
   estimated_duration: number | string;
   distance_km: number | string;
+  service_type?: string | null;
+  payment_method?: string | null;
+  fare_range_min?: number | string | null;
+  fare_range_max?: number | string | null;
   status: RideStatus;
   requested_at?: string | null;
 };
@@ -419,10 +423,28 @@ export default function PassengerPanelModern() {
       dropoffAddress,
       pickupLat: userLocation?.latitude,
       pickupLng: userLocation?.longitude,
+      dropoffLat: dropoffLocation?.latitude,
+      dropoffLng: dropoffLocation?.longitude,
       estimatedFare: fareEstimate.estimatedFare,
       estimatedDuration: fareEstimate.durationMinutes,
       distanceKm: fareEstimate.distanceKm,
       paymentMethod,
+      serviceType: rideType as "taxi" | "eco" | "van",
+      fareRangeMin: fareEstimate.lowerFare,
+      fareRangeMax: fareEstimate.upperFare,
+      fareBreakdown: {
+        baseFare: fareEstimate.baseFare,
+        distanceFare: fareEstimate.distanceFare,
+        timeFare: fareEstimate.timeFare,
+        bookingFee: fareEstimate.bookingFee,
+        airportSupplement: fareEstimate.airportSupplement,
+        nightSupplement: fareEstimate.nightSupplement,
+        serviceMultiplier: fareEstimate.serviceMultiplier,
+        serviceLabel: fareEstimate.serviceLabel,
+        minimumFare: fareEstimate.minimumFare,
+        isAirport: fareEstimate.isAirport,
+        isNightOrHoliday: fareEstimate.isNightOrHoliday,
+      },
     });
   };
 
@@ -792,6 +814,11 @@ function ActiveRideCard({ ride, pin, progress, saving, onCancel }: { ride: TaxiR
           <MiniMetric icon={<Euro className="h-4 w-4" />} title="Precio" value={money(ride.estimated_fare)} />
           <MiniMetric icon={<Clock3 className="h-4 w-4" />} title="Tiempo" value={`${ride.estimated_duration} min`} />
           <MiniMetric icon={<Route className="h-4 w-4" />} title="Ruta" value={`${ride.distance_km} km`} />
+        </div>
+
+        <div className="rounded-3xl bg-slate-50 p-3 text-xs font-bold text-slate-600">
+          Servicio: <span className="text-slate-950">{ride.service_type || "taxi"}</span> · Pago: <span className="text-slate-950">{ride.payment_method || "cash"}</span>
+          {ride.fare_range_min && ride.fare_range_max && <span> · Rango: <span className="text-slate-950">{money(ride.fare_range_min)} - {money(ride.fare_range_max)}</span></span>}
         </div>
 
         <div className="grid grid-cols-3 gap-2">
