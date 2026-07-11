@@ -1,5 +1,6 @@
 import { AppBottomNav } from "@/components/AppBottomNav";
 import { PassengerLiveTrackingSection } from "@/components/PassengerLiveTrackingSection";
+import { PassengerPostTripRatingSection } from "@/components/PassengerPostTripRatingSection";
 import { TaxiProfileSettings } from "@/components/TaxiProfileSettings";
 import { TaxiSupportActions } from "@/components/TaxiSupportActions";
 import { Car, Clock3, Home, ShieldCheck } from "lucide-react";
@@ -31,6 +32,7 @@ export default function PassengerApp() {
       ) : isRides ? (
         <div className="min-h-screen bg-[#f7f8fb]">
           <PassengerLiveTrackingSection />
+          <PassengerPostTripRatingSection />
           <PassengerRidesPage />
         </div>
       ) : (
