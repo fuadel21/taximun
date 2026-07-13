@@ -66,6 +66,65 @@ export const taxiRatingsRouter = router({
     return data ?? [];
   }),
 
+  getPublicDriverReputation: protectedProcedure
+    .input(z.object({ driverId: z.string().min(1) }))
+    .query(async ({ input }) => {
+      const [profileResult, ratingsResult] = await Promise.all([
+        supabase
+          .from("taxi_user_profiles")
+          .select("user_id,full_name,avatar_url,rating,rating_count,completed_rides,taxi_code,plate,vehicle_model,work_zone,is_verified,verification_status,created_at")
+          .eq("user_id", input.driverId)
+          .eq("role", "driver")
+          .maybeSingle(),
+        supabase
+          .from("taxi_ride_ratings")
+          .select("id,score,comment,tags,created_at")
+          .eq("driver_id", input.driverId)
+          .order("created_at", { ascending: false })
+          .limit(20),
+      ]);
+
+      throwIfSupabaseError(profileResult.error);
+      throwIfSupabaseError(ratingsResult.error);
+
+      if (!profileResult.data) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Perfil público del conductor no encontrado." });
+      }
+
+      const ratings = ratingsResult.data ?? [];
+      const tagCounts: Record<string, number> = {};
+      for (const rating of ratings) {
+        for (const tag of Array.isArray(rating.tags) ? rating.tags : []) {
+          tagCounts[String(tag)] = (tagCounts[String(tag)] ?? 0) + 1;
+        }
+      }
+
+      const badges: string[] = [];
+      const average = Number(profileResult.data.rating ?? 5);
+      const ratingCount = Number(profileResult.data.rating_count ?? ratings.length);
+      const completedRides = Number(profileResult.data.completed_rides ?? 0);
+
+      if (profileResult.data.is_verified) badges.push("verified");
+      if (average >= 4.8 && ratingCount >= 5) badges.push("excellent_rating");
+      if (completedRides >= 100) badges.push("experienced");
+      if ((tagCounts.punctual ?? 0) >= 3) badges.push("punctual");
+      if ((tagCounts.safe_driving ?? 0) >= 3) badges.push("safe_driver");
+      if ((tagCounts.clean_vehicle ?? 0) >= 3) badges.push("clean_vehicle");
+
+      return {
+        profile: profileResult.data,
+        badges,
+        tagCounts,
+        reviews: ratings.map((rating) => ({
+          id: rating.id,
+          score: rating.score,
+          comment: rating.comment,
+          tags: rating.tags,
+          createdAt: rating.created_at,
+        })),
+      };
+    }),
+
   createRating: protectedProcedure
     .input(
       z.object({

@@ -1,4 +1,5 @@
 import { AppBottomNav } from "@/components/AppBottomNav";
+import { PassengerDriverPublicProfileSection } from "@/components/PassengerDriverPublicProfileSection";
 import { PassengerLiveTrackingSection } from "@/components/PassengerLiveTrackingSection";
 import { PassengerPostTripRatingSection } from "@/components/PassengerPostTripRatingSection";
 import { TaxiProfileSettings } from "@/components/TaxiProfileSettings";
@@ -33,6 +34,7 @@ export default function PassengerApp() {
         <div className="min-h-screen bg-[#f7f8fb]">
           <PassengerLiveTrackingSection />
           <PassengerPostTripRatingSection />
+          <PassengerDriverPublicProfileSection />
           <PassengerRidesPage />
         </div>
       ) : (
