@@ -2,8 +2,9 @@ import { AppBottomNav } from "@/components/AppBottomNav";
 import { DriverGpsHeartbeat } from "@/components/DriverGpsHeartbeat";
 import { TaxiProfileSettings } from "@/components/TaxiProfileSettings";
 import { TaxiSupportActions } from "@/components/TaxiSupportActions";
-import { Car, Home, ShieldCheck, UserRound } from "lucide-react";
+import { BarChart3, Car, Home, ShieldCheck, UserRound } from "lucide-react";
 import { useLocation } from "wouter";
+import DriverEarningsPage from "./DriverEarningsPage";
 import DriverPanelModern from "./DriverPanelModern";
 import DriverServicesPage from "./DriverServicesPage";
 
@@ -12,6 +13,7 @@ export default function DriverApp() {
   const isProfile = location.includes("/profile");
   const isSecurity = location.includes("/security");
   const isQueue = location.includes("/queue");
+  const isEarnings = location.includes("/earnings");
 
   return (
     <div className="pb-24 md:pb-0">
@@ -33,6 +35,8 @@ export default function DriverApp() {
           <DriverGpsHeartbeat />
           <DriverServicesPage />
         </div>
+      ) : isEarnings ? (
+        <DriverEarningsPage />
       ) : (
         <div className="min-h-screen bg-slate-950">
           <DriverGpsHeartbeat />
@@ -41,8 +45,9 @@ export default function DriverApp() {
       )}
       <AppBottomNav
         items={[
-          { label: "Turno", active: !isProfile && !isSecurity && !isQueue, icon: <Home className="h-5 w-5" />, onClick: () => setLocation("/driver") },
+          { label: "Turno", active: !isProfile && !isSecurity && !isQueue && !isEarnings, icon: <Home className="h-5 w-5" />, onClick: () => setLocation("/driver") },
           { label: "Servicios", active: isQueue, icon: <Car className="h-5 w-5" />, onClick: () => setLocation("/driver/queue") },
+          { label: "Ingresos", active: isEarnings, icon: <BarChart3 className="h-5 w-5" />, onClick: () => setLocation("/driver/earnings") },
           { label: "Seguro", active: isSecurity, icon: <ShieldCheck className="h-5 w-5" />, onClick: () => setLocation("/driver/security") },
           { label: "Perfil", active: isProfile, icon: <UserRound className="h-5 w-5" />, onClick: () => setLocation("/driver/profile") },
         ]}
