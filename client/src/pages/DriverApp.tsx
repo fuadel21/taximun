@@ -1,4 +1,5 @@
 import { AppBottomNav } from "@/components/AppBottomNav";
+import { DriverGpsHeartbeat } from "@/components/DriverGpsHeartbeat";
 import { TaxiProfileSettings } from "@/components/TaxiProfileSettings";
 import { TaxiSupportActions } from "@/components/TaxiSupportActions";
 import { Car, Home, ShieldCheck, UserRound } from "lucide-react";
@@ -26,7 +27,10 @@ export default function DriverApp() {
           </div>
         </main>
       ) : (
-        <DriverPanelModern />
+        <div className="min-h-screen bg-slate-950">
+          <DriverGpsHeartbeat />
+          <DriverPanelModern />
+        </div>
       )}
       <AppBottomNav
         items={[
