@@ -5,11 +5,13 @@ import { TaxiSupportActions } from "@/components/TaxiSupportActions";
 import { Car, Home, ShieldCheck, UserRound } from "lucide-react";
 import { useLocation } from "wouter";
 import DriverPanelModern from "./DriverPanelModern";
+import DriverServicesPage from "./DriverServicesPage";
 
 export default function DriverApp() {
   const [location, setLocation] = useLocation();
   const isProfile = location.includes("/profile");
   const isSecurity = location.includes("/security");
+  const isQueue = location.includes("/queue");
 
   return (
     <div className="pb-24 md:pb-0">
@@ -26,6 +28,11 @@ export default function DriverApp() {
             <TaxiSupportActions role="driver" />
           </div>
         </main>
+      ) : isQueue ? (
+        <div className="min-h-screen bg-[#f7f8fb]">
+          <DriverGpsHeartbeat />
+          <DriverServicesPage />
+        </div>
       ) : (
         <div className="min-h-screen bg-slate-950">
           <DriverGpsHeartbeat />
@@ -34,8 +41,8 @@ export default function DriverApp() {
       )}
       <AppBottomNav
         items={[
-          { label: "Turno", active: !isProfile && !isSecurity, icon: <Home className="h-5 w-5" />, onClick: () => setLocation("/driver") },
-          { label: "Servicios", icon: <Car className="h-5 w-5" />, onClick: () => setLocation("/driver/queue") },
+          { label: "Turno", active: !isProfile && !isSecurity && !isQueue, icon: <Home className="h-5 w-5" />, onClick: () => setLocation("/driver") },
+          { label: "Servicios", active: isQueue, icon: <Car className="h-5 w-5" />, onClick: () => setLocation("/driver/queue") },
           { label: "Seguro", active: isSecurity, icon: <ShieldCheck className="h-5 w-5" />, onClick: () => setLocation("/driver/security") },
           { label: "Perfil", active: isProfile, icon: <UserRound className="h-5 w-5" />, onClick: () => setLocation("/driver/profile") },
         ]}
