@@ -1,5 +1,6 @@
 import { AppBottomNav } from "@/components/AppBottomNav";
 import { DriverGpsHeartbeat } from "@/components/DriverGpsHeartbeat";
+import { DriverTripSettlementSection } from "@/components/DriverTripSettlementSection";
 import { TaxiProfileSettings } from "@/components/TaxiProfileSettings";
 import { TaxiSupportActions } from "@/components/TaxiSupportActions";
 import { BarChart3, Car, Home, ShieldCheck, UserRound } from "lucide-react";
@@ -33,6 +34,7 @@ export default function DriverApp() {
       ) : isQueue ? (
         <div className="min-h-screen bg-[#f7f8fb]">
           <DriverGpsHeartbeat />
+          <DriverTripSettlementSection />
           <DriverServicesPage />
         </div>
       ) : isEarnings ? (
