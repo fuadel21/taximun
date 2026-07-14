@@ -22,3 +22,29 @@ end $$;
 
 create index if not exists taxi_rides_driver_settlement_idx
   on public.taxi_rides(driver_id, payment_status, completed_at desc);
+
+create or replace function public.taximun_require_settlement_before_completion()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.status = 'completed' and old.status is distinct from 'completed' then
+    if new.final_fare is null or new.final_fare < 0 then
+      raise exception 'RIDE_SETTLEMENT_REQUIRED: final fare missing';
+    end if;
+    if new.payment_status not in ('paid', 'waived') then
+      raise exception 'RIDE_SETTLEMENT_REQUIRED: payment not confirmed';
+    end if;
+    if new.settled_at is null or new.settled_by is null then
+      raise exception 'RIDE_SETTLEMENT_REQUIRED: settlement metadata missing';
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_taximun_require_settlement on public.taxi_rides;
+create trigger trg_taximun_require_settlement
+before update of status on public.taxi_rides
+for each row
+execute function public.taximun_require_settlement_before_completion();
