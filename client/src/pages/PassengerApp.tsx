@@ -1,4 +1,5 @@
 import { AppBottomNav } from "@/components/AppBottomNav";
+import { PassengerDispatchStatus } from "@/components/PassengerDispatchStatus";
 import { PassengerDriverPublicProfileSection } from "@/components/PassengerDriverPublicProfileSection";
 import { PassengerLiveTrackingSection } from "@/components/PassengerLiveTrackingSection";
 import { PassengerPostTripRatingSection } from "@/components/PassengerPostTripRatingSection";
@@ -32,13 +33,17 @@ export default function PassengerApp() {
         </main>
       ) : isRides ? (
         <div className="min-h-screen bg-[#f7f8fb]">
+          <PassengerDispatchStatus />
           <PassengerLiveTrackingSection />
           <PassengerPostTripRatingSection />
           <PassengerDriverPublicProfileSection />
           <PassengerRidesPage />
         </div>
       ) : (
-        <PassengerPanelModern />
+        <div>
+          <PassengerDispatchStatus />
+          <PassengerPanelModern />
+        </div>
       )}
       <AppBottomNav
         items={[
