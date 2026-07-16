@@ -16,6 +16,10 @@ function assertPassenger(ctx: any) {
   }
 }
 
+function assertAdmin(ctx: any) {
+  if (ctx.user?.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
+}
+
 function throwIfSupabaseError(error: { message: string } | null) {
   if (error) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: error.message });
 }
@@ -30,15 +34,23 @@ function throwOfferError(error: { message: string } | null) {
     throw new TRPCError({ code: "NOT_FOUND", message: "La oferta ya no está disponible." });
   }
   if (message.includes("RIDE_NOT_AVAILABLE")) {
-    throw new TRPCError({ code: "CONFLICT", message: "El viaje ya ha sido asignado." });
+    throw new TRPCError({ code: "CONFLICT", message: "El viaje ya ha sido asignado o cancelado." });
   }
   throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message });
+}
+
+async function reconcileDispatch() {
+  const { data, error } = await supabase.rpc("taximun_reconcile_dispatch_state");
+  throwIfSupabaseError(error);
+  return data ?? null;
 }
 
 export const taxiRideOffersRouter = router({
   driver: router({
     getCurrentOffer: protectedProcedure.query(async ({ ctx }) => {
       assertDriver(ctx);
+      await reconcileDispatch();
+
       const { data: operational, error: operationalError } = await supabase.rpc("taximun_driver_can_operate", {
         p_driver_id: ctx.user.openId,
       });
@@ -52,6 +64,41 @@ export const taxiRideOffersRouter = router({
       return data ?? null;
     }),
 
+    recoverSession: protectedProcedure.query(async ({ ctx }) => {
+      assertDriver(ctx);
+      const reconciliation = await reconcileDispatch();
+
+      const [{ data: offer, error: offerError }, { data: ride, error: rideError }] = await Promise.all([
+        supabase
+          .from("taxi_ride_offers")
+          .select("*")
+          .eq("driver_id", ctx.user.openId)
+          .eq("status", "pending")
+          .gt("expires_at", new Date().toISOString())
+          .order("offered_at", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        supabase
+          .from("taxi_rides")
+          .select("id,status,pickup_address,dropoff_address,assigned_at,started_at")
+          .eq("driver_id", ctx.user.openId)
+          .in("status", ["assigned", "in_progress"])
+          .order("assigned_at", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+      ]);
+
+      throwIfSupabaseError(offerError);
+      throwIfSupabaseError(rideError);
+
+      return {
+        reconciliation,
+        pendingOffer: offer ?? null,
+        activeRide: ride ?? null,
+        resumePath: ride ? "/driver/navigation" : offer ? "/driver" : null,
+      };
+    }),
+
     acceptOffer: protectedProcedure
       .input(z.object({
         offerId: z.string().uuid(),
@@ -60,6 +107,8 @@ export const taxiRideOffersRouter = router({
       }))
       .mutation(async ({ ctx, input }) => {
         assertDriver(ctx);
+        await reconcileDispatch();
+
         const { data, error } = await supabase.rpc("taximun_accept_smart_offer", {
           p_offer_id: input.offerId,
           p_driver_id: ctx.user.openId,
@@ -105,6 +154,7 @@ export const taxiRideOffersRouter = router({
           p_reason: input.reason,
         });
         throwIfSupabaseError(error);
+        await reconcileDispatch();
         return { success: Boolean(data) };
       }),
 
@@ -132,6 +182,8 @@ export const taxiRideOffersRouter = router({
   passenger: router({
     getDispatchStatus: protectedProcedure.query(async ({ ctx }) => {
       assertPassenger(ctx);
+      await reconcileDispatch();
+
       const { data: ride, error: rideError } = await supabase
         .from("taxi_rides")
         .select("id,status,requested_at,driver_id,driver_name,taxi_code,plate")
@@ -145,7 +197,7 @@ export const taxiRideOffersRouter = router({
 
       const { data: offers, error: offersError } = await supabase
         .from("taxi_ride_offers")
-        .select("status,offered_at,expires_at,responded_at")
+        .select("status,offered_at,expires_at,responded_at,metadata")
         .eq("ride_id", ride.id)
         .order("created_at", { ascending: false })
         .limit(30);
@@ -153,6 +205,9 @@ export const taxiRideOffersRouter = router({
 
       const rows = offers ?? [];
       const activeOffer = rows.find((offer) => offer.status === "pending") ?? null;
+      const requestedAt = new Date(ride.requested_at).getTime();
+      const waitingSeconds = Number.isFinite(requestedAt) ? Math.max(0, Math.floor((Date.now() - requestedAt) / 1000)) : 0;
+
       return {
         rideId: ride.id,
         rideStatus: ride.status,
@@ -160,19 +215,23 @@ export const taxiRideOffersRouter = router({
           ? "driver_assigned"
           : activeOffer
             ? "waiting_driver_response"
-            : "searching_driver",
+            : waitingSeconds >= 120
+              ? "search_delayed"
+              : "searching_driver",
         attempts: rows.length,
         activeOfferExpiresAt: activeOffer?.expires_at ?? null,
         driverName: ride.driver_name,
         taxiCode: ride.taxi_code,
         plate: ride.plate,
+        waitingSeconds,
+        lastAttemptStatus: rows[0]?.status ?? null,
       };
     }),
   }),
 
   admin: router({
     getOfferAudit: protectedProcedure.query(async ({ ctx }) => {
-      if (ctx.user?.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
+      assertAdmin(ctx);
       const { data, error } = await supabase
         .from("taxi_ride_offers")
         .select("*")
@@ -180,6 +239,18 @@ export const taxiRideOffersRouter = router({
         .limit(250);
       throwIfSupabaseError(error);
       return data ?? [];
+    }),
+
+    getDispatchHealth: protectedProcedure.query(async ({ ctx }) => {
+      assertAdmin(ctx);
+      const { data, error } = await supabase.rpc("taximun_dispatch_health");
+      throwIfSupabaseError(error);
+      return data ?? {};
+    }),
+
+    reconcileDispatch: protectedProcedure.mutation(async ({ ctx }) => {
+      assertAdmin(ctx);
+      return reconcileDispatch();
     }),
   }),
 });
