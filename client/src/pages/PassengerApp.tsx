@@ -3,6 +3,7 @@ import { PassengerDispatchStatus } from "@/components/PassengerDispatchStatus";
 import { PassengerDriverPublicProfileSection } from "@/components/PassengerDriverPublicProfileSection";
 import { PassengerLiveTrackingSection } from "@/components/PassengerLiveTrackingSection";
 import { PassengerPostTripRatingSection } from "@/components/PassengerPostTripRatingSection";
+import { RideCommunicationPanel } from "@/components/RideCommunicationPanel";
 import { TaxiProfileSettings } from "@/components/TaxiProfileSettings";
 import { TaxiSupportActions } from "@/components/TaxiSupportActions";
 import { Car, Clock3, Home, ShieldCheck } from "lucide-react";
@@ -35,6 +36,7 @@ export default function PassengerApp() {
         <div className="min-h-screen bg-[#f7f8fb]">
           <PassengerDispatchStatus />
           <PassengerLiveTrackingSection />
+          <RideCommunicationPanel role="passenger" />
           <PassengerPostTripRatingSection />
           <PassengerDriverPublicProfileSection />
           <PassengerRidesPage />
