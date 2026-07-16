@@ -36,6 +36,7 @@ function Router() {
       {/* Driver routes */}
       <Route path={"/driver"} component={DriverApp} />
       <Route path={"/driver/queue"} component={DriverApp} />
+      <Route path={"/driver/navigation"} component={DriverApp} />
       <Route path={"/driver/earnings"} component={DriverApp} />
       <Route path={"/driver/security"} component={DriverApp} />
       <Route path={"/driver/profile"} component={DriverProfile} />
