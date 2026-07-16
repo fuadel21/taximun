@@ -3,6 +3,7 @@ import { DriverGpsHeartbeat } from "@/components/DriverGpsHeartbeat";
 import { DriverRideOfferOverlay } from "@/components/DriverRideOfferOverlay";
 import { DriverSessionRecovery } from "@/components/DriverSessionRecovery";
 import { DriverTripSettlementSection } from "@/components/DriverTripSettlementSection";
+import { RideCommunicationPanel } from "@/components/RideCommunicationPanel";
 import { TaxiProfileSettings } from "@/components/TaxiProfileSettings";
 import { TaxiSupportActions } from "@/components/TaxiSupportActions";
 import { BarChart3, Car, Home, Navigation, ShieldCheck, UserRound } from "lucide-react";
@@ -41,12 +42,14 @@ export default function DriverApp() {
         <div className="min-h-screen bg-[#f7f8fb]">
           <DriverGpsHeartbeat />
           <DriverTripSettlementSection />
+          <RideCommunicationPanel role="driver" />
           <DriverServicesPage />
         </div>
       ) : isNavigation ? (
         <div className="min-h-screen bg-[#f7f8fb]">
           <DriverGpsHeartbeat />
           <DriverNavigationPage />
+          <RideCommunicationPanel role="driver" />
         </div>
       ) : isEarnings ? (
         <DriverEarningsPage />
