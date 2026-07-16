@@ -1,6 +1,7 @@
 import { AppBottomNav } from "@/components/AppBottomNav";
 import { DriverGpsHeartbeat } from "@/components/DriverGpsHeartbeat";
 import { DriverRideOfferOverlay } from "@/components/DriverRideOfferOverlay";
+import { DriverSessionRecovery } from "@/components/DriverSessionRecovery";
 import { DriverTripSettlementSection } from "@/components/DriverTripSettlementSection";
 import { TaxiProfileSettings } from "@/components/TaxiProfileSettings";
 import { TaxiSupportActions } from "@/components/TaxiSupportActions";
@@ -22,6 +23,7 @@ export default function DriverApp() {
   return (
     <div className="pb-24 md:pb-0">
       <DriverRideOfferOverlay />
+      {!isProfile && !isSecurity && <DriverSessionRecovery />}
       {isProfile ? (
         <TaxiProfileSettings role="driver" />
       ) : isSecurity ? (
