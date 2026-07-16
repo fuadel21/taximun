@@ -33,6 +33,7 @@ type ActiveRide = {
   estimated_fare: number | string;
   estimated_duration: number | string;
   distance_km: number | string;
+  driver_arrived_at?: string | null;
 };
 
 type DriverStatus = {
@@ -84,6 +85,13 @@ export default function DriverNavigationPage() {
     },
     onError: (error) => setActionError(error.message),
   });
+  const markArrived = trpc.system.taxiLiveTrip.driver.markArrived.useMutation({
+    onSuccess: async () => {
+      setActionError("");
+      await activeQuery.refetch();
+    },
+    onError: (error) => setActionError(error.message),
+  });
 
   const active = (activeQuery.data ?? null) as ActiveRide | null;
   const status = (statusQuery.data ?? null) as DriverStatus | null;
@@ -96,10 +104,7 @@ export default function DriverNavigationPage() {
 
     const watchId = navigator.geolocation.watchPosition(
       (position) => {
-        setBrowserLocation({
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-        });
+        setBrowserLocation({ latitude: position.coords.latitude, longitude: position.coords.longitude });
         setGpsError("");
       },
       (error) => {
@@ -123,7 +128,8 @@ export default function DriverNavigationPage() {
 
   const headline = useMemo(() => {
     if (!active) return "Sin viaje activo";
-    return active.status === "assigned" ? "Navega a la recogida" : "Navega al destino";
+    if (active.status === "in_progress") return "Navega al destino";
+    return active.driver_arrived_at ? "Esperando al pasajero" : "Navega a la recogida";
   }, [active]);
 
   if (activeQuery.isLoading) {
@@ -155,8 +161,8 @@ export default function DriverNavigationPage() {
               <h1 className="mt-1 text-3xl font-black">{headline}</h1>
               <p className="mt-2 text-sm font-semibold text-slate-300"><UserRound className="mr-1 inline h-4 w-4" />{active.passenger_name || "Pasajero"}</p>
             </div>
-            <Badge className={active.status === "assigned" ? "bg-blue-100 text-blue-800 hover:bg-blue-100" : "bg-cyan-100 text-cyan-800 hover:bg-cyan-100"}>
-              {active.status === "assigned" ? "A recogida" : "En viaje"}
+            <Badge className={active.status === "in_progress" ? "bg-cyan-100 text-cyan-800 hover:bg-cyan-100" : active.driver_arrived_at ? "bg-amber-100 text-amber-800 hover:bg-amber-100" : "bg-blue-100 text-blue-800 hover:bg-blue-100"}>
+              {active.status === "in_progress" ? "En viaje" : active.driver_arrived_at ? "He llegado" : "A recogida"}
             </Badge>
           </div>
           <div className="mt-4 grid grid-cols-3 gap-2">
@@ -174,13 +180,7 @@ export default function DriverNavigationPage() {
         )}
 
         {mapReady ? (
-          <PassengerTripTrackingMap
-            pickup={pickup}
-            dropoff={dropoff}
-            driver={driver}
-            status={active.status}
-            driverName="Mi taxi"
-          />
+          <PassengerTripTrackingMap pickup={pickup} dropoff={dropoff} driver={driver} status={active.status} driverName="Mi taxi" />
         ) : (
           <div className="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm font-bold text-amber-800">
             <MapPin className="mr-2 inline h-4 w-4" />Este viaje no tiene coordenadas suficientes. Usa Google Maps con la dirección escrita.
@@ -194,24 +194,29 @@ export default function DriverNavigationPage() {
               <p><Navigation className="mr-2 inline h-4 w-4 text-blue-600" />{active.dropoff_address}</p>
             </div>
 
-            <div className="grid gap-2 sm:grid-cols-3">
-              <Button onClick={() => openGoogleMaps(target, targetAddress || "")} variant="outline" className="h-13 rounded-2xl bg-white font-black">
+            <div className="grid gap-2 sm:grid-cols-4">
+              <Button onClick={() => openGoogleMaps(target, targetAddress || "")} variant="outline" className="h-[52px] rounded-2xl bg-white font-black">
                 <Navigation className="mr-2 h-4 w-4" />Google Maps
               </Button>
+              {active.status === "assigned" && !active.driver_arrived_at && (
+                <Button onClick={() => markArrived.mutate({ rideId: active.id })} disabled={markArrived.isPending} className="h-[52px] rounded-2xl bg-amber-500 font-black text-slate-950 hover:bg-amber-400">
+                  {markArrived.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <MapPin className="mr-2 h-4 w-4" />}He llegado
+                </Button>
+              )}
               {active.status === "assigned" ? (
-                <Button onClick={() => startRide.mutate({ rideId: active.id })} disabled={startRide.isPending} className="h-13 rounded-2xl bg-blue-600 font-black text-white hover:bg-blue-500">
+                <Button onClick={() => startRide.mutate({ rideId: active.id })} disabled={startRide.isPending} className="h-[52px] rounded-2xl bg-blue-600 font-black text-white hover:bg-blue-500">
                   {startRide.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}Iniciar viaje
                 </Button>
               ) : (
-                <Button disabled className="h-13 rounded-2xl bg-cyan-600 font-black text-white"><Car className="mr-2 h-4 w-4" />Viaje en curso</Button>
+                <Button disabled className="h-[52px] rounded-2xl bg-cyan-600 font-black text-white"><Car className="mr-2 h-4 w-4" />Viaje en curso</Button>
               )}
-              <Button onClick={() => setLocation("/driver/queue")} className="h-13 rounded-2xl bg-emerald-600 font-black text-white hover:bg-emerald-500">
+              <Button onClick={() => setLocation("/driver/queue")} className="h-[52px] rounded-2xl bg-emerald-600 font-black text-white hover:bg-emerald-500">
                 <ReceiptText className="mr-2 h-4 w-4" />Ir al cierre
               </Button>
             </div>
 
             <p className="rounded-2xl bg-cyan-50 p-3 text-xs font-bold text-cyan-800">
-              <LocateFixed className="mr-1 inline h-4 w-4" />La posición se actualiza mientras esta pantalla está abierta y el heartbeat del conductor continúa sincronizando el GPS.
+              <LocateFixed className="mr-1 inline h-4 w-4" />La posición se actualiza mientras esta pantalla está abierta y el heartbeat continúa sincronizando el GPS.
             </p>
           </CardContent>
         </Card>
