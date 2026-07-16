@@ -17,6 +17,7 @@ import AdminPanel from "./pages/AdminPanel";
 import AdminSafetyPage from "./pages/AdminSafetyPage";
 import AdminAlertsPanel from "./pages/AdminAlertsPanel";
 import AdminVerificationPage from "./pages/AdminVerificationPage";
+import SharedTripTrackingPage from "./pages/SharedTripTrackingPage";
 
 function Router() {
   return (
@@ -25,6 +26,7 @@ function Router() {
       <Route path={"/auth"} component={AuthReal} />
       <Route path={"/test"} component={TestHub} />
       <Route path={"/notifications"} component={NotificationsPage} />
+      <Route path={"/track/:token"} component={SharedTripTrackingPage} />
       {/* Passenger routes */}
       <Route path={"/passenger"} component={PassengerApp} />
       <Route path={"/passenger/rides"} component={PassengerApp} />
@@ -46,7 +48,6 @@ function Router() {
       <Route path={"/admin/alerts"} component={AdminAlertsPanel} />
       <Route path={"/admin/incidents"} component={AdminAlertsPanel} />
       <Route path={"/404"} component={NotFound} />
-      {/* Final fallback route */}
       <Route component={NotFound} />
     </Switch>
   );
