@@ -3,7 +3,7 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { TripAudioRoomPanel } from "@/components/TripAudioRoomPanel";
-import { Check, Loader2, MessageCircle, PhoneCall, PhoneOff, Send, ShieldCheck } from "lucide-react";
+import { BellRing, Check, Clock3, Loader2, MessageCircle, PhoneCall, PhoneOff, Send, ShieldCheck, X } from "lucide-react";
 
 type Role = "driver" | "passenger";
 type Message = { id: string; sender_id: string; sender_role: string; message: string; created_at: string; read_at?: string | null };
@@ -14,22 +14,53 @@ const QUICK: Record<Role, string[]> = {
   passenger: ["Ya bajo", "Estoy en la puerta", "Llego en 2 minutos", "No encuentro el taxi", "Entendido"],
 };
 
+const REASON_LABEL: Record<string, string> = {
+  contact: "Quiere hablar contigo",
+  pickup: "Necesita confirmar la recogida",
+  delay: "Quiere avisarte de un retraso",
+  emergency: "Llamada prioritaria del viaje",
+};
+
+function playRing() {
+  try {
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContextClass) return;
+    const context = new AudioContextClass();
+    const gain = context.createGain();
+    gain.gain.value = 0.06;
+    gain.connect(context.destination);
+    [0, 0.28].forEach((offset) => {
+      const oscillator = context.createOscillator();
+      oscillator.type = "sine";
+      oscillator.frequency.value = 740;
+      oscillator.connect(gain);
+      oscillator.start(context.currentTime + offset);
+      oscillator.stop(context.currentTime + offset + 0.18);
+    });
+    window.setTimeout(() => context.close().catch(() => undefined), 900);
+  } catch {}
+}
+
 export function TripChatPanel({ rideId, role }: { rideId: string; role: Role }) {
   const [text, setText] = useState("");
   const [open, setOpen] = useState(false);
+  const [now, setNow] = useState(Date.now());
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const alertedCallRef = useRef<string | null>(null);
   const utils = trpc.useUtils();
   const query = trpc.system.taxiTripChat.list.useQuery({ rideId }, { refetchInterval: 3000, refetchOnWindowFocus: true });
-  const callQuery = trpc.system.taxiTripCall.getLatest.useQuery({ rideId }, { refetchInterval: 3000, refetchOnWindowFocus: true });
+  const callQuery = trpc.system.taxiTripCall.getLatest.useQuery({ rideId }, { refetchInterval: 2000, refetchOnWindowFocus: true });
   const messages = (query.data ?? []) as Message[];
   const call = (callQuery.data ?? null) as CallRequest | null;
   const unread = useMemo(() => messages.filter((m) => m.sender_role !== role && !m.read_at).length, [messages, role]);
-  const incoming = call?.status === "pending" && call.requester_role !== role && new Date(call.expires_at).getTime() > Date.now();
-  const outgoing = call?.status === "pending" && call.requester_role === role && new Date(call.expires_at).getTime() > Date.now();
+  const remainingSeconds = call?.status === "pending" ? Math.max(0, Math.ceil((new Date(call.expires_at).getTime() - now) / 1000)) : 0;
+  const incoming = call?.status === "pending" && call.requester_role !== role && remainingSeconds > 0;
+  const outgoing = call?.status === "pending" && call.requester_role === role && remainingSeconds > 0;
 
   const refreshCall = () => utils.system.taxiTripCall.getLatest.invalidate({ rideId });
   const requestCall = trpc.system.taxiTripCall.request.useMutation({ onSuccess: refreshCall });
   const respondCall = trpc.system.taxiTripCall.respond.useMutation({ onSuccess: refreshCall });
+  const cancelCall = trpc.system.taxiTripCall.cancel.useMutation({ onSuccess: refreshCall });
   const markRead = trpc.system.taxiTripChat.markRead.useMutation({ onSuccess: () => utils.system.taxiTripChat.list.invalidate({ rideId }) });
   const send = trpc.system.taxiTripChat.send.useMutation({
     onSuccess: async () => {
@@ -39,8 +70,25 @@ export function TripChatPanel({ rideId, role }: { rideId: string; role: Role }) 
     },
   });
 
+  useEffect(() => {
+    if (!call || call.status !== "pending") return;
+    const timer = window.setInterval(() => setNow(Date.now()), 500);
+    return () => window.clearInterval(timer);
+  }, [call?.id, call?.status]);
+
   useEffect(() => { if (open && unread > 0 && !markRead.isPending) markRead.mutate({ rideId }); }, [open, unread, rideId]);
-  useEffect(() => { if ((!open && unread > 0) || incoming) if ("vibrate" in navigator) navigator.vibrate(incoming ? [160, 80, 160] : 120); }, [unread, open, incoming]);
+  useEffect(() => {
+    if (!incoming || !call || alertedCallRef.current === call.id) return;
+    alertedCallRef.current = call.id;
+    navigator.vibrate?.([220, 100, 220, 100, 350]);
+    playRing();
+    const timer = window.setInterval(() => {
+      navigator.vibrate?.([180, 90, 180]);
+      playRing();
+    }, 4000);
+    return () => window.clearInterval(timer);
+  }, [incoming, call?.id]);
+  useEffect(() => { if (!open && unread > 0 && !incoming) navigator.vibrate?.(120); }, [unread, open, incoming]);
 
   const submit = (message: string, messageType: "text" | "quick") => {
     const clean = message.trim();
@@ -48,17 +96,36 @@ export function TripChatPanel({ rideId, role }: { rideId: string; role: Role }) 
     send.mutate({ rideId, message: clean, messageType });
   };
 
+  const callBusy = requestCall.isPending || respondCall.isPending || cancelCall.isPending;
+  const callError = callQuery.error || requestCall.error || respondCall.error || cancelCall.error;
+
   return (
     <div className="rounded-[1.75rem] border border-slate-200 bg-white shadow-lg">
       <div className="border-b border-slate-100 p-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <Button onClick={() => requestCall.mutate({ rideId, reason: "contact" })} disabled={requestCall.isPending || outgoing || incoming} className="h-12 flex-1 rounded-2xl bg-emerald-600 font-black text-white hover:bg-emerald-500">
-            {requestCall.isPending ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <PhoneCall className="mr-2 h-5 w-5" />}{outgoing ? "Solicitud enviada" : "Solicitar llamada"}
+        {incoming ? (
+          <div className="rounded-3xl border border-cyan-200 bg-gradient-to-br from-cyan-50 to-blue-50 p-4 shadow-sm">
+            <div className="flex items-start gap-3">
+              <span className="flex h-14 w-14 shrink-0 animate-pulse items-center justify-center rounded-full bg-cyan-600 text-white shadow-lg"><BellRing className="h-7 w-7" /></span>
+              <div className="min-w-0 flex-1"><p className="text-xs font-black uppercase tracking-[0.18em] text-cyan-700">Llamada entrante</p><p className="mt-1 text-xl font-black text-slate-950">{role === "driver" ? "El pasajero te llama" : "El conductor te llama"}</p><p className="mt-1 text-xs font-bold text-slate-600">{REASON_LABEL[call?.reason || "contact"]}</p></div>
+              <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-cyan-800"><Clock3 className="mr-1 inline h-3.5 w-3.5" />{remainingSeconds}s</span>
+            </div>
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <Button onClick={() => respondCall.mutate({ requestId: call!.id, status: "declined" })} disabled={callBusy} variant="outline" className="h-14 rounded-2xl border-red-200 bg-white text-base font-black text-red-700"><PhoneOff className="mr-2 h-5 w-5" />Rechazar</Button>
+              <Button onClick={() => respondCall.mutate({ requestId: call!.id, status: "accepted" })} disabled={callBusy} className="h-14 rounded-2xl bg-emerald-600 text-base font-black text-white"><Check className="mr-2 h-5 w-5" />Aceptar</Button>
+            </div>
+          </div>
+        ) : outgoing ? (
+          <div className="rounded-3xl border border-emerald-200 bg-emerald-50 p-4">
+            <div className="flex items-center gap-3"><span className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-600 text-white"><PhoneCall className="h-6 w-6 animate-pulse" /></span><div className="min-w-0 flex-1"><p className="font-black text-emerald-950">Llamando…</p><p className="text-xs font-bold text-emerald-700">Esperando respuesta · {remainingSeconds}s</p></div><Button onClick={() => cancelCall.mutate({ requestId: call!.id })} disabled={callBusy} variant="outline" className="h-11 rounded-2xl border-red-200 bg-white font-black text-red-700"><X className="mr-1 h-4 w-4" />Cancelar</Button></div>
+          </div>
+        ) : (
+          <Button onClick={() => requestCall.mutate({ rideId, reason: "contact" })} disabled={requestCall.isPending || call?.status === "accepted"} className="h-12 w-full rounded-2xl bg-emerald-600 font-black text-white hover:bg-emerald-500">
+            {requestCall.isPending ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <PhoneCall className="mr-2 h-5 w-5" />}Solicitar llamada
           </Button>
-          {incoming && <><Button onClick={() => respondCall.mutate({ requestId: call!.id, status: "accepted" })} className="h-12 rounded-2xl bg-cyan-600 font-black"><Check className="mr-2 h-5 w-5" />Aceptar</Button><Button onClick={() => respondCall.mutate({ requestId: call!.id, status: "declined" })} variant="outline" className="h-12 rounded-2xl font-black text-red-600"><PhoneOff className="mr-2 h-5 w-5" />Rechazar</Button></>}
-        </div>
-        <p className="mt-2 text-xs font-bold text-slate-500">La solicitud conecta a conductor y pasajero sin mostrar números personales.</p>
+        )}
+        <p className="mt-2 text-xs font-bold text-slate-500">La llamada es privada y no muestra números personales. Las solicitudes caducan automáticamente.</p>
         {call?.status === "accepted" && <TripAudioRoomPanel rideId={rideId} callRequestId={call.id} role={role} />}
+        {callError && <p className="mt-2 text-xs font-bold text-red-600">{callError.message}</p>}
       </div>
 
       <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full items-center justify-between gap-3 p-4 text-left">
@@ -76,7 +143,7 @@ export function TripChatPanel({ rideId, role }: { rideId: string; role: Role }) 
         </div>
         <div className="mt-3 flex gap-2"><Input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit(text, "text")} maxLength={500} placeholder="Escribe un mensaje" className="h-[52px] rounded-2xl" /><Button onClick={() => submit(text, "text")} disabled={!text.trim() || send.isPending} className="h-[52px] w-[52px] rounded-2xl bg-slate-950 p-0 text-white">{send.isPending ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}</Button></div>
         <p className="mt-3 text-xs font-bold text-slate-400"><ShieldCheck className="mr-1 inline h-4 w-4" />El chat se limita al conductor, pasajero y administración.</p>
-        {(query.error || send.error || callQuery.error || requestCall.error || respondCall.error) && <p className="mt-2 text-xs font-bold text-red-600">{query.error?.message || send.error?.message || callQuery.error?.message || requestCall.error?.message || respondCall.error?.message}</p>}
+        {(query.error || send.error) && <p className="mt-2 text-xs font-bold text-red-600">{query.error?.message || send.error?.message}</p>}
       </div>}
     </div>
   );
