@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Mic, MicOff, PhoneOff, Radio, Loader2, Wifi, WifiOff, RefreshCw, ShieldCheck, SignalHigh, SignalMedium, SignalLow } from "lucide-react";
+import { Mic, MicOff, PhoneOff, Radio, Loader2, Wifi, WifiOff, RefreshCw, ShieldCheck, SignalHigh, SignalMedium, SignalLow, Gauge, MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc";
 
@@ -35,6 +35,8 @@ export function TripAudioRoomPanel({ rideId, callRequestId, role }: { rideId: st
   const [reconnecting, setReconnecting] = useState(false);
   const [reconnectCount, setReconnectCount] = useState(0);
   const [qualityMetrics, setQualityMetrics] = useState<QualityMetrics>(EMPTY_QUALITY);
+  const [reducedAudio, setReducedAudio] = useState(false);
+  const [poorSamples, setPoorSamples] = useState(0);
   const streamRef = useRef<MediaStream | null>(null);
   const peerRef = useRef<RTCPeerConnection | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -83,6 +85,7 @@ export function TripAudioRoomPanel({ rideId, callRequestId, role }: { rideId: st
     setReconnecting(false);
     setConnectionState("closed");
     setQualityMetrics(EMPTY_QUALITY);
+    setPoorSamples(0);
   };
 
   useEffect(() => () => closeMedia(), []);
@@ -101,6 +104,17 @@ export function TripAudioRoomPanel({ rideId, callRequestId, role }: { rideId: st
     const offer = await peer.createOffer({ offerToReceiveAudio: true, iceRestart });
     await peer.setLocalDescription(offer);
     await sendRtcSignal(roomId, "offer", { type: offer.type, sdp: offer.sdp });
+  };
+
+  const applyReducedAudio = async (enabled: boolean) => {
+    setReducedAudio(enabled);
+    const sender = peerRef.current?.getSenders().find((item) => item.track?.kind === "audio");
+    if (!sender) return;
+    const parameters = sender.getParameters();
+    if (!parameters.encodings?.length) parameters.encodings = [{}];
+    parameters.encodings[0].maxBitrate = enabled ? 16000 : 64000;
+    parameters.encodings[0].networkPriority = enabled ? "high" : "medium";
+    await sender.setParameters(parameters).catch(() => undefined);
   };
 
   const createPeer = (roomId: string, stream: MediaStream, configuration?: RTCConfiguration) => {
@@ -122,6 +136,7 @@ export function TripAudioRoomPanel({ rideId, callRequestId, role }: { rideId: st
         clearReconnectTimer();
         setReconnecting(false);
         setPermissionError("");
+        if (reducedAudio) applyReducedAudio(true).catch(() => undefined);
       }
       if (["disconnected", "failed"].includes(peer.connectionState)) {
         clearReconnectTimer();
@@ -231,12 +246,17 @@ export function TripAudioRoomPanel({ rideId, callRequestId, role }: { rideId: st
       const quality = classifyQuality(peer.connectionState, roundTripMs, jitterMs, packetsLost);
       const metrics = { quality, roundTripMs, jitterMs, packetsLost, bitrateKbps };
       setQualityMetrics(metrics);
+      setPoorSamples((value) => quality === "poor" || quality === "offline" ? value + 1 : 0);
       reportQuality.mutate({ roomId: activeRoomId, quality, connectionState: peer.connectionState, roundTripMs, jitterMs, packetsLost, bitrateKbps });
     };
     collect().catch(() => undefined);
     const timer = setInterval(() => collect().catch(() => undefined), 10_000);
     return () => clearInterval(timer);
   }, [joined, activeRoomId]);
+
+  useEffect(() => {
+    if (joined && !reducedAudio && (poorSamples >= 2 || reconnectCount >= 2)) applyReducedAudio(true).catch(() => undefined);
+  }, [poorSamples, reconnectCount, joined, reducedAudio]);
 
   const toggleMute = () => {
     const next = !muted;
@@ -251,6 +271,7 @@ export function TripAudioRoomPanel({ rideId, callRequestId, role }: { rideId: st
     setActiveRoomId(null);
     setMuted(false);
     setReconnectCount(0);
+    setReducedAudio(false);
     if (roomId) await endRoom.mutateAsync({ roomId });
   };
 
@@ -258,15 +279,22 @@ export function TripAudioRoomPanel({ rideId, callRequestId, role }: { rideId: st
   const connected = connectionState === "connected";
   const failed = connectionState === "failed" || connectionState === "disconnected";
   const busy = openRoom.isPending || joinRoom.isPending || endRoom.isPending;
+  const recoveryNeeded = reconnectCount >= 2 || poorSamples >= 2 || failed;
   const qualityLabel = qualityMetrics.quality === "excellent" ? "Calidad excelente" : qualityMetrics.quality === "good" ? "Calidad aceptable" : qualityMetrics.quality === "poor" ? "Red inestable" : "Sin conexión";
   const QualityIcon = qualityMetrics.quality === "excellent" ? SignalHigh : qualityMetrics.quality === "good" ? SignalMedium : SignalLow;
 
   return <div className="mt-3 rounded-3xl border border-emerald-200 bg-emerald-50 p-4">
     <audio ref={remoteAudioRef} autoPlay playsInline />
-    <div className="flex items-center gap-3"><span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-emerald-700"><Radio className="h-5 w-5" /></span><div><p className="font-black text-emerald-950">Llamada privada del viaje</p><p className="text-xs font-bold text-emerald-700">Audio WebRTC protegido, supervisado y con reconexión automática.</p></div></div>
-    {!joined ? <Button onClick={enter} disabled={busy} className="mt-3 h-12 w-full rounded-2xl bg-emerald-600 font-black text-white">{busy ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Mic className="mr-2 h-5 w-5" />}Entrar en la llamada</Button> : <div className="mt-3 space-y-2"><p className="flex items-center justify-center rounded-2xl bg-white p-3 text-center text-sm font-black text-emerald-800">{connected ? <Wifi className="mr-2 h-4 w-4" /> : failed ? <WifiOff className="mr-2 h-4 w-4 text-red-600" /> : <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{connected ? "Audio conectado" : reconnecting ? "Reconectando automáticamente…" : failed ? "Conexión interrumpida" : otherJoined ? "Conectando el audio…" : "Esperando a la otra persona…"}</p>{connected && <div className={`rounded-2xl border p-3 ${qualityMetrics.quality === "poor" ? "border-amber-300 bg-amber-50 text-amber-900" : "border-emerald-100 bg-white text-emerald-800"}`}><p className="flex items-center text-sm font-black"><QualityIcon className="mr-2 h-4 w-4" />{qualityLabel}</p><p className="mt-1 text-[11px] font-bold">{qualityMetrics.roundTripMs != null ? `${qualityMetrics.roundTripMs} ms` : "Midiendo latencia"}{qualityMetrics.jitterMs != null ? ` · Variación ${qualityMetrics.jitterMs} ms` : ""}{qualityMetrics.quality === "poor" ? " · Mantén la app abierta y busca mejor cobertura." : ""}</p></div>}<div className="grid grid-cols-2 gap-2"><Button onClick={toggleMute} variant="outline" className="h-12 rounded-2xl font-black">{muted ? <MicOff className="mr-2 h-5 w-5" /> : <Mic className="mr-2 h-5 w-5" />}{muted ? "Activar" : "Silenciar"}</Button><Button onClick={leave} disabled={busy} className="h-12 rounded-2xl bg-red-600 font-black text-white"><PhoneOff className="mr-2 h-5 w-5" />Colgar</Button></div>{failed && <Button onClick={reconnect} disabled={reconnecting} variant="outline" className="h-11 w-full rounded-2xl font-black"><RefreshCw className={`mr-2 h-4 w-4 ${reconnecting ? "animate-spin" : ""}`} />Reintentar conexión</Button>}</div>}
+    <div className="flex items-center gap-3"><span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-emerald-700"><Radio className="h-5 w-5" /></span><div><p className="font-black text-emerald-950">Llamada privada del viaje</p><p className="text-xs font-bold text-emerald-700">Audio WebRTC protegido, supervisado y con recuperación inteligente.</p></div></div>
+    {!joined ? <Button onClick={enter} disabled={busy} className="mt-3 h-12 w-full rounded-2xl bg-emerald-600 font-black text-white">{busy ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Mic className="mr-2 h-5 w-5" />}Entrar en la llamada</Button> : <div className="mt-3 space-y-2">
+      <p className="flex items-center justify-center rounded-2xl bg-white p-3 text-center text-sm font-black text-emerald-800">{connected ? <Wifi className="mr-2 h-4 w-4" /> : failed ? <WifiOff className="mr-2 h-4 w-4 text-red-600" /> : <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{connected ? "Audio conectado" : reconnecting ? "Reconectando automáticamente…" : failed ? "Conexión interrumpida" : otherJoined ? "Conectando el audio…" : "Esperando a la otra persona…"}</p>
+      {connected && <div className={`rounded-2xl border p-3 ${qualityMetrics.quality === "poor" ? "border-amber-300 bg-amber-50 text-amber-900" : "border-emerald-100 bg-white text-emerald-800"}`}><p className="flex items-center text-sm font-black"><QualityIcon className="mr-2 h-4 w-4" />{qualityLabel}</p><p className="mt-1 text-[11px] font-bold">{qualityMetrics.roundTripMs != null ? `${qualityMetrics.roundTripMs} ms` : "Midiendo latencia"}{qualityMetrics.jitterMs != null ? ` · Variación ${qualityMetrics.jitterMs} ms` : ""}{reducedAudio ? " · Modo ahorro activo" : ""}</p></div>}
+      {recoveryNeeded && <div className="rounded-2xl border border-amber-300 bg-amber-50 p-3 text-amber-950"><p className="text-sm font-black">La cobertura está dificultando la llamada</p><p className="mt-1 text-xs font-semibold">Taximun reduce el consumo de datos automáticamente. También puedes reintentar o terminar el audio y continuar en el chat del viaje.</p><div className="mt-2 grid grid-cols-2 gap-2"><Button onClick={() => applyReducedAudio(!reducedAudio)} variant="outline" className="h-11 rounded-xl font-black"><Gauge className="mr-2 h-4 w-4" />{reducedAudio ? "Audio normal" : "Ahorrar datos"}</Button><Button onClick={leave} variant="outline" className="h-11 rounded-xl font-black"><MessageCircle className="mr-2 h-4 w-4" />Volver al chat</Button></div></div>}
+      <div className="grid grid-cols-2 gap-2"><Button onClick={toggleMute} variant="outline" className="h-12 rounded-2xl font-black">{muted ? <MicOff className="mr-2 h-5 w-5" /> : <Mic className="mr-2 h-5 w-5" />}{muted ? "Activar" : "Silenciar"}</Button><Button onClick={leave} disabled={busy} className="h-12 rounded-2xl bg-red-600 font-black text-white"><PhoneOff className="mr-2 h-5 w-5" />Colgar</Button></div>
+      {failed && <Button onClick={reconnect} disabled={reconnecting} variant="outline" className="h-11 w-full rounded-2xl font-black"><RefreshCw className={`mr-2 h-4 w-4 ${reconnecting ? "animate-spin" : ""}`} />Reintentar conexión</Button>}
+    </div>}
     {(permissionError || sendSignal.error || signalsQuery.error) && <p className="mt-2 text-xs font-bold text-red-600">{permissionError || sendSignal.error?.message || signalsQuery.error?.message}</p>}
-    {joined && <p className="mt-2 flex items-center text-[11px] font-bold text-emerald-700"><ShieldCheck className="mr-1 h-3.5 w-3.5" />{iceConfigQuery.data?.turnEnabled ? "TURN de respaldo disponible" : "Conexión directa STUN"}{reconnectCount > 0 ? ` · Reconexiones: ${reconnectCount}` : ""}</p>}
+    {joined && <p className="mt-2 flex items-center text-[11px] font-bold text-emerald-700"><ShieldCheck className="mr-1 h-3.5 w-3.5" />{iceConfigQuery.data?.turnEnabled ? "TURN de respaldo disponible" : "Conexión directa STUN"}{reconnectCount > 0 ? ` · Reconexiones: ${reconnectCount}` : ""}{reducedAudio ? " · Audio reducido" : ""}</p>}
     <p className="mt-3 text-[11px] font-bold text-emerald-700">La app mide la calidad técnica sin grabar ni almacenar el contenido de la conversación.</p>
   </div>;
 }
