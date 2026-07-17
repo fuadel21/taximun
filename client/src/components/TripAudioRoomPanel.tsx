@@ -44,13 +44,16 @@ export function TripAudioRoomPanel({ rideId, callRequestId, role }: { rideId: st
   const pendingIceRef = useRef<RTCIceCandidateInit[]>([]);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const previousBytesRef = useRef<{ bytes: number; timestamp: number } | null>(null);
+  const activeRoomRef = useRef<string | null>(null);
+  const joinedRef = useRef(false);
   const utils = trpc.useUtils();
   const query = trpc.system.taxiTripAudio.getLatest.useQuery({ rideId }, { refetchInterval: 2500 });
   const room = (query.data ?? null) as Room | null;
   const refresh = () => utils.system.taxiTripAudio.getLatest.invalidate({ rideId });
   const openRoom = trpc.system.taxiTripAudio.open.useMutation({ onSuccess: refresh });
   const joinRoom = trpc.system.taxiTripAudio.join.useMutation({ onSuccess: refresh });
-  const endRoom = trpc.system.taxiTripAudio.end.useMutation({ onSuccess: refresh });
+  const leaveRoom = trpc.system.taxiTripAudio.leave.useMutation({ onSuccess: refresh });
+  const heartbeat = trpc.system.taxiTripAudio.heartbeat.useMutation();
   const sendSignal = trpc.system.taxiTripAudio.sendSignal.useMutation();
   const clearSignals = trpc.system.taxiTripAudio.clearSignals.useMutation();
   const reportQuality = trpc.system.taxiTripAudio.reportQuality.useMutation();
@@ -62,6 +65,11 @@ export function TripAudioRoomPanel({ rideId, callRequestId, role }: { rideId: st
     { roomId: activeRoomId ?? "00000000-0000-0000-0000-000000000000" },
     { enabled: joined && Boolean(activeRoomId), refetchInterval: 900, refetchOnWindowFocus: true },
   );
+
+  useEffect(() => {
+    activeRoomRef.current = activeRoomId;
+    joinedRef.current = joined;
+  }, [activeRoomId, joined]);
 
   const clearReconnectTimer = () => {
     if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
@@ -89,6 +97,29 @@ export function TripAudioRoomPanel({ rideId, callRequestId, role }: { rideId: st
   };
 
   useEffect(() => () => closeMedia(), []);
+
+  useEffect(() => {
+    if (!joined || !activeRoomId) return;
+    const ping = () => heartbeat.mutate({ roomId: activeRoomId });
+    ping();
+    const timer = window.setInterval(ping, 15_000);
+    const onVisibility = () => {
+      if (document.visibilityState !== "visible") return;
+      ping();
+      if (["failed", "disconnected"].includes(peerRef.current?.connectionState ?? "")) reconnect().catch(() => undefined);
+    };
+    const onPageHide = () => {
+      const roomId = activeRoomRef.current;
+      if (joinedRef.current && roomId) leaveRoom.mutate({ roomId });
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pagehide", onPageHide);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pagehide", onPageHide);
+    };
+  }, [joined, activeRoomId]);
 
   const sendRtcSignal = async (roomId: string, signalType: "offer" | "answer" | "ice", payload: Record<string, unknown>) => {
     await sendSignal.mutateAsync({ roomId, signalType, payload });
@@ -148,18 +179,19 @@ export function TripAudioRoomPanel({ rideId, callRequestId, role }: { rideId: st
   };
 
   const reconnect = async () => {
-    if (!joined || !activeRoomId || !streamRef.current || reconnecting) return;
+    if (!joinedRef.current || !activeRoomRef.current || !streamRef.current || reconnecting) return;
+    const roomId = activeRoomRef.current;
     setReconnecting(true);
     setPermissionError("");
     try {
       closePeerOnly();
       processedSignalsRef.current.clear();
-      await clearSignals.mutateAsync({ roomId: activeRoomId });
+      await clearSignals.mutateAsync({ roomId });
       const config = iceConfigQuery.data ? { iceServers: iceConfigQuery.data.iceServers } : FALLBACK_ICE;
-      const peer = createPeer(activeRoomId, streamRef.current, config);
+      const peer = createPeer(roomId, streamRef.current, config);
       setConnectionState("connecting");
       setReconnectCount((value) => value + 1);
-      if (role === "driver") await sendOffer(peer, activeRoomId, true);
+      if (role === "driver") await sendOffer(peer, roomId, true);
     } catch (error) {
       setPermissionError(error instanceof Error ? error.message : "No se pudo reconectar la llamada.");
       setReconnecting(false);
@@ -175,6 +207,8 @@ export function TripAudioRoomPanel({ rideId, callRequestId, role }: { rideId: st
       let current = room;
       if (!current || ["ended", "expired"].includes(current.status)) current = await openRoom.mutateAsync({ rideId, callRequestId });
       await joinRoom.mutateAsync({ roomId: current.id });
+      activeRoomRef.current = current.id;
+      joinedRef.current = true;
       setActiveRoomId(current.id);
       setJoined(true);
       setConnectionState("new");
@@ -182,6 +216,8 @@ export function TripAudioRoomPanel({ rideId, callRequestId, role }: { rideId: st
       if (role === "driver") await sendOffer(peer, current.id);
     } catch (error) {
       closeMedia();
+      joinedRef.current = false;
+      activeRoomRef.current = null;
       setJoined(false);
       setActiveRoomId(null);
       setPermissionError(error instanceof Error ? error.message : "No se pudo activar la llamada de audio.");
@@ -265,20 +301,22 @@ export function TripAudioRoomPanel({ rideId, callRequestId, role }: { rideId: st
   };
 
   const leave = async () => {
-    const roomId = activeRoomId ?? room?.id;
+    const roomId = activeRoomRef.current ?? room?.id;
+    joinedRef.current = false;
+    activeRoomRef.current = null;
     closeMedia();
     setJoined(false);
     setActiveRoomId(null);
     setMuted(false);
     setReconnectCount(0);
     setReducedAudio(false);
-    if (roomId) await endRoom.mutateAsync({ roomId });
+    if (roomId) await leaveRoom.mutateAsync({ roomId });
   };
 
   const otherJoined = role === "driver" ? Boolean(room?.passenger_joined_at) : Boolean(room?.driver_joined_at);
   const connected = connectionState === "connected";
   const failed = connectionState === "failed" || connectionState === "disconnected";
-  const busy = openRoom.isPending || joinRoom.isPending || endRoom.isPending;
+  const busy = openRoom.isPending || joinRoom.isPending || leaveRoom.isPending;
   const recoveryNeeded = reconnectCount >= 2 || poorSamples >= 2 || failed;
   const qualityLabel = qualityMetrics.quality === "excellent" ? "Calidad excelente" : qualityMetrics.quality === "good" ? "Calidad aceptable" : qualityMetrics.quality === "poor" ? "Red inestable" : "Sin conexión";
   const QualityIcon = qualityMetrics.quality === "excellent" ? SignalHigh : qualityMetrics.quality === "good" ? SignalMedium : SignalLow;
@@ -289,12 +327,12 @@ export function TripAudioRoomPanel({ rideId, callRequestId, role }: { rideId: st
     {!joined ? <Button onClick={enter} disabled={busy} className="mt-3 h-12 w-full rounded-2xl bg-emerald-600 font-black text-white">{busy ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Mic className="mr-2 h-5 w-5" />}Entrar en la llamada</Button> : <div className="mt-3 space-y-2">
       <p className="flex items-center justify-center rounded-2xl bg-white p-3 text-center text-sm font-black text-emerald-800">{connected ? <Wifi className="mr-2 h-4 w-4" /> : failed ? <WifiOff className="mr-2 h-4 w-4 text-red-600" /> : <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{connected ? "Audio conectado" : reconnecting ? "Reconectando automáticamente…" : failed ? "Conexión interrumpida" : otherJoined ? "Conectando el audio…" : "Esperando a la otra persona…"}</p>
       {connected && <div className={`rounded-2xl border p-3 ${qualityMetrics.quality === "poor" ? "border-amber-300 bg-amber-50 text-amber-900" : "border-emerald-100 bg-white text-emerald-800"}`}><p className="flex items-center text-sm font-black"><QualityIcon className="mr-2 h-4 w-4" />{qualityLabel}</p><p className="mt-1 text-[11px] font-bold">{qualityMetrics.roundTripMs != null ? `${qualityMetrics.roundTripMs} ms` : "Midiendo latencia"}{qualityMetrics.jitterMs != null ? ` · Variación ${qualityMetrics.jitterMs} ms` : ""}{reducedAudio ? " · Modo ahorro activo" : ""}</p></div>}
-      {recoveryNeeded && <div className="rounded-2xl border border-amber-300 bg-amber-50 p-3 text-amber-950"><p className="text-sm font-black">La cobertura está dificultando la llamada</p><p className="mt-1 text-xs font-semibold">Taximun reduce el consumo de datos automáticamente. También puedes reintentar o terminar el audio y continuar en el chat del viaje.</p><div className="mt-2 grid grid-cols-2 gap-2"><Button onClick={() => applyReducedAudio(!reducedAudio)} variant="outline" className="h-11 rounded-xl font-black"><Gauge className="mr-2 h-4 w-4" />{reducedAudio ? "Audio normal" : "Ahorrar datos"}</Button><Button onClick={leave} variant="outline" className="h-11 rounded-xl font-black"><MessageCircle className="mr-2 h-4 w-4" />Volver al chat</Button></div></div>}
-      <div className="grid grid-cols-2 gap-2"><Button onClick={toggleMute} variant="outline" className="h-12 rounded-2xl font-black">{muted ? <MicOff className="mr-2 h-5 w-5" /> : <Mic className="mr-2 h-5 w-5" />}{muted ? "Activar" : "Silenciar"}</Button><Button onClick={leave} disabled={busy} className="h-12 rounded-2xl bg-red-600 font-black text-white"><PhoneOff className="mr-2 h-5 w-5" />Colgar</Button></div>
+      {recoveryNeeded && <div className="rounded-2xl border border-amber-300 bg-amber-50 p-3 text-amber-950"><p className="text-sm font-black">La cobertura está dificultando la llamada</p><p className="mt-1 text-xs font-semibold">Taximun reduce el consumo de datos automáticamente. También puedes reintentar o salir del audio sin cortar la sala de la otra persona.</p><div className="mt-2 grid grid-cols-2 gap-2"><Button onClick={() => applyReducedAudio(!reducedAudio)} variant="outline" className="h-11 rounded-xl font-black"><Gauge className="mr-2 h-4 w-4" />{reducedAudio ? "Audio normal" : "Ahorrar datos"}</Button><Button onClick={leave} variant="outline" className="h-11 rounded-xl font-black"><MessageCircle className="mr-2 h-4 w-4" />Volver al chat</Button></div></div>}
+      <div className="grid grid-cols-2 gap-2"><Button onClick={toggleMute} variant="outline" className="h-12 rounded-2xl font-black">{muted ? <MicOff className="mr-2 h-5 w-5" /> : <Mic className="mr-2 h-5 w-5" />}{muted ? "Activar" : "Silenciar"}</Button><Button onClick={leave} disabled={busy} className="h-12 rounded-2xl bg-red-600 font-black text-white"><PhoneOff className="mr-2 h-5 w-5" />Salir</Button></div>
       {failed && <Button onClick={reconnect} disabled={reconnecting} variant="outline" className="h-11 w-full rounded-2xl font-black"><RefreshCw className={`mr-2 h-4 w-4 ${reconnecting ? "animate-spin" : ""}`} />Reintentar conexión</Button>}
     </div>}
-    {(permissionError || sendSignal.error || signalsQuery.error) && <p className="mt-2 text-xs font-bold text-red-600">{permissionError || sendSignal.error?.message || signalsQuery.error?.message}</p>}
-    {joined && <p className="mt-2 flex items-center text-[11px] font-bold text-emerald-700"><ShieldCheck className="mr-1 h-3.5 w-3.5" />{iceConfigQuery.data?.turnEnabled ? "TURN de respaldo disponible" : "Conexión directa STUN"}{reconnectCount > 0 ? ` · Reconexiones: ${reconnectCount}` : ""}{reducedAudio ? " · Audio reducido" : ""}</p>}
-    <p className="mt-3 text-[11px] font-bold text-emerald-700">La app mide la calidad técnica sin grabar ni almacenar el contenido de la conversación.</p>
+    {(permissionError || sendSignal.error || signalsQuery.error || heartbeat.error) && <p className="mt-2 text-xs font-bold text-red-600">{permissionError || sendSignal.error?.message || signalsQuery.error?.message || heartbeat.error?.message}</p>}
+    {joined && <p className="mt-2 flex items-center text-[11px] font-bold text-emerald-700"><ShieldCheck className="mr-1 h-3.5 w-3.5" />Presencia protegida · {iceConfigQuery.data?.turnEnabled ? "TURN de respaldo disponible" : "Conexión directa STUN"}{reconnectCount > 0 ? ` · Reconexiones: ${reconnectCount}` : ""}{reducedAudio ? " · Audio reducido" : ""}</p>}
+    <p className="mt-3 text-[11px] font-bold text-emerald-700">La sala detecta cuándo cada participante sigue conectado y evita cerrar la llamada del otro por accidente.</p>
   </div>;
 }
