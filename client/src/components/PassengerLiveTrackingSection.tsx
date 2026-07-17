@@ -3,7 +3,7 @@ import { trpc } from "@/lib/trpc";
 import { PassengerTripTrackingMap, type TrackingPoint } from "@/components/PassengerTripTrackingMap";
 import { TripChatPanel } from "@/components/TripChatPanel";
 import { Button } from "@/components/ui/button";
-import { AlertCircle, Car, CheckCircle2, Clock3, MapPin, Navigation, Share2 } from "lucide-react";
+import { AlertCircle, Car, CheckCircle2, Clock3, LocateFixed, MapPin, Navigation, RefreshCw, Share2 } from "lucide-react";
 
 type LiveTrip = {
   ride: {
@@ -39,12 +39,38 @@ function point(lat: unknown, lng: unknown): TrackingPoint | null {
   return { latitude, longitude };
 }
 
+function distanceKm(from: TrackingPoint, to: TrackingPoint) {
+  const radius = 6371;
+  const toRadians = (value: number) => (value * Math.PI) / 180;
+  const dLat = toRadians(to.latitude - from.latitude);
+  const dLng = toRadians(to.longitude - from.longitude);
+  const lat1 = toRadians(from.latitude);
+  const lat2 = toRadians(to.latitude);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return radius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function estimateMinutes(km: number, inProgress: boolean) {
+  const averageKmh = inProgress ? 30 : 24;
+  return Math.max(1, Math.ceil((km / averageKmh) * 60 + (inProgress ? 1 : 2)));
+}
+
+function freshness(updatedAt?: string | null) {
+  if (!updatedAt) return { fresh: false, label: "Esperando GPS" };
+  const ageSeconds = Math.max(0, Math.floor((Date.now() - new Date(updatedAt).getTime()) / 1000));
+  if (!Number.isFinite(ageSeconds)) return { fresh: false, label: "GPS sin fecha" };
+  if (ageSeconds < 30) return { fresh: true, label: "GPS ahora" };
+  if (ageSeconds < 90) return { fresh: true, label: `GPS hace ${ageSeconds}s` };
+  return { fresh: false, label: `GPS hace ${Math.floor(ageSeconds / 60)} min` };
+}
+
 export function PassengerLiveTrackingSection() {
   const [shared, setShared] = useState(false);
   const query = trpc.system.taxiLiveTrip.passenger.getLiveTrip.useQuery(undefined, {
     retry: false,
     refetchInterval: 5000,
     refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
   });
   const data = (query.data ?? null) as LiveTrip | null;
 
@@ -53,6 +79,10 @@ export function PassengerLiveTrackingSection() {
   const pickup = point(data.ride.pickup_lat, data.ride.pickup_lng);
   const dropoff = point(data.ride.dropoff_lat, data.ride.dropoff_lng);
   const driver = point(data.driver?.current_lat, data.driver?.current_lng);
+  const target = data.phase === "in_progress" ? dropoff : pickup;
+  const remainingKm = driver && target ? distanceKm(driver, target) : null;
+  const etaMinutes = remainingKm != null ? estimateMinutes(remainingKm, data.phase === "in_progress") : null;
+  const gps = freshness(data.driver?.updated_at);
   const phaseTitle = data.phase === "in_progress"
     ? "Viaje en curso"
     : data.phase === "driver_arrived"
@@ -62,7 +92,7 @@ export function PassengerLiveTrackingSection() {
     ? "Sigue el recorrido hasta tu destino en tiempo real."
     : data.phase === "driver_arrived"
       ? "Dirígete al punto de recogida. El conductor está esperando."
-      : "La posición y la ruta se actualizan automáticamente.";
+      : "La posición, distancia y llegada estimada se actualizan automáticamente.";
 
   const shareTrip = async () => {
     if (!data.ride.share_token) return;
@@ -99,6 +129,24 @@ export function PassengerLiveTrackingSection() {
           </div>
           {data.phase === "driver_arrived" ? <CheckCircle2 className="h-5 w-5 shrink-0" /> : <Clock3 className="h-5 w-5 shrink-0" />}
         </div>
+
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          <div className="rounded-2xl bg-white/80 p-3 text-center shadow-sm">
+            <Clock3 className="mx-auto h-4 w-4" />
+            <p className="mt-1 text-[10px] font-black uppercase opacity-60">Llegada</p>
+            <p className="text-sm font-black">{data.phase === "driver_arrived" ? "Ya está" : etaMinutes != null ? `${etaMinutes} min` : "Calculando"}</p>
+          </div>
+          <div className="rounded-2xl bg-white/80 p-3 text-center shadow-sm">
+            <Navigation className="mx-auto h-4 w-4" />
+            <p className="mt-1 text-[10px] font-black uppercase opacity-60">Distancia</p>
+            <p className="text-sm font-black">{data.phase === "driver_arrived" ? "En recogida" : remainingKm != null ? `${remainingKm.toFixed(1)} km` : "—"}</p>
+          </div>
+          <div className={`rounded-2xl p-3 text-center shadow-sm ${gps.fresh ? "bg-white/80" : "bg-amber-100"}`}>
+            {query.isFetching ? <RefreshCw className="mx-auto h-4 w-4 animate-spin" /> : <LocateFixed className="mx-auto h-4 w-4" />}
+            <p className="mt-1 text-[10px] font-black uppercase opacity-60">Señal</p>
+            <p className="text-xs font-black">{gps.label}</p>
+          </div>
+        </div>
       </div>
 
       {(pickup || dropoff || driver) ? (
@@ -109,6 +157,7 @@ export function PassengerLiveTrackingSection() {
           status={data.ride.status}
           driverName={data.driver?.driver_name || data.ride.driver_name}
           taxiCode={data.driver?.taxi_code || data.ride.taxi_code}
+          etaMinutes={etaMinutes}
         />
       ) : (
         <div className="rounded-3xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-800">
