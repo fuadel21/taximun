@@ -9,6 +9,7 @@ import { taxiProfilesRouter } from "../taxi-profiles-router";
 import { taxiRatingsRouter } from "../taxi-ratings-router";
 import { taxiRideOffersRouter } from "../taxi-ride-offers-router";
 import { taxiSafetyRouter } from "../taxi-safety-router";
+import { taxiTripAudioRouter } from "../taxi-trip-audio-router";
 import { taxiTripCallRouter } from "../taxi-trip-call-router";
 import { taxiTripChatRouter } from "../taxi-trip-chat-router";
 import { taxiTripSettlementRouter } from "../taxi-trip-settlement-router";
@@ -26,18 +27,15 @@ export const systemRouter = router({
   taxiRatings: taxiRatingsRouter,
   taxiRideOffers: taxiRideOffersRouter,
   taxiSafety: taxiSafetyRouter,
+  taxiTripAudio: taxiTripAudioRouter,
   taxiTripCall: taxiTripCallRouter,
   taxiTripChat: taxiTripChatRouter,
   taxiTripSettlement: taxiTripSettlementRouter,
 
-  health: publicProcedure
-    .input(z.object({ timestamp: z.number().min(0, "timestamp cannot be negative") }))
-    .query(() => ({ ok: true })),
+  health: publicProcedure.input(z.object({ timestamp: z.number().min(0, "timestamp cannot be negative") })).query(() => ({ ok: true })),
 
-  notifyOwner: adminProcedure
-    .input(z.object({ title: z.string().min(1, "title is required"), content: z.string().min(1, "content is required") }))
-    .mutation(async ({ input }) => {
-      const delivered = await notifyOwner(input);
-      return { success: delivered } as const;
-    }),
+  notifyOwner: adminProcedure.input(z.object({ title: z.string().min(1, "title is required"), content: z.string().min(1, "content is required") })).mutation(async ({ input }) => {
+    const delivered = await notifyOwner(input);
+    return { success: delivered } as const;
+  }),
 });

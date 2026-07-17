@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { TripAudioRoomPanel } from "@/components/TripAudioRoomPanel";
 import { Check, Loader2, MessageCircle, PhoneCall, PhoneOff, Send, ShieldCheck } from "lucide-react";
 
 type Role = "driver" | "passenger";
@@ -56,8 +57,8 @@ export function TripChatPanel({ rideId, role }: { rideId: string; role: Role }) 
           </Button>
           {incoming && <><Button onClick={() => respondCall.mutate({ requestId: call!.id, status: "accepted" })} className="h-12 rounded-2xl bg-cyan-600 font-black"><Check className="mr-2 h-5 w-5" />Aceptar</Button><Button onClick={() => respondCall.mutate({ requestId: call!.id, status: "declined" })} variant="outline" className="h-12 rounded-2xl font-black text-red-600"><PhoneOff className="mr-2 h-5 w-5" />Rechazar</Button></>}
         </div>
-        <p className="mt-2 text-xs font-bold text-slate-500">La solicitud conecta a conductor y pasajero sin mostrar números personales. La llamada VoIP se activará en una fase posterior.</p>
-        {call?.status === "accepted" && <p className="mt-2 rounded-2xl bg-emerald-50 p-3 text-xs font-black text-emerald-700">Solicitud aceptada. Ambos usuarios han confirmado el contacto.</p>}
+        <p className="mt-2 text-xs font-bold text-slate-500">La solicitud conecta a conductor y pasajero sin mostrar números personales.</p>
+        {call?.status === "accepted" && <TripAudioRoomPanel rideId={rideId} callRequestId={call.id} role={role} />}
       </div>
 
       <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full items-center justify-between gap-3 p-4 text-left">
