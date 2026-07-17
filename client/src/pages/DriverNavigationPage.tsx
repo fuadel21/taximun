@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { PassengerTripTrackingMap, type TrackingPoint } from "@/components/PassengerTripTrackingMap";
+import { TripChatPanel } from "@/components/TripChatPanel";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -186,6 +187,8 @@ export default function DriverNavigationPage() {
             <MapPin className="mr-2 inline h-4 w-4" />Este viaje no tiene coordenadas suficientes. Usa Google Maps con la dirección escrita.
           </div>
         )}
+
+        <TripChatPanel rideId={active.id} role="driver" />
 
         <Card className="rounded-[1.75rem] border-white bg-white shadow-xl">
           <CardContent className="space-y-4 p-4">
