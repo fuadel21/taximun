@@ -26,12 +26,29 @@ async function getRoomForUser(roomId: string, user: any) {
 
 const signalPayload = z.record(z.string(), z.unknown());
 
+function getIceServers(): RTCIceServer[] {
+  const servers: RTCIceServer[] = [
+    { urls: "stun:stun.l.google.com:19302" },
+    { urls: "stun:stun1.l.google.com:19302" },
+  ];
+  const urls = process.env.TURN_URL?.split(",").map((value) => value.trim()).filter(Boolean);
+  if (urls?.length && process.env.TURN_USERNAME && process.env.TURN_CREDENTIAL) {
+    servers.push({ urls, username: process.env.TURN_USERNAME, credential: process.env.TURN_CREDENTIAL });
+  }
+  return servers;
+}
+
 export const taxiTripAudioRouter = router({
   getLatest: protectedProcedure.input(z.object({ rideId: z.string().min(1) })).query(async ({ ctx, input }) => {
     await getRideForUser(input.rideId, ctx.user);
     const { data, error } = await supabase.from("taxi_trip_audio_rooms").select("id,ride_id,call_request_id,status,driver_joined_at,passenger_joined_at,started_at,ended_at,expires_at,created_at").eq("ride_id", input.rideId).order("created_at", { ascending: false }).limit(1).maybeSingle();
     fail(error);
     return data ?? null;
+  }),
+
+  getIceConfig: protectedProcedure.input(z.object({ roomId: z.string().uuid() })).query(async ({ ctx, input }) => {
+    await getRoomForUser(input.roomId, ctx.user);
+    return { iceServers: getIceServers(), turnEnabled: Boolean(process.env.TURN_URL && process.env.TURN_USERNAME && process.env.TURN_CREDENTIAL) };
   }),
 
   open: protectedProcedure.input(z.object({ rideId: z.string().min(1), callRequestId: z.string().uuid() })).mutation(async ({ ctx, input }) => {
@@ -60,7 +77,8 @@ export const taxiTripAudioRouter = router({
 
   listSignals: protectedProcedure.input(z.object({ roomId: z.string().uuid() })).query(async ({ ctx, input }) => {
     await getRoomForUser(input.roomId, ctx.user);
-    const { data, error } = await supabase.from("taxi_trip_audio_signals").select("id,room_id,sender_id,sender_role,signal_type,payload,created_at").eq("room_id", input.roomId).order("created_at", { ascending: true }).limit(200);
+    const recentCutoff = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+    const { data, error } = await supabase.from("taxi_trip_audio_signals").select("id,room_id,sender_id,sender_role,signal_type,payload,created_at").eq("room_id", input.roomId).gte("created_at", recentCutoff).order("created_at", { ascending: true }).limit(300);
     fail(error);
     return data ?? [];
   }),
@@ -74,10 +92,18 @@ export const taxiTripAudioRouter = router({
     return data;
   }),
 
+  clearSignals: protectedProcedure.input(z.object({ roomId: z.string().uuid() })).mutation(async ({ ctx, input }) => {
+    const room = await getRoomForUser(input.roomId, ctx.user);
+    const { error } = await supabase.from("taxi_trip_audio_signals").delete().eq("room_id", room.id).lt("created_at", new Date(Date.now() - 10 * 1000).toISOString());
+    fail(error);
+    return { success: true };
+  }),
+
   end: protectedProcedure.input(z.object({ roomId: z.string().uuid() })).mutation(async ({ ctx, input }) => {
     const room = await getRoomForUser(input.roomId, ctx.user);
     const { data, error: updateError } = await supabase.from("taxi_trip_audio_rooms").update({ status: "ended", ended_at: new Date().toISOString() }).eq("id", room.id).select("*").single();
     fail(updateError);
+    await supabase.from("taxi_trip_audio_signals").delete().eq("room_id", room.id);
     return data;
   }),
 });
