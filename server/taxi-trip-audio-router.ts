@@ -17,7 +17,11 @@ async function getRideForUser(rideId: string, user: any) {
 }
 
 async function getRoomForUser(roomId: string, user: any) {
-  const { data, error } = await supabase.from("taxi_trip_audio_rooms").select("id,ride_id,status,expires_at,driver_joined_at,passenger_joined_at").eq("id", roomId).maybeSingle();
+  const { data, error } = await supabase
+    .from("taxi_trip_audio_rooms")
+    .select("id,ride_id,status,expires_at,driver_joined_at,passenger_joined_at,driver_last_seen_at,passenger_last_seen_at")
+    .eq("id", roomId)
+    .maybeSingle();
   fail(error);
   if (!data) throw new TRPCError({ code: "NOT_FOUND", message: "Sala no encontrada." });
   await getRideForUser(data.ride_id, user);
@@ -41,7 +45,13 @@ function getIceServers(): RTCIceServer[] {
 export const taxiTripAudioRouter = router({
   getLatest: protectedProcedure.input(z.object({ rideId: z.string().min(1) })).query(async ({ ctx, input }) => {
     await getRideForUser(input.rideId, ctx.user);
-    const { data, error } = await supabase.from("taxi_trip_audio_rooms").select("id,ride_id,call_request_id,status,driver_joined_at,passenger_joined_at,started_at,ended_at,expires_at,created_at").eq("ride_id", input.rideId).order("created_at", { ascending: false }).limit(1).maybeSingle();
+    const { data, error } = await supabase
+      .from("taxi_trip_audio_rooms")
+      .select("id,ride_id,call_request_id,status,driver_joined_at,passenger_joined_at,driver_last_seen_at,passenger_last_seen_at,started_at,ended_at,expires_at,created_at")
+      .eq("ride_id", input.rideId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
     fail(error);
     return data ?? null;
   }),
@@ -66,12 +76,37 @@ export const taxiTripAudioRouter = router({
     const room = await getRoomForUser(input.roomId, ctx.user);
     if (["ended", "expired"].includes(room.status) || new Date(room.expires_at).getTime() <= Date.now()) throw new TRPCError({ code: "BAD_REQUEST", message: "La sala ya no está disponible." });
     const joinedField = ctx.user.role === "driver" ? "driver_joined_at" : "passenger_joined_at";
+    const lastSeenField = ctx.user.role === "driver" ? "driver_last_seen_at" : "passenger_last_seen_at";
     const otherJoined = ctx.user.role === "driver" ? room.passenger_joined_at : room.driver_joined_at;
     const now = new Date().toISOString();
-    const patch: Record<string, string> = { [joinedField]: now, status: otherJoined ? "active" : "waiting" };
+    const patch: Record<string, string> = { [joinedField]: now, [lastSeenField]: now, status: otherJoined ? "active" : "waiting" };
     if (otherJoined) patch.started_at = now;
     const { data, error: updateError } = await supabase.from("taxi_trip_audio_rooms").update(patch).eq("id", input.roomId).select("*").single();
     fail(updateError);
+    return data;
+  }),
+
+  heartbeat: protectedProcedure.input(z.object({ roomId: z.string().uuid() })).mutation(async ({ ctx, input }) => {
+    const room = await getRoomForUser(input.roomId, ctx.user);
+    if (!["waiting", "active"].includes(room.status)) return { alive: false, roomStatus: room.status };
+    const field = ctx.user.role === "driver" ? "driver_last_seen_at" : "passenger_last_seen_at";
+    const now = new Date().toISOString();
+    const { error } = await supabase.from("taxi_trip_audio_rooms").update({ [field]: now }).eq("id", room.id);
+    fail(error);
+    return { alive: true, roomStatus: room.status, lastSeenAt: now };
+  }),
+
+  leave: protectedProcedure.input(z.object({ roomId: z.string().uuid() })).mutation(async ({ ctx, input }) => {
+    const room = await getRoomForUser(input.roomId, ctx.user);
+    const joinedField = ctx.user.role === "driver" ? "driver_joined_at" : "passenger_joined_at";
+    const lastSeenField = ctx.user.role === "driver" ? "driver_last_seen_at" : "passenger_last_seen_at";
+    const otherLastSeen = ctx.user.role === "driver" ? room.passenger_last_seen_at : room.driver_last_seen_at;
+    const otherAlive = otherLastSeen && Date.now() - new Date(otherLastSeen).getTime() < 30_000;
+    const patch: Record<string, string | null> = { [joinedField]: null, [lastSeenField]: null, status: otherAlive ? "waiting" : "ended" };
+    if (!otherAlive) patch.ended_at = new Date().toISOString();
+    const { data, error } = await supabase.from("taxi_trip_audio_rooms").update(patch).eq("id", room.id).select("*").single();
+    fail(error);
+    if (!otherAlive) await supabase.from("taxi_trip_audio_signals").delete().eq("room_id", room.id);
     return data;
   }),
 
@@ -101,7 +136,7 @@ export const taxiTripAudioRouter = router({
 
   end: protectedProcedure.input(z.object({ roomId: z.string().uuid() })).mutation(async ({ ctx, input }) => {
     const room = await getRoomForUser(input.roomId, ctx.user);
-    const { data, error: updateError } = await supabase.from("taxi_trip_audio_rooms").update({ status: "ended", ended_at: new Date().toISOString() }).eq("id", room.id).select("*").single();
+    const { data, error: updateError } = await supabase.from("taxi_trip_audio_rooms").update({ status: "ended", ended_at: new Date().toISOString(), driver_last_seen_at: null, passenger_last_seen_at: null }).eq("id", room.id).select("*").single();
     fail(updateError);
     await supabase.from("taxi_trip_audio_signals").delete().eq("room_id", room.id);
     return data;
