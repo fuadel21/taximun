@@ -29,6 +29,7 @@ async function getRoomForUser(roomId: string, user: any) {
 }
 
 const signalPayload = z.record(z.string(), z.unknown());
+const qualityLevel = z.enum(["excellent", "good", "poor", "offline"]);
 
 function getIceServers(): RTCIceServer[] {
   const servers: RTCIceServer[] = [
@@ -94,6 +95,45 @@ export const taxiTripAudioRouter = router({
     const { error } = await supabase.from("taxi_trip_audio_rooms").update({ [field]: now }).eq("id", room.id);
     fail(error);
     return { alive: true, roomStatus: room.status, lastSeenAt: now };
+  }),
+
+  reportQuality: protectedProcedure.input(z.object({
+    roomId: z.string().uuid(),
+    quality: qualityLevel,
+    connectionState: z.string().max(40),
+    roundTripMs: z.number().min(0).max(60_000).nullable().optional(),
+    jitterMs: z.number().min(0).max(60_000).nullable().optional(),
+    packetsLost: z.number().int().min(0).max(10_000_000).nullable().optional(),
+    bitrateKbps: z.number().min(0).max(1_000_000).nullable().optional(),
+  })).mutation(async ({ ctx, input }) => {
+    const room = await getRoomForUser(input.roomId, ctx.user);
+    const participantRole = ctx.user.role === "driver" ? "driver" : "passenger";
+    const { error } = await supabase.from("taxi_trip_audio_quality_events").insert({
+      room_id: room.id,
+      ride_id: room.ride_id,
+      participant_id: ctx.user.openId,
+      participant_role: participantRole,
+      quality: input.quality,
+      connection_state: input.connectionState,
+      round_trip_ms: input.roundTripMs ?? null,
+      jitter_ms: input.jitterMs ?? null,
+      packets_lost: input.packetsLost ?? null,
+      bitrate_kbps: input.bitrateKbps ?? null,
+    });
+    fail(error);
+    return { recorded: true };
+  }),
+
+  getQualitySummary: protectedProcedure.input(z.object({ roomId: z.string().uuid() })).query(async ({ ctx, input }) => {
+    await getRoomForUser(input.roomId, ctx.user);
+    const { data, error } = await supabase
+      .from("taxi_trip_audio_quality_events")
+      .select("participant_role,quality,connection_state,round_trip_ms,jitter_ms,packets_lost,bitrate_kbps,created_at")
+      .eq("room_id", input.roomId)
+      .order("created_at", { ascending: false })
+      .limit(20);
+    fail(error);
+    return data ?? [];
   }),
 
   leave: protectedProcedure.input(z.object({ roomId: z.string().uuid() })).mutation(async ({ ctx, input }) => {
