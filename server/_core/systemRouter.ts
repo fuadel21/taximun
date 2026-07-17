@@ -9,6 +9,7 @@ import { taxiProfilesRouter } from "../taxi-profiles-router";
 import { taxiRatingsRouter } from "../taxi-ratings-router";
 import { taxiRideOffersRouter } from "../taxi-ride-offers-router";
 import { taxiSafetyRouter } from "../taxi-safety-router";
+import { taxiTripChatRouter } from "../taxi-trip-chat-router";
 import { taxiTripSettlementRouter } from "../taxi-trip-settlement-router";
 import { notifyOwner } from "./notification";
 import { adminProcedure, publicProcedure, router } from "./trpc";
@@ -24,6 +25,7 @@ export const systemRouter = router({
   taxiRatings: taxiRatingsRouter,
   taxiRideOffers: taxiRideOffersRouter,
   taxiSafety: taxiSafetyRouter,
+  taxiTripChat: taxiTripChatRouter,
   taxiTripSettlement: taxiTripSettlementRouter,
 
   health: publicProcedure
