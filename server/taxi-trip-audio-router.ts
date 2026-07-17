@@ -16,6 +16,16 @@ async function getRideForUser(rideId: string, user: any) {
   return data;
 }
 
+async function getRoomForUser(roomId: string, user: any) {
+  const { data, error } = await supabase.from("taxi_trip_audio_rooms").select("id,ride_id,status,expires_at,driver_joined_at,passenger_joined_at").eq("id", roomId).maybeSingle();
+  fail(error);
+  if (!data) throw new TRPCError({ code: "NOT_FOUND", message: "Sala no encontrada." });
+  await getRideForUser(data.ride_id, user);
+  return data;
+}
+
+const signalPayload = z.record(z.string(), z.unknown());
+
 export const taxiTripAudioRouter = router({
   getLatest: protectedProcedure.input(z.object({ rideId: z.string().min(1) })).query(async ({ ctx, input }) => {
     await getRideForUser(input.rideId, ctx.user);
@@ -36,10 +46,7 @@ export const taxiTripAudioRouter = router({
   }),
 
   join: protectedProcedure.input(z.object({ roomId: z.string().uuid() })).mutation(async ({ ctx, input }) => {
-    const { data: room, error } = await supabase.from("taxi_trip_audio_rooms").select("id,ride_id,status,expires_at,driver_joined_at,passenger_joined_at").eq("id", input.roomId).maybeSingle();
-    fail(error);
-    if (!room) throw new TRPCError({ code: "NOT_FOUND", message: "Sala no encontrada." });
-    await getRideForUser(room.ride_id, ctx.user);
+    const room = await getRoomForUser(input.roomId, ctx.user);
     if (["ended", "expired"].includes(room.status) || new Date(room.expires_at).getTime() <= Date.now()) throw new TRPCError({ code: "BAD_REQUEST", message: "La sala ya no está disponible." });
     const joinedField = ctx.user.role === "driver" ? "driver_joined_at" : "passenger_joined_at";
     const otherJoined = ctx.user.role === "driver" ? room.passenger_joined_at : room.driver_joined_at;
@@ -51,12 +58,25 @@ export const taxiTripAudioRouter = router({
     return data;
   }),
 
-  end: protectedProcedure.input(z.object({ roomId: z.string().uuid() })).mutation(async ({ ctx, input }) => {
-    const { data: room, error } = await supabase.from("taxi_trip_audio_rooms").select("id,ride_id").eq("id", input.roomId).maybeSingle();
+  listSignals: protectedProcedure.input(z.object({ roomId: z.string().uuid() })).query(async ({ ctx, input }) => {
+    await getRoomForUser(input.roomId, ctx.user);
+    const { data, error } = await supabase.from("taxi_trip_audio_signals").select("id,room_id,sender_id,sender_role,signal_type,payload,created_at").eq("room_id", input.roomId).order("created_at", { ascending: true }).limit(200);
     fail(error);
-    if (!room) throw new TRPCError({ code: "NOT_FOUND", message: "Sala no encontrada." });
-    await getRideForUser(room.ride_id, ctx.user);
-    const { data, error: updateError } = await supabase.from("taxi_trip_audio_rooms").update({ status: "ended", ended_at: new Date().toISOString() }).eq("id", input.roomId).select("*").single();
+    return data ?? [];
+  }),
+
+  sendSignal: protectedProcedure.input(z.object({ roomId: z.string().uuid(), signalType: z.enum(["offer", "answer", "ice"]), payload: signalPayload })).mutation(async ({ ctx, input }) => {
+    const room = await getRoomForUser(input.roomId, ctx.user);
+    if (!["waiting", "active"].includes(room.status) || new Date(room.expires_at).getTime() <= Date.now()) throw new TRPCError({ code: "BAD_REQUEST", message: "La sala ya no acepta señalización." });
+    const senderRole = ctx.user.role === "driver" ? "driver" : "passenger";
+    const { data, error } = await supabase.from("taxi_trip_audio_signals").insert({ room_id: input.roomId, sender_id: ctx.user.openId, sender_role: senderRole, signal_type: input.signalType, payload: input.payload }).select("id,signal_type,created_at").single();
+    fail(error);
+    return data;
+  }),
+
+  end: protectedProcedure.input(z.object({ roomId: z.string().uuid() })).mutation(async ({ ctx, input }) => {
+    const room = await getRoomForUser(input.roomId, ctx.user);
+    const { data, error: updateError } = await supabase.from("taxi_trip_audio_rooms").update({ status: "ended", ended_at: new Date().toISOString() }).eq("id", room.id).select("*").single();
     fail(updateError);
     return data;
   }),
