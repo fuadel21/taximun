@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { PassengerTripTrackingMap, type TrackingPoint } from "@/components/PassengerTripTrackingMap";
+import { TripChatPanel } from "@/components/TripChatPanel";
 import { Button } from "@/components/ui/button";
 import { AlertCircle, Car, CheckCircle2, Clock3, MapPin, Navigation, Share2 } from "lucide-react";
 
@@ -123,6 +124,8 @@ export function PassengerLiveTrackingSection() {
           <Share2 className="mr-2 h-4 w-4" />{shared ? "Enlace copiado" : "Compartir viaje"}
         </Button>
       </div>
+
+      <TripChatPanel rideId={data.ride.id} role="passenger" />
     </section>
   );
 }
