@@ -4,6 +4,7 @@ import NotFound from "@/pages/NotFound";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { GlobalNotificationDock } from "./components/GlobalNotificationDock";
+import { AdminUrgentAlertDock } from "./components/AdminUrgentAlertDock";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
 import AuthReal from "./pages/AuthReal";
@@ -62,6 +63,7 @@ function App() {
           <Toaster />
           <Router />
           <GlobalNotificationDock />
+          <AdminUrgentAlertDock />
         </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>
