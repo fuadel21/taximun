@@ -1,8 +1,9 @@
+import { useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { AlertTriangle, CheckCircle2, Clock3, Loader2, RefreshCw } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock3, ExternalLink, Loader2, MapPin, RefreshCw, ShieldAlert } from "lucide-react";
 
 type SafetyReport = {
   id: string;
@@ -15,9 +16,14 @@ type SafetyReport = {
   title: string;
   description?: string | null;
   contact_phone?: string | null;
+  lat?: number | null;
+  lng?: number | null;
+  resolution_note?: string | null;
   created_at?: string | null;
   resolved_at?: string | null;
 };
+
+type Filter = "active" | "critical" | "all" | "resolved";
 
 function formatDate(value: unknown) {
   if (typeof value !== "string") return "Ahora";
@@ -45,123 +51,113 @@ function categoryLabel(category: string) {
   if (category === "payment_issue") return "Pago";
   if (category === "lost_item") return "Objeto perdido";
   if (category === "safety") return "Seguridad";
-  if (category === "sos") return "Urgente";
+  if (category === "sos") return "SOS";
   return "Otro";
 }
 
+const priorityWeight: Record<string, number> = { critical: 4, high: 3, normal: 2, low: 1 };
+
 export function AdminSafetyReports() {
+  const [filter, setFilter] = useState<Filter>("active");
   const utils = trpc.useUtils();
   const reportsQuery = trpc.system.taxiSafety.adminList.useQuery(undefined, {
     retry: false,
-    refetchInterval: 8000,
+    refetchInterval: 5000,
     refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
   });
-
   const updateStatus = trpc.system.taxiSafety.adminUpdateStatus.useMutation({
-    onSuccess: async () => {
-      await utils.system.taxiSafety.adminList.invalidate();
-    },
+    onSuccess: async () => utils.system.taxiSafety.adminList.invalidate(),
   });
 
   const reports = (reportsQuery.data ?? []) as SafetyReport[];
-  const openCount = reports.filter((report) => report.status === "open").length;
-  const reviewCount = reports.filter((report) => report.status === "in_review").length;
-  const resolvedCount = reports.filter((report) => report.status === "resolved").length;
+  const active = reports.filter((report) => report.status === "open" || report.status === "in_review");
+  const critical = active.filter((report) => report.priority === "critical" || report.category === "sos");
+  const resolved = reports.filter((report) => report.status === "resolved");
+  const visible = useMemo(() => {
+    const selected = filter === "active" ? active : filter === "critical" ? critical : filter === "resolved" ? resolved : reports;
+    return [...selected].sort((a, b) => {
+      const activeA = a.status === "open" || a.status === "in_review" ? 1 : 0;
+      const activeB = b.status === "open" || b.status === "in_review" ? 1 : 0;
+      if (activeA !== activeB) return activeB - activeA;
+      const priority = (priorityWeight[b.priority] ?? 0) - (priorityWeight[a.priority] ?? 0);
+      if (priority !== 0) return priority;
+      return new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime();
+    });
+  }, [filter, reports]);
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-3 sm:grid-cols-3">
-        <MiniStat title="Abiertas" value={String(openCount)} icon={<AlertTriangle className="h-5 w-5" />} />
-        <MiniStat title="En revisión" value={String(reviewCount)} icon={<Clock3 className="h-5 w-5" />} />
-        <MiniStat title="Resueltas" value={String(resolvedCount)} icon={<CheckCircle2 className="h-5 w-5" />} />
-      </div>
-
-      {reportsQuery.error && (
-        <div className="rounded-3xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700">
-          Error cargando incidencias reales: {reportsQuery.error.message}
+      {critical.length > 0 && (
+        <div className="rounded-[2rem] border border-red-300 bg-gradient-to-r from-red-600 to-rose-700 p-5 text-white shadow-lg">
+          <div className="flex items-start gap-3">
+            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/15"><ShieldAlert className="h-6 w-6" /></span>
+            <div className="flex-1"><p className="text-xs font-black uppercase tracking-[0.2em] text-red-100">Atención inmediata</p><p className="mt-1 text-xl font-black">{critical.length} alerta{critical.length === 1 ? "" : "s"} crítica{critical.length === 1 ? "" : "s"} activa{critical.length === 1 ? "" : "s"}</p><p className="mt-1 text-sm font-semibold text-red-100">Los SOS y alertas críticas aparecen primero y se actualizan cada 5 segundos.</p></div>
+            <Button onClick={() => setFilter("critical")} className="rounded-2xl bg-white font-black text-red-700 hover:bg-red-50">Ver críticas</Button>
+          </div>
         </div>
       )}
 
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h3 className="text-lg font-black">Incidencias reales</h3>
-          <p className="text-sm font-semibold text-slate-500">Datos desde taxi_safety_reports.</p>
-        </div>
-        <Button variant="outline" className="rounded-2xl bg-white font-black" onClick={() => reportsQuery.refetch()} disabled={reportsQuery.isFetching}>
-          {reportsQuery.isFetching ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-          Actualizar
-        </Button>
+      <div className="grid gap-3 sm:grid-cols-4">
+        <MiniStat title="Críticas activas" value={String(critical.length)} icon={<ShieldAlert className="h-5 w-5" />} urgent={critical.length > 0} />
+        <MiniStat title="Abiertas" value={String(reports.filter((r) => r.status === "open").length)} icon={<AlertTriangle className="h-5 w-5" />} />
+        <MiniStat title="En revisión" value={String(reports.filter((r) => r.status === "in_review").length)} icon={<Clock3 className="h-5 w-5" />} />
+        <MiniStat title="Resueltas" value={String(resolved.length)} icon={<CheckCircle2 className="h-5 w-5" />} />
+      </div>
+
+      {reportsQuery.error && <div className="rounded-3xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700">Error cargando incidencias: {reportsQuery.error.message}</div>}
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div><h3 className="text-lg font-black">Panel de alertas</h3><p className="text-sm font-semibold text-slate-500">Prioridad, estado, ubicación y viaje afectado.</p></div>
+        <Button variant="outline" className="rounded-2xl bg-white font-black" onClick={() => reportsQuery.refetch()} disabled={reportsQuery.isFetching}>{reportsQuery.isFetching ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}Actualizar</Button>
+      </div>
+
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        {([['active', `Activas (${active.length})`], ['critical', `Críticas (${critical.length})`], ['all', `Todas (${reports.length})`], ['resolved', `Resueltas (${resolved.length})`]] as [Filter, string][]).map(([value, label]) => (
+          <Button key={value} size="sm" variant={filter === value ? "default" : "outline"} onClick={() => setFilter(value)} className="shrink-0 rounded-xl font-black">{label}</Button>
+        ))}
       </div>
 
       <div className="space-y-3">
         {reportsQuery.isLoading && <div className="rounded-3xl bg-white p-5 text-center font-bold text-slate-500">Cargando incidencias...</div>}
-        {!reportsQuery.isLoading && reports.length === 0 && (
-          <div className="rounded-3xl border border-emerald-100 bg-emerald-50 p-4 text-sm font-bold text-emerald-800">
-            No hay incidencias reales registradas.
-          </div>
-        )}
+        {!reportsQuery.isLoading && visible.length === 0 && <div className="rounded-3xl border border-emerald-100 bg-emerald-50 p-4 text-sm font-bold text-emerald-800">No hay alertas en este filtro.</div>}
 
-        {reports.map((report) => (
-          <Card key={report.id} className="rounded-3xl border-white bg-white shadow-sm">
-            <CardContent className="p-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div className="min-w-0 flex-1">
-                  <div className="mb-2 flex flex-wrap items-center gap-2">
-                    {priorityBadge(report.priority)}
-                    {statusBadge(report.status)}
-                    <Badge variant="outline">{categoryLabel(report.category)}</Badge>
+        {visible.map((report) => {
+          const urgent = report.priority === "critical" || report.category === "sos";
+          const hasLocation = Number.isFinite(Number(report.lat)) && Number.isFinite(Number(report.lng));
+          const mapsUrl = hasLocation ? `https://www.google.com/maps?q=${report.lat},${report.lng}` : null;
+          return (
+            <Card key={report.id} className={`rounded-3xl bg-white shadow-sm ${urgent && report.status !== "resolved" ? "border-2 border-red-400 shadow-red-100" : "border-white"}`}>
+              <CardContent className="p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-2 flex flex-wrap items-center gap-2">{priorityBadge(report.priority)}{statusBadge(report.status)}<Badge variant="outline">{categoryLabel(report.category)}</Badge>{urgent && report.status !== "resolved" && <Badge className="animate-pulse bg-red-50 text-red-700 hover:bg-red-50">Respuesta prioritaria</Badge>}</div>
+                    <p className="text-lg font-black text-slate-950">{report.title}</p>
+                    <p className="mt-1 text-sm font-semibold text-slate-600">{report.description || "Sin descripción"}</p>
+                    <div className="mt-3 grid gap-2 text-xs font-bold text-slate-500 sm:grid-cols-2">
+                      <p>Usuario: {report.reporter_role} · {report.reporter_id.slice(0, 10)}</p><p>Fecha: {formatDate(report.created_at)}</p>
+                      {report.ride_id && <p>Viaje: {report.ride_id}</p>}{report.contact_phone && <p>Teléfono: {report.contact_phone}</p>}
+                    </div>
+                    {report.resolution_note && <div className="mt-3 rounded-2xl bg-emerald-50 p-3 text-xs font-bold text-emerald-800">Nota: {report.resolution_note}</div>}
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {mapsUrl && <Button asChild size="sm" variant="outline" className="rounded-xl font-black"><a href={mapsUrl} target="_blank" rel="noreferrer"><MapPin className="mr-2 h-4 w-4" />Abrir ubicación<ExternalLink className="ml-2 h-3.5 w-3.5" /></a></Button>}
+                      {report.ride_id && <Button size="sm" variant="outline" className="rounded-xl font-black" onClick={() => navigator.clipboard?.writeText(report.ride_id!)}>Copiar ID del viaje</Button>}
+                    </div>
                   </div>
-                  <p className="text-lg font-black text-slate-950">{report.title}</p>
-                  <p className="mt-1 text-sm font-semibold text-slate-600">{report.description || "Sin descripción"}</p>
-                  <div className="mt-3 grid gap-2 text-xs font-bold text-slate-500 sm:grid-cols-2">
-                    <p>Usuario: {report.reporter_role} · {report.reporter_id.slice(0, 10)}</p>
-                    <p>Fecha: {formatDate(report.created_at)}</p>
-                    {report.ride_id && <p>Viaje: {report.ride_id.slice(0, 8)}</p>}
-                    {report.contact_phone && <p>Teléfono: {report.contact_phone}</p>}
+                  <div className="flex shrink-0 flex-wrap gap-2 sm:flex-col">
+                    {report.status === "open" && <Button size="sm" variant="outline" disabled={updateStatus.isPending} className="rounded-xl bg-white font-black" onClick={() => updateStatus.mutate({ reportId: report.id, status: "in_review", resolutionNote: urgent ? "Alerta crítica atendida por administración" : "En revisión desde panel admin" })}><Clock3 className="mr-2 h-4 w-4" />Atender</Button>}
+                    {report.status !== "resolved" && <Button size="sm" disabled={updateStatus.isPending} className="rounded-xl bg-emerald-600 font-black text-white hover:bg-emerald-500" onClick={() => updateStatus.mutate({ reportId: report.id, status: "resolved", resolutionNote: "Incidencia resuelta desde panel de seguridad" })}><CheckCircle2 className="mr-2 h-4 w-4" />Resolver</Button>}
                   </div>
                 </div>
-                <div className="flex shrink-0 flex-wrap gap-2 sm:flex-col">
-                  {report.status === "open" && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={updateStatus.isPending}
-                      className="rounded-xl bg-white font-black"
-                      onClick={() => updateStatus.mutate({ reportId: report.id, status: "in_review", resolutionNote: "En revisión desde panel admin" })}
-                    >
-                      <Clock3 className="mr-2 h-4 w-4" /> Revisar
-                    </Button>
-                  )}
-                  {report.status !== "resolved" && (
-                    <Button
-                      size="sm"
-                      disabled={updateStatus.isPending}
-                      className="rounded-xl bg-emerald-600 font-black text-white hover:bg-emerald-500"
-                      onClick={() => updateStatus.mutate({ reportId: report.id, status: "resolved", resolutionNote: "Resuelta desde panel admin" })}
-                    >
-                      <CheckCircle2 className="mr-2 h-4 w-4" /> Resolver
-                    </Button>
-                  )}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
     </div>
   );
 }
 
-function MiniStat({ title, value, icon }: { title: string; value: string; icon: React.ReactNode }) {
-  return (
-    <div className="rounded-3xl bg-white p-4 shadow-sm">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-sm font-bold text-slate-500">{title}</p>
-          <p className="mt-1 text-2xl font-black text-slate-950">{value}</p>
-        </div>
-        <div className="rounded-2xl bg-cyan-50 p-3 text-cyan-700">{icon}</div>
-      </div>
-    </div>
-  );
+function MiniStat({ title, value, icon, urgent = false }: { title: string; value: string; icon: React.ReactNode; urgent?: boolean }) {
+  return <div className={`rounded-3xl p-4 shadow-sm ${urgent ? "border border-red-200 bg-red-50" : "bg-white"}`}><div className="flex items-center justify-between gap-3"><div><p className={`text-sm font-bold ${urgent ? "text-red-700" : "text-slate-500"}`}>{title}</p><p className="mt-1 text-2xl font-black text-slate-950">{value}</p></div><div className={`rounded-2xl p-3 ${urgent ? "bg-red-600 text-white" : "bg-cyan-50 text-cyan-700"}`}>{icon}</div></div></div>;
 }
