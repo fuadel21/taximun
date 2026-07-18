@@ -2,6 +2,7 @@ import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { PassengerTripTrackingMap, type TrackingPoint } from "@/components/PassengerTripTrackingMap";
 import { TripChatPanel } from "@/components/TripChatPanel";
+import { TripSafetyCenter } from "@/components/TripSafetyCenter";
 import { Button } from "@/components/ui/button";
 import { AlertCircle, Car, CheckCircle2, Clock3, LocateFixed, MapPin, Navigation, RefreshCw, Share2 } from "lucide-react";
 
@@ -83,27 +84,16 @@ export function PassengerLiveTrackingSection() {
   const remainingKm = driver && target ? distanceKm(driver, target) : null;
   const etaMinutes = remainingKm != null ? estimateMinutes(remainingKm, data.phase === "in_progress") : null;
   const gps = freshness(data.driver?.updated_at);
-  const phaseTitle = data.phase === "in_progress"
-    ? "Viaje en curso"
-    : data.phase === "driver_arrived"
-      ? "Tu taxi ha llegado"
-      : "El conductor está en camino";
-  const phaseText = data.phase === "in_progress"
-    ? "Sigue el recorrido hasta tu destino en tiempo real."
-    : data.phase === "driver_arrived"
-      ? "Dirígete al punto de recogida. El conductor está esperando."
-      : "La posición, distancia y llegada estimada se actualizan automáticamente.";
+  const shareUrl = data.ride.share_token ? `${window.location.origin}/track/${data.ride.share_token}` : null;
+  const phaseTitle = data.phase === "in_progress" ? "Viaje en curso" : data.phase === "driver_arrived" ? "Tu taxi ha llegado" : "El conductor está en camino";
+  const phaseText = data.phase === "in_progress" ? "Sigue el recorrido hasta tu destino en tiempo real." : data.phase === "driver_arrived" ? "Dirígete al punto de recogida. El conductor está esperando." : "La posición, distancia y llegada estimada se actualizan automáticamente.";
 
   const shareTrip = async () => {
-    if (!data.ride.share_token) return;
-    const url = `${window.location.origin}/track/${data.ride.share_token}`;
-    const text = `Sigue mi viaje Taximun: ${url}`;
+    if (!shareUrl) return;
+    const text = `Sigue mi viaje Taximun: ${shareUrl}`;
     try {
-      if ("share" in navigator && typeof navigator.share === "function") {
-        await navigator.share({ title: "Seguimiento Taximun", text, url });
-      } else if (navigator.clipboard) {
-        await navigator.clipboard.writeText(url);
-      }
+      if ("share" in navigator && typeof navigator.share === "function") await navigator.share({ title: "Seguimiento Taximun", text, url: shareUrl });
+      else if (navigator.clipboard) await navigator.clipboard.writeText(shareUrl);
       setShared(true);
       window.setTimeout(() => setShared(false), 2200);
     } catch {}
@@ -111,69 +101,29 @@ export function PassengerLiveTrackingSection() {
 
   return (
     <section className="mx-auto max-w-5xl space-y-3 px-4 pt-4">
-      {query.error && (
-        <div className="rounded-3xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700">
-          <AlertCircle className="mr-2 inline h-4 w-4" />{query.error.message}
-        </div>
-      )}
+      {query.error && <div className="rounded-3xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700"><AlertCircle className="mr-2 inline h-4 w-4" />{query.error.message}</div>}
 
       <div className={`rounded-3xl border p-4 shadow-sm ${data.phase === "driver_arrived" ? "border-amber-200 bg-amber-50 text-amber-900" : data.phase === "in_progress" ? "border-cyan-200 bg-cyan-50 text-cyan-900" : "border-blue-200 bg-blue-50 text-blue-900"}`}>
         <div className="flex items-start gap-3">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white shadow-sm">
-            {data.phase === "driver_arrived" ? <MapPin className="h-5 w-5 text-amber-600" /> : data.phase === "in_progress" ? <Navigation className="h-5 w-5 text-cyan-600" /> : <Car className="h-5 w-5 text-blue-600" />}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="font-black">{phaseTitle}</p>
-            <p className="mt-1 text-xs font-bold opacity-85">{phaseText}</p>
-            <p className="mt-1 text-xs font-bold opacity-70">{data.driver?.driver_name || data.ride.driver_name || "Conductor"} · {data.driver?.taxi_code || data.ride.taxi_code || "Taxi"} · {data.driver?.plate || data.ride.plate || "Matrícula"}</p>
-          </div>
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white shadow-sm">{data.phase === "driver_arrived" ? <MapPin className="h-5 w-5 text-amber-600" /> : data.phase === "in_progress" ? <Navigation className="h-5 w-5 text-cyan-600" /> : <Car className="h-5 w-5 text-blue-600" />}</div>
+          <div className="min-w-0 flex-1"><p className="font-black">{phaseTitle}</p><p className="mt-1 text-xs font-bold opacity-85">{phaseText}</p><p className="mt-1 text-xs font-bold opacity-70">{data.driver?.driver_name || data.ride.driver_name || "Conductor"} · {data.driver?.taxi_code || data.ride.taxi_code || "Taxi"} · {data.driver?.plate || data.ride.plate || "Matrícula"}</p></div>
           {data.phase === "driver_arrived" ? <CheckCircle2 className="h-5 w-5 shrink-0" /> : <Clock3 className="h-5 w-5 shrink-0" />}
         </div>
-
         <div className="mt-3 grid grid-cols-3 gap-2">
-          <div className="rounded-2xl bg-white/80 p-3 text-center shadow-sm">
-            <Clock3 className="mx-auto h-4 w-4" />
-            <p className="mt-1 text-[10px] font-black uppercase opacity-60">Llegada</p>
-            <p className="text-sm font-black">{data.phase === "driver_arrived" ? "Ya está" : etaMinutes != null ? `${etaMinutes} min` : "Calculando"}</p>
-          </div>
-          <div className="rounded-2xl bg-white/80 p-3 text-center shadow-sm">
-            <Navigation className="mx-auto h-4 w-4" />
-            <p className="mt-1 text-[10px] font-black uppercase opacity-60">Distancia</p>
-            <p className="text-sm font-black">{data.phase === "driver_arrived" ? "En recogida" : remainingKm != null ? `${remainingKm.toFixed(1)} km` : "—"}</p>
-          </div>
-          <div className={`rounded-2xl p-3 text-center shadow-sm ${gps.fresh ? "bg-white/80" : "bg-amber-100"}`}>
-            {query.isFetching ? <RefreshCw className="mx-auto h-4 w-4 animate-spin" /> : <LocateFixed className="mx-auto h-4 w-4" />}
-            <p className="mt-1 text-[10px] font-black uppercase opacity-60">Señal</p>
-            <p className="text-xs font-black">{gps.label}</p>
-          </div>
+          <div className="rounded-2xl bg-white/80 p-3 text-center shadow-sm"><Clock3 className="mx-auto h-4 w-4" /><p className="mt-1 text-[10px] font-black uppercase opacity-60">Llegada</p><p className="text-sm font-black">{data.phase === "driver_arrived" ? "Ya está" : etaMinutes != null ? `${etaMinutes} min` : "Calculando"}</p></div>
+          <div className="rounded-2xl bg-white/80 p-3 text-center shadow-sm"><Navigation className="mx-auto h-4 w-4" /><p className="mt-1 text-[10px] font-black uppercase opacity-60">Distancia</p><p className="text-sm font-black">{data.phase === "driver_arrived" ? "En recogida" : remainingKm != null ? `${remainingKm.toFixed(1)} km` : "—"}</p></div>
+          <div className={`rounded-2xl p-3 text-center shadow-sm ${gps.fresh ? "bg-white/80" : "bg-amber-100"}`}>{query.isFetching ? <RefreshCw className="mx-auto h-4 w-4 animate-spin" /> : <LocateFixed className="mx-auto h-4 w-4" />}<p className="mt-1 text-[10px] font-black uppercase opacity-60">Señal</p><p className="text-xs font-black">{gps.label}</p></div>
         </div>
       </div>
 
-      {(pickup || dropoff || driver) ? (
-        <PassengerTripTrackingMap
-          pickup={pickup}
-          dropoff={dropoff}
-          driver={driver}
-          status={data.ride.status}
-          driverName={data.driver?.driver_name || data.ride.driver_name}
-          taxiCode={data.driver?.taxi_code || data.ride.taxi_code}
-          etaMinutes={etaMinutes}
-        />
-      ) : (
-        <div className="rounded-3xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-800">
-          <MapPin className="mr-2 inline h-4 w-4" />El seguimiento aparecerá cuando el viaje tenga coordenadas.
-        </div>
-      )}
+      {(pickup || dropoff || driver) ? <PassengerTripTrackingMap pickup={pickup} dropoff={dropoff} driver={driver} status={data.ride.status} driverName={data.driver?.driver_name || data.ride.driver_name} taxiCode={data.driver?.taxi_code || data.ride.taxi_code} etaMinutes={etaMinutes} /> : <div className="rounded-3xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-800"><MapPin className="mr-2 inline h-4 w-4" />El seguimiento aparecerá cuando el viaje tenga coordenadas.</div>}
 
       <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
-        <div className="rounded-2xl bg-white px-3 py-3 text-xs font-bold text-slate-500 shadow-sm">
-          {data.ride.pickup_address || "Recogida"} → {data.ride.dropoff_address || "Destino"}
-        </div>
-        <Button onClick={shareTrip} disabled={!data.ride.share_token} variant="outline" className="h-11 rounded-2xl bg-white font-black">
-          <Share2 className="mr-2 h-4 w-4" />{shared ? "Enlace copiado" : "Compartir viaje"}
-        </Button>
+        <div className="rounded-2xl bg-white px-3 py-3 text-xs font-bold text-slate-500 shadow-sm">{data.ride.pickup_address || "Recogida"} → {data.ride.dropoff_address || "Destino"}</div>
+        <Button onClick={shareTrip} disabled={!shareUrl} variant="outline" className="h-11 rounded-2xl bg-white font-black"><Share2 className="mr-2 h-4 w-4" />{shared ? "Enlace copiado" : "Compartir viaje"}</Button>
       </div>
 
+      <TripSafetyCenter rideId={data.ride.id} latitude={driver?.latitude ?? pickup?.latitude} longitude={driver?.longitude ?? pickup?.longitude} shareUrl={shareUrl} />
       <TripChatPanel rideId={data.ride.id} role="passenger" />
     </section>
   );
