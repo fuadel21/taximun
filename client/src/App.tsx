@@ -19,6 +19,7 @@ import AdminSafetyPage from "./pages/AdminSafetyPage";
 import AdminAlertsPanel from "./pages/AdminAlertsPanel";
 import AdminVerificationPage from "./pages/AdminVerificationPage";
 import AdminSystemHealthPage from "./pages/AdminSystemHealthPage";
+import AdminJourneyValidationPage from "./pages/AdminJourneyValidationPage";
 import SharedTripTrackingPage from "./pages/SharedTripTrackingPage";
 
 function Router() {
@@ -49,6 +50,7 @@ function Router() {
       <Route path={"/admin/verification"} component={AdminVerificationPage} />
       <Route path={"/admin/safety"} component={AdminSafetyPage} />
       <Route path={"/admin/health"} component={AdminSystemHealthPage} />
+      <Route path={"/admin/journey-test"} component={AdminJourneyValidationPage} />
       <Route path={"/admin/alerts"} component={AdminAlertsPanel} />
       <Route path={"/admin/incidents"} component={AdminAlertsPanel} />
       <Route path={"/404"} component={NotFound} />
