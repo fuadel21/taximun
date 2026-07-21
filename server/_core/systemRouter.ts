@@ -13,6 +13,7 @@ import { taxiRideOffersRouter } from "../taxi-ride-offers-router";
 import { taxiSafetyAuditRouter } from "../taxi-safety-audit-router";
 import { taxiSafetyRouter } from "../taxi-safety-router";
 import { taxiServerDispatchRouter } from "../taxi-server-dispatch-router";
+import { taxiStripeConnectRouter } from "../taxi-stripe-connect-router";
 import { taxiSystemHealthRouter } from "../taxi-system-health-router";
 import { taxiTripAudioRouter } from "../taxi-trip-audio-router";
 import { taxiTripCallRouter } from "../taxi-trip-call-router";
@@ -36,6 +37,7 @@ export const systemRouter = router({
   taxiSafety: taxiSafetyRouter,
   taxiSafetyAudit: taxiSafetyAuditRouter,
   taxiServerDispatch: taxiServerDispatchRouter,
+  taxiStripeConnect: taxiStripeConnectRouter,
   taxiSystemHealth: taxiSystemHealthRouter,
   taxiTripAudio: taxiTripAudioRouter,
   taxiTripCall: taxiTripCallRouter,
