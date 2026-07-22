@@ -128,6 +128,64 @@ async function syncTransfer(transfer: any, eventType: string, eventId: string) {
   if (error) throw error;
 }
 
+function disputePayoutAction(status: string, eventType: string) {
+  if (eventType === "charge.dispute.closed" && status === "won") return "released";
+  if (eventType === "charge.dispute.closed" && status === "lost") return "reverse";
+  return "hold";
+}
+
+async function syncDispute(dispute: any, eventType: string, eventId: string) {
+  if (!dispute?.id || !dispute?.charge) return;
+  const { data: payment, error: paymentError } = await supabase
+    .from("taxi_payments")
+    .select("id,ride_id,driver_id")
+    .eq("provider_charge_id", dispute.charge)
+    .maybeSingle();
+  if (paymentError) throw paymentError;
+  if (!payment) return;
+
+  const action = disputePayoutAction(String(dispute.status || "warning_needs_response"), eventType);
+  const now = new Date().toISOString();
+  const { data: saved, error: disputeError } = await supabase
+    .from("taxi_payment_disputes")
+    .upsert({
+      payment_id: payment.id,
+      ride_id: payment.ride_id,
+      driver_id: payment.driver_id,
+      stripe_dispute_id: dispute.id,
+      stripe_charge_id: dispute.charge,
+      amount: Number(dispute.amount || 0),
+      currency: String(dispute.currency || "eur").toLowerCase(),
+      reason: dispute.reason || null,
+      status: dispute.status || "warning_needs_response",
+      evidence_due_at: dispute?.evidence_details?.due_by ? new Date(dispute.evidence_details.due_by * 1000).toISOString() : null,
+      is_charge_refundable: typeof dispute.is_charge_refundable === "boolean" ? dispute.is_charge_refundable : null,
+      balance_transaction_id: typeof dispute.balance_transactions?.[0] === "string" ? dispute.balance_transactions[0] : dispute.balance_transactions?.[0]?.id || null,
+      payout_action: action,
+      last_stripe_event_id: eventId,
+      payload: dispute,
+      closed_at: eventType === "charge.dispute.closed" ? now : null,
+    }, { onConflict: "stripe_dispute_id" })
+    .select("id")
+    .single();
+  if (disputeError) throw disputeError;
+
+  const transferPatch: Record<string, unknown> = {
+    dispute_id: saved.id,
+    dispute_hold: action !== "released",
+    payout_blocked_reason: action === "released" ? null : `stripe_dispute:${dispute.id}:${dispute.status || "open"}`,
+  };
+  if (action === "reverse") {
+    transferPatch.status = "reversed";
+    transferPatch.reversed_at = now;
+  }
+  const { error: transferError } = await supabase
+    .from("taxi_driver_transfers")
+    .update(transferPatch)
+    .eq("payment_id", payment.id);
+  if (transferError) throw transferError;
+}
+
 async function processEvent(event: any) {
   switch (event.type) {
     case "payment_intent.amount_capturable_updated":
@@ -148,6 +206,13 @@ async function processEvent(event: any) {
     case "transfer.failed":
     case "transfer.reversed":
       await syncTransfer(event.data.object, event.type, event.id);
+      break;
+    case "charge.dispute.created":
+    case "charge.dispute.updated":
+    case "charge.dispute.closed":
+    case "charge.dispute.funds_withdrawn":
+    case "charge.dispute.funds_reinstated":
+      await syncDispute(event.data.object, event.type, event.id);
       break;
     default:
       break;
