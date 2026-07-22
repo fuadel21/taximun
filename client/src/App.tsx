@@ -20,6 +20,7 @@ import AdminAlertsPanel from "./pages/AdminAlertsPanel";
 import AdminVerificationPage from "./pages/AdminVerificationPage";
 import AdminSystemHealthPage from "./pages/AdminSystemHealthPage";
 import AdminJourneyValidationPage from "./pages/AdminJourneyValidationPage";
+import AdminOperationsCenterPage from "./pages/AdminOperationsCenterPage";
 import SharedTripTrackingPage from "./pages/SharedTripTrackingPage";
 
 function Router() {
@@ -46,6 +47,7 @@ function Router() {
       {/* Admin routes */}
       <Route path={"/admin"} component={AdminPanel} />
       <Route path={"/admin/dashboard"} component={AdminPanel} />
+      <Route path={"/admin/operations"} component={AdminOperationsCenterPage} />
       <Route path={"/admin/users"} component={AdminPanel} />
       <Route path={"/admin/verification"} component={AdminVerificationPage} />
       <Route path={"/admin/safety"} component={AdminSafetyPage} />
