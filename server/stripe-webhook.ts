@@ -83,7 +83,7 @@ async function syncRefund(refund: any) {
   if (updateError) throw updateError;
 }
 
-async function syncConnectAccount(account: any) {
+async function syncConnectAccount(account: any, eventId: string) {
   if (!account?.id) return;
   const requirementsDue = [
     ...(account?.requirements?.currently_due || []),
@@ -98,22 +98,31 @@ async function syncConnectAccount(account: any) {
     details_submitted: Boolean(account.details_submitted),
     requirements_due: Array.from(new Set(requirementsDue)),
     disabled_reason: account?.requirements?.disabled_reason || null,
-    updated_at: new Date().toISOString(),
+    last_stripe_event_id: eventId,
+    last_synced_at: new Date().toISOString(),
   }).eq("stripe_account_id", account.id);
   if (error) throw error;
 }
 
-async function syncTransfer(transfer: any, eventType: string) {
+async function syncTransfer(transfer: any, eventType: string, eventId: string) {
   if (!transfer?.id) return;
-  const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  const now = new Date().toISOString();
+  const patch: Record<string, unknown> = {
+    updated_at: now,
+    last_stripe_event_id: eventId,
+    last_synced_at: now,
+    failure_code: transfer?.failure_code || null,
+    failure_message: transfer?.failure_message || null,
+  };
   if (eventType === "transfer.reversed" || Number(transfer.amount_reversed || 0) > 0 || transfer.reversed === true) {
     patch.status = "reversed";
-    patch.reversed_at = new Date().toISOString();
+    patch.reversed_at = now;
+    patch.reversal_id = typeof transfer.reversals?.data?.[0]?.id === "string" ? transfer.reversals.data[0].id : null;
   } else if (eventType === "transfer.failed") {
     patch.status = "failed";
   } else {
     patch.status = "paid";
-    patch.paid_at = new Date().toISOString();
+    patch.paid_at = now;
   }
   const { error } = await supabase.from("taxi_driver_transfers").update(patch).eq("stripe_transfer_id", transfer.id);
   if (error) throw error;
@@ -132,13 +141,13 @@ async function processEvent(event: any) {
       await syncRefund(event.data.object);
       break;
     case "account.updated":
-      await syncConnectAccount(event.data.object);
+      await syncConnectAccount(event.data.object, event.id);
       break;
     case "transfer.created":
     case "transfer.updated":
     case "transfer.failed":
     case "transfer.reversed":
-      await syncTransfer(event.data.object, event.type);
+      await syncTransfer(event.data.object, event.type, event.id);
       break;
     default:
       break;
@@ -161,7 +170,7 @@ export function registerStripeWebhook(app: Express) {
     if (existingError) return res.status(500).json({ ok: false, error: "No se pudo consultar la auditoría" });
     if (existing?.status === "processed") return res.json({ ok: true, duplicate: true });
 
-    const { data: audit, error: auditError } = await supabase.from("taxi_stripe_webhook_events").upsert({
+    const auditPayload: Record<string, unknown> = {
       stripe_event_id: event.id,
       event_type: event.type,
       api_version: event.api_version || null,
@@ -170,8 +179,10 @@ export function registerStripeWebhook(app: Express) {
       status: "processing",
       attempts: Number(existing?.attempts || 0) + 1,
       last_error: null,
-      received_at: existing ? undefined : new Date().toISOString(),
-    }, { onConflict: "stripe_event_id" }).select("id").single();
+    };
+    if (!existing) auditPayload.received_at = new Date().toISOString();
+
+    const { data: audit, error: auditError } = await supabase.from("taxi_stripe_webhook_events").upsert(auditPayload, { onConflict: "stripe_event_id" }).select("id").single();
     if (auditError) return res.status(500).json({ ok: false, error: "No se pudo registrar el evento" });
 
     try {
