@@ -83,7 +83,38 @@ export const taxiServerDispatchRouter = router({
         return {
           processed: results.length,
           created: results.filter((item: any) => item?.code === "OFFER_CREATED").length,
+          noDriver: results.filter((item: any) => item?.code === "NO_DRIVER_AVAILABLE").length,
           results,
+        };
+      }),
+
+    metrics: adminProcedure
+      .input(z.object({ hours: z.number().int().min(1).max(720).default(24) }).optional())
+      .query(async ({ input }) => {
+        const since = new Date(Date.now() - (input?.hours ?? 24) * 60 * 60 * 1000).toISOString();
+        const { data, error } = await supabase
+          .from("taxi_dispatch_decisions")
+          .select("result_code,distance_km,estimated_eta_minutes,driver_rating,final_score,candidate_count,algorithm_version,created_at")
+          .gte("created_at", since)
+          .order("created_at", { ascending: false })
+          .limit(2000);
+
+        throwIfSupabaseError(error);
+        const rows = data ?? [];
+        const created = rows.filter((row) => row.result_code === "OFFER_CREATED");
+        const average = (values: number[]) => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+
+        return {
+          since,
+          totalDecisions: rows.length,
+          offersCreated: created.length,
+          noDriverAvailable: rows.filter((row) => row.result_code === "NO_DRIVER_AVAILABLE").length,
+          successRate: rows.length ? Number(((created.length / rows.length) * 100).toFixed(2)) : 0,
+          averageDistanceKm: Number(average(created.map((row) => Number(row.distance_km || 0))).toFixed(3)),
+          averageEtaMinutes: Number(average(created.map((row) => Number(row.estimated_eta_minutes || 0))).toFixed(2)),
+          averageCandidates: Number(average(created.map((row) => Number(row.candidate_count || 0))).toFixed(2)),
+          algorithmVersion: created[0]?.algorithm_version ?? "smart_dispatch_v1",
+          recent: rows.slice(0, 100),
         };
       }),
   }),
