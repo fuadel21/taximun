@@ -18,6 +18,7 @@ type ActiveRide = {
 };
 
 type PaymentMethod = "cash" | "card" | "bizum";
+type RidePayment = { status?: string | null; amount_captured?: number | null };
 
 const money = (value: unknown) => `${Number(value ?? 0).toFixed(2)} €`;
 
@@ -41,6 +42,11 @@ export function DriverTripSettlementSection() {
     }
   }, [active?.id]);
 
+  const paymentQuery = trpc.system.taxiPayments.getForRide.useQuery(
+    { rideId: active?.id || "00000000-0000-0000-0000-000000000000" },
+    { enabled: Boolean(active?.id && active.status === "in_progress" && paymentMethod === "card"), retry: false }
+  );
+  const captureMutation = trpc.system.taxiPayments.capture.useMutation();
   const settleMutation = trpc.system.taxiTripSettlement.settleAndComplete.useMutation({
     onSuccess: async () => {
       setError("");
@@ -55,22 +61,42 @@ export function DriverTripSettlementSection() {
     onError: (err) => setError(err.message),
   });
 
-  if (!active) return null;
+  if (!active || active.status !== "in_progress") return null;
 
-  const submit = () => {
+  const submit = async () => {
     const amount = Number(finalFare.replace(",", "."));
     if (!Number.isFinite(amount) || amount < 0) {
       setError("Introduce un importe final válido.");
       return;
     }
-    settleMutation.mutate({
-      rideId: active.id,
-      finalFare: amount,
-      paymentMethod,
-      paymentStatus: "paid",
-      notes: notes.trim() || undefined,
-    });
+
+    setError("");
+    try {
+      if (paymentMethod === "card") {
+        const payment = (paymentQuery.data ?? null) as RidePayment | null;
+        const expectedCents = Math.round(amount * 100);
+        const alreadyCaptured = payment?.status === "captured" && Number(payment.amount_captured ?? 0) === expectedCents;
+
+        if (!alreadyCaptured) {
+          await captureMutation.mutateAsync({ rideId: active.id, finalAmount: amount });
+          await paymentQuery.refetch();
+        }
+      }
+
+      await settleMutation.mutateAsync({
+        rideId: active.id,
+        finalFare: amount,
+        paymentMethod,
+        paymentStatus: "paid",
+        notes: notes.trim() || undefined,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo completar el cobro y cierre.");
+    }
   };
+
+  const busy = settleMutation.isPending || captureMutation.isPending;
+  const paymentError = paymentQuery.error || captureMutation.error;
 
   return (
     <section className="mx-auto max-w-6xl px-4 pt-4">
@@ -85,7 +111,7 @@ export function DriverTripSettlementSection() {
             <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100"><ReceiptText className="mr-1 h-4 w-4" />Recibo final</Badge>
           </div>
 
-          {error && <div className="rounded-2xl bg-red-50 p-3 text-sm font-bold text-red-700"><AlertCircle className="mr-2 inline h-4 w-4" />{error}</div>}
+          {(error || paymentError) && <div className="rounded-2xl bg-red-50 p-3 text-sm font-bold text-red-700"><AlertCircle className="mr-2 inline h-4 w-4" />{error || paymentError?.message}</div>}
 
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
@@ -101,21 +127,22 @@ export function DriverTripSettlementSection() {
               <label className="mb-2 block text-xs font-black uppercase tracking-[0.12em] text-slate-500">Método cobrado</label>
               <div className="grid grid-cols-3 gap-2">
                 {(["cash", "card", "bizum"] as PaymentMethod[]).map((method) => (
-                  <button key={method} onClick={() => setPaymentMethod(method)} className={`rounded-2xl p-3 text-xs font-black ${paymentMethod === method ? "bg-slate-950 text-white" : "bg-slate-100 text-slate-700"}`}>
+                  <button key={method} onClick={() => setPaymentMethod(method)} disabled={busy} className={`rounded-2xl p-3 text-xs font-black ${paymentMethod === method ? "bg-slate-950 text-white" : "bg-slate-100 text-slate-700"}`}>
                     <CreditCard className="mx-auto mb-1 h-4 w-4" />{method === "cash" ? "Efectivo" : method === "card" ? "Tarjeta" : "Bizum"}
                   </button>
                 ))}
               </div>
+              {paymentMethod === "card" && <p className="mt-2 rounded-2xl bg-blue-50 p-2 text-xs font-bold text-blue-800">La tarjeta se capturará en Stripe antes de cerrar el viaje.</p>}
             </div>
           </div>
 
           <Textarea value={notes} onChange={(event) => setNotes(event.target.value)} maxLength={800} className="min-h-20 rounded-2xl" placeholder="Observaciones opcionales del cierre" />
 
-          <Button onClick={submit} disabled={settleMutation.isPending} className="h-14 w-full rounded-2xl bg-emerald-600 text-base font-black text-white hover:bg-emerald-500">
-            {settleMutation.isPending ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <CheckCircle2 className="mr-2 h-5 w-5" />}
-            Confirmar cobro y finalizar
+          <Button onClick={submit} disabled={busy || (paymentMethod === "card" && paymentQuery.isLoading)} className="h-14 w-full rounded-2xl bg-emerald-600 text-base font-black text-white hover:bg-emerald-500">
+            {busy ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <CheckCircle2 className="mr-2 h-5 w-5" />}
+            {captureMutation.isPending ? "Capturando tarjeta…" : settleMutation.isPending ? "Cerrando viaje…" : "Confirmar cobro y finalizar"}
           </Button>
-          <p className="text-center text-xs font-bold text-slate-500">La base de datos impedirá completar el viaje sin este cierre.</p>
+          <p className="text-center text-xs font-bold text-slate-500">La base de datos valida el pago y contabiliza el viaje de forma atómica.</p>
         </CardContent>
       </Card>
     </section>
