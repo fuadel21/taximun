@@ -5,20 +5,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { hasSupabaseBrowserConfig, supabase } from "@/lib/supabase";
-import { AlertCircle, ArrowRight, Car, CheckCircle2, Lock, Mail, Shield, UserRound, Users } from "lucide-react";
+import { AlertCircle, ArrowRight, Car, CheckCircle2, Lock, Mail, UserRound, Users } from "lucide-react";
 
-type AuthRole = "passenger" | "driver" | "admin";
+type PublicAuthRole = "passenger" | "driver";
 type AuthMode = "login" | "signup";
 
 const GUEST_ROLE_KEY = "taximun_guest_role";
-
-const routeForRole = (role: AuthRole) => {
-  if (role === "driver") return "/driver";
-  if (role === "admin") return "/admin";
-  return "/passenger";
-};
-
-const safePublicRole = (role: AuthRole) => (role === "admin" ? "passenger" : role);
 
 const clearGuest = () => {
   try {
@@ -28,7 +20,7 @@ const clearGuest = () => {
 };
 
 export default function AuthReal() {
-  const [role, setRole] = useState<AuthRole>("passenger");
+  const [role, setRole] = useState<PublicAuthRole>("passenger");
   const [mode, setMode] = useState<AuthMode>("login");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -38,19 +30,10 @@ export default function AuthReal() {
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const finish = async (selectedRole: AuthRole) => {
+  const redirectByServerRole = async () => {
     clearGuest();
-    if (selectedRole !== "admin") {
-      const { error: updateError } = await supabase.auth.updateUser({
-        data: {
-          role: selectedRole,
-          name: name || undefined,
-        },
-      });
-      if (updateError) throw updateError;
-    }
     await supabase.auth.refreshSession();
-    window.location.href = routeForRole(selectedRole);
+    window.location.href = "/";
   };
 
   const handleSubmit = async () => {
@@ -81,12 +64,11 @@ export default function AuthReal() {
     setLoading(true);
     try {
       clearGuest();
-      const publicRole = safePublicRole(role);
 
       if (mode === "login") {
         const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
         if (signInError) throw signInError;
-        await finish(role === "admin" ? "admin" : publicRole);
+        await redirectByServerRole();
         return;
       }
 
@@ -94,10 +76,7 @@ export default function AuthReal() {
         email,
         password,
         options: {
-          data: {
-            name,
-            role: publicRole,
-          },
+          data: { name, role },
           emailRedirectTo: `${window.location.origin}/auth`,
         },
       });
@@ -109,7 +88,7 @@ export default function AuthReal() {
         return;
       }
 
-      await finish(publicRole);
+      await redirectByServerRole();
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo completar el acceso.");
     } finally {
@@ -127,26 +106,27 @@ export default function AuthReal() {
             </span>
             <div>
               <p className="text-sm font-black uppercase tracking-[0.22em] text-cyan-700">Taximun</p>
-              <p className="text-xs font-medium text-slate-500">Acceso real Supabase</p>
+              <p className="text-xs font-medium text-slate-500">Acceso seguro Supabase</p>
             </div>
           </div>
           <h1 className="text-4xl font-black tracking-tight sm:text-6xl">Entra a tu panel real</h1>
           <p className="mt-4 max-w-xl text-base leading-7 text-slate-600">
-            Pasajeros y conductores usan datos reales en Supabase. Ya no se usa el endpoint antiguo de roles.
+            Al iniciar sesión conservamos el rol real de tu cuenta. Los administradores se reconocen automáticamente por el servidor.
           </p>
         </div>
 
         <Card className="border-white/70 bg-white/90 shadow-2xl backdrop-blur-xl">
           <CardHeader>
             <CardTitle className="text-3xl font-black">{mode === "login" ? "Iniciar sesión" : "Crear cuenta"}</CardTitle>
-            <CardDescription>Selecciona tu perfil y accede con correo y contraseña.</CardDescription>
+            <CardDescription>{mode === "login" ? "Accede con tu correo y contraseña." : "Selecciona el tipo de cuenta que deseas crear."}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
-            <div className="grid grid-cols-3 gap-2">
-              <RoleButton active={role === "passenger"} onClick={() => setRole("passenger")} icon={<Users className="h-5 w-5" />} label="Pasajero" />
-              <RoleButton active={role === "driver"} onClick={() => setRole("driver")} icon={<Car className="h-5 w-5" />} label="Conductor" />
-              <RoleButton active={role === "admin"} onClick={() => setRole("admin")} icon={<Shield className="h-5 w-5" />} label="Admin" />
-            </div>
+            {mode === "signup" && (
+              <div className="grid grid-cols-2 gap-2">
+                <RoleButton active={role === "passenger"} onClick={() => setRole("passenger")} icon={<Users className="h-5 w-5" />} label="Pasajero" />
+                <RoleButton active={role === "driver"} onClick={() => setRole("driver")} icon={<Car className="h-5 w-5" />} label="Conductor" />
+              </div>
+            )}
 
             <div className="grid grid-cols-2 rounded-2xl bg-slate-100 p-1">
               <button type="button" onClick={() => setMode("login")} className={`rounded-xl px-4 py-3 text-sm font-black ${mode === "login" ? "bg-white text-slate-950 shadow" : "text-slate-500"}`}>Iniciar sesión</button>
@@ -189,18 +169,8 @@ export default function AuthReal() {
               </div>
             )}
 
-            {error && (
-              <Alert className="rounded-2xl border-red-200 bg-red-50 text-red-700">
-                <AlertCircle className="h-5 w-5" />
-                <AlertDescription className="font-semibold">{error}</AlertDescription>
-              </Alert>
-            )}
-            {success && (
-              <Alert className="rounded-2xl border-cyan-200 bg-cyan-50 text-cyan-800">
-                <CheckCircle2 className="h-5 w-5" />
-                <AlertDescription className="font-semibold">{success}</AlertDescription>
-              </Alert>
-            )}
+            {error && <Alert className="rounded-2xl border-red-200 bg-red-50 text-red-700"><AlertCircle className="h-5 w-5" /><AlertDescription className="font-semibold">{error}</AlertDescription></Alert>}
+            {success && <Alert className="rounded-2xl border-cyan-200 bg-cyan-50 text-cyan-800"><CheckCircle2 className="h-5 w-5" /><AlertDescription className="font-semibold">{success}</AlertDescription></Alert>}
 
             <Button onClick={handleSubmit} disabled={loading} className="h-14 w-full rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 text-base font-black text-white">
               {loading ? "Procesando..." : mode === "login" ? "Entrar" : "Crear cuenta"}
@@ -215,13 +185,8 @@ export default function AuthReal() {
 
 function RoleButton({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: ReactNode; label: string }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`rounded-2xl border p-3 text-sm font-black transition ${active ? "border-cyan-400 bg-cyan-50 text-cyan-800 shadow" : "border-slate-200 bg-white text-slate-700"}`}
-    >
-      <span className="mb-2 flex justify-center">{icon}</span>
-      {label}
+    <button type="button" onClick={onClick} className={`rounded-2xl border p-3 text-sm font-black transition ${active ? "border-cyan-400 bg-cyan-50 text-cyan-800 shadow" : "border-slate-200 bg-white text-slate-700"}`}>
+      <span className="mb-2 flex justify-center">{icon}</span>{label}
     </button>
   );
 }
