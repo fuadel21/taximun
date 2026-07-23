@@ -31,42 +31,38 @@ export const taxiTripSettlementRouter = router({
     .mutation(async ({ ctx, input }) => {
       assertDriver(ctx);
 
-      const now = new Date().toISOString();
-      const { data: ride, error } = await supabase
+      const { data: currentRide, error: rideError } = await supabase
         .from("taxi_rides")
-        .update({
-          final_fare: input.finalFare,
-          payment_method: input.paymentMethod,
-          payment_status: input.paymentStatus,
-          settlement_notes: input.notes || null,
-          settled_at: now,
-          settled_by: ctx.user.openId,
-          completed_at: now,
-          status: "completed",
-        })
+        .select("id,driver_id,passenger_id,status")
         .eq("id", input.rideId)
-        .eq("driver_id", ctx.user.openId)
-        .eq("status", "in_progress")
-        .select()
-        .single();
-
-      throwIfSupabaseError(error);
-
-      const { data: liveStatus } = await supabase
-        .from("driver_live_status")
-        .select("total_earnings,total_rides")
-        .eq("driver_id", ctx.user.openId)
         .maybeSingle();
 
-      await supabase
-        .from("driver_live_status")
-        .upsert({
-          driver_id: ctx.user.openId,
-          driver_name: ctx.user.name || "Conductor",
-          status: "available",
-          total_earnings: Number(liveStatus?.total_earnings ?? 0) + input.finalFare,
-          total_rides: Number(liveStatus?.total_rides ?? 0) + 1,
-        });
+      throwIfSupabaseError(rideError);
+      if (!currentRide) throw new TRPCError({ code: "NOT_FOUND", message: "Viaje no encontrado." });
+      if (ctx.user.role === "driver" && currentRide.driver_id !== ctx.user.openId) {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+      if (currentRide.status !== "in_progress") {
+        throw new TRPCError({ code: "CONFLICT", message: "El viaje debe estar en curso antes del cierre." });
+      }
+
+      const driverId = currentRide.driver_id;
+      if (!driverId) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "El viaje no tiene conductor asignado." });
+
+      const { data, error } = await supabase.rpc("taximun_settle_trip_atomic", {
+        p_ride_id: input.rideId,
+        p_driver_id: driverId,
+        p_settled_by: ctx.user.openId,
+        p_driver_name: ctx.user.role === "driver" ? ctx.user.name || "Conductor" : "Conductor",
+        p_final_fare: input.finalFare,
+        p_payment_method: input.paymentMethod,
+        p_payment_status: input.paymentStatus,
+        p_notes: input.notes || null,
+      });
+
+      throwIfSupabaseError(error);
+      const ride = Array.isArray(data) ? data[0] : data;
+      if (!ride) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "No se pudo cerrar el viaje." });
 
       await supabase.from("taxi_activity_logs").insert({
         actor_id: ctx.user.openId,
