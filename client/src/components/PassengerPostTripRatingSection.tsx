@@ -29,10 +29,14 @@ type CompletedRide = {
   pickup_address: string;
   dropoff_address: string;
   estimated_fare: number | string;
+  final_fare?: number | string | null;
   estimated_duration: number | string;
   distance_km: number | string;
   service_type?: string | null;
   payment_method?: string | null;
+  payment_status?: string | null;
+  settlement_notes?: string | null;
+  settled_at?: string | null;
   completed_at?: string | null;
   requested_at?: string | null;
 };
@@ -79,6 +83,13 @@ function paymentLabel(value?: string | null) {
   if (value === "card") return "Tarjeta";
   if (value === "bizum") return "Bizum";
   return "Efectivo";
+}
+
+function paymentStatusLabel(value?: string | null) {
+  if (value === "paid") return "Cobro confirmado";
+  if (value === "waived") return "Sin cobro";
+  if (value === "failed") return "Cobro fallido";
+  return "Pendiente";
 }
 
 export function PassengerPostTripRatingSection() {
@@ -154,6 +165,8 @@ export function PassengerPostTripRatingSection() {
   };
 
   const ride = pendingRide || latestCompleted;
+  const finalFare = ride.final_fare ?? ride.estimated_fare;
+  const hasFinalSettlement = ride.final_fare !== null && ride.final_fare !== undefined && Boolean(ride.settled_at);
 
   return (
     <section className="mx-auto max-w-5xl px-4 pb-4">
@@ -163,7 +176,7 @@ export function PassengerPostTripRatingSection() {
             <div>
               <p className="text-xs font-black uppercase tracking-[0.22em] text-cyan-200">Cierre del viaje</p>
               <h2 className="mt-1 text-2xl font-black">Recibo y valoración</h2>
-              <p className="mt-1 text-xs font-bold text-slate-300">{formatDate(ride.completed_at || ride.requested_at)}</p>
+              <p className="mt-1 text-xs font-bold text-slate-300">{formatDate(ride.settled_at || ride.completed_at || ride.requested_at)}</p>
             </div>
             <ReceiptText className="h-6 w-6 text-cyan-200" />
           </div>
@@ -181,7 +194,7 @@ export function PassengerPostTripRatingSection() {
           )}
 
           <div className="grid grid-cols-3 gap-2">
-            <Metric icon={<Euro className="h-4 w-4" />} title="Estimado" value={money(ride.estimated_fare)} />
+            <Metric icon={<Euro className="h-4 w-4" />} title={hasFinalSettlement ? "Importe final" : "Estimado"} value={money(finalFare)} />
             <Metric icon={<Clock3 className="h-4 w-4" />} title="Tiempo" value={`${ride.estimated_duration} min`} />
             <Metric icon={<CreditCard className="h-4 w-4" />} title="Pago" value={paymentLabel(ride.payment_method)} />
           </div>
@@ -189,7 +202,8 @@ export function PassengerPostTripRatingSection() {
           <div className="space-y-2 rounded-3xl bg-slate-50 p-4 text-sm font-bold text-slate-700">
             <p><MapPin className="mr-2 inline h-4 w-4 text-cyan-600" />{ride.pickup_address}</p>
             <p><Navigation className="mr-2 inline h-4 w-4 text-blue-600" />{ride.dropoff_address}</p>
-            <p className="text-xs text-slate-500">Servicio {serviceLabel(ride.service_type)} · {ride.distance_km} km · importe estimado, no cobro confirmado.</p>
+            <p className="text-xs text-slate-500">Servicio {serviceLabel(ride.service_type)} · {ride.distance_km} km · {paymentStatusLabel(ride.payment_status)}.</p>
+            {ride.settlement_notes && <p className="rounded-2xl bg-white p-3 text-xs text-slate-600">Observaciones del cierre: {ride.settlement_notes}</p>}
           </div>
 
           {pendingRide ? (
