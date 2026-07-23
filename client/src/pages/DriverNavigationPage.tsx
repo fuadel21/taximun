@@ -5,6 +5,7 @@ import { PassengerTripTrackingMap, type TrackingPoint } from "@/components/Passe
 import { TripChatPanel } from "@/components/TripChatPanel";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
   AlertCircle,
@@ -14,6 +15,7 @@ import {
   Euro,
   Loader2,
   LocateFixed,
+  LockKeyhole,
   MapPin,
   Navigation,
   ReceiptText,
@@ -55,11 +57,7 @@ function point(lat: unknown, lng: unknown): TrackingPoint | null {
 
 function openGoogleMaps(destination: TrackingPoint | null, address: string) {
   const value = destination ? `${destination.latitude},${destination.longitude}` : address;
-  window.open(
-    `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(value)}`,
-    "_blank",
-    "noopener,noreferrer"
-  );
+  window.open(`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(value)}`, "_blank", "noopener,noreferrer");
 }
 
 export default function DriverNavigationPage() {
@@ -68,6 +66,7 @@ export default function DriverNavigationPage() {
   const [browserLocation, setBrowserLocation] = useState<TrackingPoint | null>(null);
   const [gpsError, setGpsError] = useState("");
   const [actionError, setActionError] = useState("");
+  const [pickupPin, setPickupPin] = useState("");
 
   const activeQuery = trpc.system.taxiOps.driver.getActiveRide.useQuery(undefined, {
     retry: false,
@@ -78,9 +77,10 @@ export default function DriverNavigationPage() {
     retry: false,
     refetchInterval: 5000,
   });
-  const startRide = trpc.system.taxiOps.driver.startRide.useMutation({
+  const startRide = trpc.system.taxiTripLifecycle.startWithPin.useMutation({
     onSuccess: async () => {
       setActionError("");
+      setPickupPin("");
       await activeQuery.refetch();
       await utils.system.taxiOps.driver.getStatus.invalidate();
     },
@@ -102,20 +102,16 @@ export default function DriverNavigationPage() {
       setGpsError("Este dispositivo no permite ubicación GPS.");
       return;
     }
-
     const watchId = navigator.geolocation.watchPosition(
       (position) => {
         setBrowserLocation({ latitude: position.coords.latitude, longitude: position.coords.longitude });
         setGpsError("");
       },
-      (error) => {
-        setGpsError(error.code === error.PERMISSION_DENIED
-          ? "Activa el permiso de ubicación para usar la navegación Taximun."
-          : "No se pudo actualizar tu posición GPS.");
-      },
+      (error) => setGpsError(error.code === error.PERMISSION_DENIED
+        ? "Activa el permiso de ubicación para usar la navegación Taximun."
+        : "No se pudo actualizar tu posición GPS."),
       { enableHighAccuracy: true, maximumAge: 4000, timeout: 12000 }
     );
-
     return () => navigator.geolocation.clearWatch(watchId);
   }, []);
 
@@ -130,7 +126,7 @@ export default function DriverNavigationPage() {
   const headline = useMemo(() => {
     if (!active) return "Sin viaje activo";
     if (active.status === "in_progress") return "Navega al destino";
-    return active.driver_arrived_at ? "Esperando al pasajero" : "Navega a la recogida";
+    return active.driver_arrived_at ? "Verifica el PIN del pasajero" : "Navega a la recogida";
   }, [active]);
 
   if (activeQuery.isLoading) {
@@ -152,6 +148,8 @@ export default function DriverNavigationPage() {
     );
   }
 
+  const normalizedPin = pickupPin.toUpperCase().replace(/[^A-F0-9]/g, "").slice(0, 4);
+
   return (
     <main className="min-h-screen bg-[#f7f8fb] px-4 py-6">
       <div className="mx-auto max-w-6xl space-y-4">
@@ -163,7 +161,7 @@ export default function DriverNavigationPage() {
               <p className="mt-2 text-sm font-semibold text-slate-300"><UserRound className="mr-1 inline h-4 w-4" />{active.passenger_name || "Pasajero"}</p>
             </div>
             <Badge className={active.status === "in_progress" ? "bg-cyan-100 text-cyan-800 hover:bg-cyan-100" : active.driver_arrived_at ? "bg-amber-100 text-amber-800 hover:bg-amber-100" : "bg-blue-100 text-blue-800 hover:bg-blue-100"}>
-              {active.status === "in_progress" ? "En viaje" : active.driver_arrived_at ? "He llegado" : "A recogida"}
+              {active.status === "in_progress" ? "En viaje" : active.driver_arrived_at ? "PIN pendiente" : "A recogida"}
             </Badge>
           </div>
           <div className="mt-4 grid grid-cols-3 gap-2">
@@ -175,8 +173,7 @@ export default function DriverNavigationPage() {
 
         {(gpsError || actionError || activeQuery.error || statusQuery.error) && (
           <div className="rounded-3xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700">
-            <AlertCircle className="mr-2 inline h-4 w-4" />
-            {gpsError || actionError || activeQuery.error?.message || statusQuery.error?.message}
+            <AlertCircle className="mr-2 inline h-4 w-4" />{gpsError || actionError || activeQuery.error?.message || statusQuery.error?.message}
           </div>
         )}
 
@@ -197,6 +194,21 @@ export default function DriverNavigationPage() {
               <p><Navigation className="mr-2 inline h-4 w-4 text-blue-600" />{active.dropoff_address}</p>
             </div>
 
+            {active.status === "assigned" && active.driver_arrived_at && (
+              <div className="rounded-3xl border border-cyan-100 bg-cyan-50 p-4">
+                <p className="font-black text-cyan-950"><LockKeyhole className="mr-2 inline h-5 w-5" />PIN de recogida</p>
+                <p className="mt-1 text-xs font-bold text-cyan-700">Pide al pasajero el código de cuatro caracteres que aparece en su pantalla.</p>
+                <Input
+                  value={normalizedPin}
+                  onChange={(event) => setPickupPin(event.target.value)}
+                  maxLength={4}
+                  autoCapitalize="characters"
+                  className="mt-3 h-14 rounded-2xl bg-white text-center text-2xl font-black uppercase tracking-[0.35em]"
+                  placeholder="----"
+                />
+              </div>
+            )}
+
             <div className="grid gap-2 sm:grid-cols-4">
               <Button onClick={() => openGoogleMaps(target, targetAddress || "")} variant="outline" className="h-[52px] rounded-2xl bg-white font-black">
                 <Navigation className="mr-2 h-4 w-4" />Google Maps
@@ -207,13 +219,17 @@ export default function DriverNavigationPage() {
                 </Button>
               )}
               {active.status === "assigned" ? (
-                <Button onClick={() => startRide.mutate({ rideId: active.id })} disabled={startRide.isPending} className="h-[52px] rounded-2xl bg-blue-600 font-black text-white hover:bg-blue-500">
-                  {startRide.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}Iniciar viaje
+                <Button
+                  onClick={() => startRide.mutate({ rideId: active.id, pickupPin: normalizedPin })}
+                  disabled={startRide.isPending || !active.driver_arrived_at || normalizedPin.length !== 4}
+                  className="h-[52px] rounded-2xl bg-blue-600 font-black text-white hover:bg-blue-500"
+                >
+                  {startRide.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}Verificar e iniciar
                 </Button>
               ) : (
                 <Button disabled className="h-[52px] rounded-2xl bg-cyan-600 font-black text-white"><Car className="mr-2 h-4 w-4" />Viaje en curso</Button>
               )}
-              <Button onClick={() => setLocation("/driver/queue")} className="h-[52px] rounded-2xl bg-emerald-600 font-black text-white hover:bg-emerald-500">
+              <Button onClick={() => setLocation("/driver/queue")} disabled={active.status !== "in_progress"} className="h-[52px] rounded-2xl bg-emerald-600 font-black text-white hover:bg-emerald-500">
                 <ReceiptText className="mr-2 h-4 w-4" />Ir al cierre
               </Button>
             </div>
