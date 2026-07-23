@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
@@ -24,10 +25,10 @@ import AdminJourneyValidationPage from "./pages/AdminJourneyValidationPage";
 import AdminOperationsCenterPage from "./pages/AdminOperationsCenterPage";
 import SharedTripTrackingPage from "./pages/SharedTripTrackingPage";
 
-const passenger = (node: React.ReactNode) => <RoleRouteGuard allowed={["passenger", "admin"]}>{node}</RoleRouteGuard>;
-const driver = (node: React.ReactNode) => <RoleRouteGuard allowed={["driver", "admin"]}>{node}</RoleRouteGuard>;
-const admin = (node: React.ReactNode) => <RoleRouteGuard allowed={["admin"]}>{node}</RoleRouteGuard>;
-const signedIn = (node: React.ReactNode) => <RoleRouteGuard allowed={["passenger", "driver", "admin"]}>{node}</RoleRouteGuard>;
+const passenger = (node: ReactNode) => <RoleRouteGuard allowed={["passenger", "admin"]}>{node}</RoleRouteGuard>;
+const driver = (node: ReactNode) => <RoleRouteGuard allowed={["driver", "admin"]}>{node}</RoleRouteGuard>;
+const admin = (node: ReactNode) => <RoleRouteGuard allowed={["admin"]}>{node}</RoleRouteGuard>;
+const signedIn = (node: ReactNode) => <RoleRouteGuard allowed={["passenger", "driver", "admin"]}>{node}</RoleRouteGuard>;
 
 function Router() {
   return (
