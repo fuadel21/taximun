@@ -1,0 +1,57 @@
+import { TRPCError } from "@trpc/server";
+import { z } from "zod";
+import { protectedProcedure, router } from "./_core/trpc";
+import { createTaxiNotification } from "./taxi-notifications-router";
+import { supabase } from "./supabase-client";
+
+function assertDriver(ctx: any) {
+  if (ctx.user?.role !== "driver" && ctx.user?.role !== "admin") {
+    throw new TRPCError({ code: "FORBIDDEN" });
+  }
+}
+
+function fail(error: { message: string } | null) {
+  if (!error) return;
+  const message = String(error.message || "");
+  if (message.includes("INVALID_PICKUP_PIN")) throw new TRPCError({ code: "UNAUTHORIZED", message: "El PIN de recogida no es correcto." });
+  if (message.includes("DRIVER_NOT_ARRIVED")) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Primero debes marcar que has llegado al punto de recogida." });
+  if (message.includes("RIDE_NOT_ASSIGNED")) throw new TRPCError({ code: "CONFLICT", message: "El viaje ya no está pendiente de inicio." });
+  if (message.includes("DRIVER_MISMATCH")) throw new TRPCError({ code: "FORBIDDEN", message: "Este viaje no está asignado a tu cuenta." });
+  throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message });
+}
+
+export const taxiTripLifecycleRouter = router({
+  startWithPin: protectedProcedure
+    .input(z.object({ rideId: z.string().uuid(), pickupPin: z.string().trim().length(4).regex(/^[A-F0-9]{4}$/i) }))
+    .mutation(async ({ ctx, input }) => {
+      assertDriver(ctx);
+      const { data, error } = await supabase.rpc("taximun_start_ride_with_pin", {
+        p_ride_id: input.rideId,
+        p_driver_id: ctx.user.openId,
+        p_pickup_pin: input.pickupPin.toUpperCase(),
+      });
+      fail(error);
+      if (!data) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "No se pudo iniciar el viaje." });
+
+      await supabase.from("taxi_activity_logs").insert({
+        actor_id: ctx.user.openId,
+        actor_role: ctx.user?.role === "admin" ? "admin" : "driver",
+        message: "Viaje iniciado con PIN verificado",
+        ride_id: input.rideId,
+      });
+
+      await createTaxiNotification({
+        recipientId: data.passenger_id,
+        recipientRole: "passenger",
+        actorId: ctx.user.openId,
+        actorRole: ctx.user?.role === "admin" ? "admin" : "driver",
+        type: "info",
+        title: "Viaje iniciado",
+        body: `Tu viaje hacia ${data.dropoff_address || "tu destino"} ha comenzado con el PIN verificado.`,
+        actionUrl: "/passenger/rides",
+        metadata: { rideId: data.id, status: data.status, pinVerified: true },
+      });
+
+      return data;
+    }),
+});
