@@ -46,7 +46,7 @@ export const taxiTripSettlementRouter = router({
         })
         .eq("id", input.rideId)
         .eq("driver_id", ctx.user.openId)
-        .in("status", ["assigned", "in_progress"])
+        .eq("status", "in_progress")
         .select()
         .single();
 
