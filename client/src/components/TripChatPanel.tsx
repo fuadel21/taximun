@@ -8,10 +8,20 @@ import { BellRing, Check, Clock3, Loader2, MessageCircle, PhoneCall, PhoneOff, S
 type Role = "driver" | "passenger";
 type Message = { id: string; sender_id: string; sender_role: string; message: string; created_at: string; read_at?: string | null };
 type CallRequest = { id: string; requester_role: string; status: string; reason: string; expires_at: string };
+type QuickCode = "arriving" | "waiting" | "cannot_find_pickup" | "coming_down" | "please_wait" | "at_pickup";
+type ChatListResponse = { messages: Message[]; unread: number };
 
-const QUICK: Record<Role, string[]> = {
-  driver: ["Estoy llegando", "Estoy en el punto de recogida", "Te espero unos minutos", "No encuentro el punto exacto", "Voy con un pequeño retraso"],
-  passenger: ["Ya bajo", "Estoy en la puerta", "Llego en 2 minutos", "No encuentro el taxi", "Entendido"],
+const QUICK: Record<Role, Array<{ code: QuickCode; label: string }>> = {
+  driver: [
+    { code: "arriving", label: "Estoy llegando" },
+    { code: "waiting", label: "Estoy en el punto de recogida" },
+    { code: "cannot_find_pickup", label: "No encuentro el punto exacto" },
+  ],
+  passenger: [
+    { code: "coming_down", label: "Ya bajo" },
+    { code: "please_wait", label: "Espérame un momento" },
+    { code: "at_pickup", label: "Estoy en el punto indicado" },
+  ],
 };
 
 const REASON_LABEL: Record<string, string> = {
@@ -50,22 +60,30 @@ export function TripChatPanel({ rideId, role }: { rideId: string; role: Role }) 
   const utils = trpc.useUtils();
   const query = trpc.system.taxiTripChat.list.useQuery({ rideId }, { refetchInterval: 3000, refetchOnWindowFocus: true });
   const callQuery = trpc.system.taxiTripCall.getLatest.useQuery({ rideId }, { refetchInterval: 2000, refetchOnWindowFocus: true });
-  const messages = (query.data ?? []) as Message[];
+  const chat = (query.data ?? null) as ChatListResponse | null;
+  const messages = chat?.messages ?? [];
   const call = (callQuery.data ?? null) as CallRequest | null;
-  const unread = useMemo(() => messages.filter((m) => m.sender_role !== role && !m.read_at).length, [messages, role]);
+  const unread = Number(chat?.unread ?? 0);
   const remainingSeconds = call?.status === "pending" ? Math.max(0, Math.ceil((new Date(call.expires_at).getTime() - now) / 1000)) : 0;
   const incoming = call?.status === "pending" && call.requester_role !== role && remainingSeconds > 0;
   const outgoing = call?.status === "pending" && call.requester_role === role && remainingSeconds > 0;
 
+  const refreshChat = () => utils.system.taxiTripChat.list.invalidate({ rideId });
   const refreshCall = () => utils.system.taxiTripCall.getLatest.invalidate({ rideId });
   const requestCall = trpc.system.taxiTripCall.request.useMutation({ onSuccess: refreshCall });
   const respondCall = trpc.system.taxiTripCall.respond.useMutation({ onSuccess: refreshCall });
   const cancelCall = trpc.system.taxiTripCall.cancel.useMutation({ onSuccess: refreshCall });
-  const markRead = trpc.system.taxiTripChat.markRead.useMutation({ onSuccess: () => utils.system.taxiTripChat.list.invalidate({ rideId }) });
+  const markRead = trpc.system.taxiTripChat.markRead.useMutation({ onSuccess: refreshChat });
   const send = trpc.system.taxiTripChat.send.useMutation({
     onSuccess: async () => {
       setText("");
-      await utils.system.taxiTripChat.list.invalidate({ rideId });
+      await refreshChat();
+      window.setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 80);
+    },
+  });
+  const sendQuick = trpc.system.taxiTripChat.sendQuick.useMutation({
+    onSuccess: async () => {
+      await refreshChat();
       window.setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 80);
     },
   });
@@ -90,14 +108,15 @@ export function TripChatPanel({ rideId, role }: { rideId: string; role: Role }) 
   }, [incoming, call?.id]);
   useEffect(() => { if (!open && unread > 0 && !incoming) navigator.vibrate?.(120); }, [unread, open, incoming]);
 
-  const submit = (message: string, messageType: "text" | "quick") => {
+  const submit = (message: string) => {
     const clean = message.trim();
     if (!clean || send.isPending) return;
-    send.mutate({ rideId, message: clean, messageType });
+    send.mutate({ rideId, message: clean, messageType: "text" });
   };
 
   const callBusy = requestCall.isPending || respondCall.isPending || cancelCall.isPending;
   const callError = callQuery.error || requestCall.error || respondCall.error || cancelCall.error;
+  const chatError = query.error || send.error || sendQuick.error || markRead.error;
 
   return (
     <div className="rounded-[1.75rem] border border-slate-200 bg-white shadow-lg">
@@ -134,16 +153,16 @@ export function TripChatPanel({ rideId, role }: { rideId: string; role: Role }) 
       </button>
 
       {open && <div className="border-t border-slate-100 p-4">
-        <div className="mb-3 flex gap-2 overflow-x-auto pb-1">{QUICK[role].map((item) => <Button key={item} type="button" variant="outline" onClick={() => submit(item, "quick")} className="h-11 shrink-0 rounded-2xl font-black">{item}</Button>)}</div>
+        <div className="mb-3 flex gap-2 overflow-x-auto pb-1">{QUICK[role].map((item) => <Button key={item.code} type="button" variant="outline" onClick={() => sendQuick.mutate({ rideId, code: item.code })} disabled={sendQuick.isPending} className="h-11 shrink-0 rounded-2xl font-black">{item.label}</Button>)}</div>
         <div className="max-h-72 space-y-2 overflow-y-auto rounded-2xl bg-slate-50 p-3">
           {query.isLoading && <Loader2 className="mx-auto h-5 w-5 animate-spin text-cyan-600" />}
           {!query.isLoading && messages.length === 0 && <p className="py-6 text-center text-sm font-bold text-slate-400">Todavía no hay mensajes.</p>}
           {messages.map((m) => { const mine = m.sender_role === role; return <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}><div className={`max-w-[82%] rounded-2xl px-3 py-2 text-sm font-semibold ${mine ? "bg-cyan-600 text-white" : "bg-white text-slate-800 shadow-sm"}`}><p>{m.message}</p><p className={`mt-1 text-[10px] ${mine ? "text-cyan-100" : "text-slate-400"}`}>{new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p></div></div>; })}
           <div ref={bottomRef} />
         </div>
-        <div className="mt-3 flex gap-2"><Input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit(text, "text")} maxLength={500} placeholder="Escribe un mensaje" className="h-[52px] rounded-2xl" /><Button onClick={() => submit(text, "text")} disabled={!text.trim() || send.isPending} className="h-[52px] w-[52px] rounded-2xl bg-slate-950 p-0 text-white">{send.isPending ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}</Button></div>
+        <div className="mt-3 flex gap-2"><Input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit(text)} maxLength={500} placeholder="Escribe un mensaje" className="h-[52px] rounded-2xl" /><Button onClick={() => submit(text)} disabled={!text.trim() || send.isPending} className="h-[52px] w-[52px] rounded-2xl bg-slate-950 p-0 text-white">{send.isPending ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}</Button></div>
         <p className="mt-3 text-xs font-bold text-slate-400"><ShieldCheck className="mr-1 inline h-4 w-4" />El chat se limita al conductor, pasajero y administración.</p>
-        {(query.error || send.error) && <p className="mt-2 text-xs font-bold text-red-600">{query.error?.message || send.error?.message}</p>}
+        {chatError && <p className="mt-2 text-xs font-bold text-red-600">{chatError.message}</p>}
       </div>}
     </div>
   );
