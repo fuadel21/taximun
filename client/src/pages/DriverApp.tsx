@@ -9,8 +9,8 @@ import { BarChart3, Car, Home, Navigation, ShieldCheck, UserRound } from "lucide
 import { useLocation } from "wouter";
 import DriverEarningsPage from "./DriverEarningsPage";
 import DriverNavigationPage from "./DriverNavigationPage";
-import DriverPanelModern from "./DriverPanelModern";
 import DriverServicesPage from "./DriverServicesPage";
+import DriverTurnPage from "./DriverTurnPage";
 
 export default function DriverApp() {
   const [location, setLocation] = useLocation();
@@ -53,7 +53,7 @@ export default function DriverApp() {
       ) : (
         <div className="min-h-screen bg-slate-950">
           <DriverGpsHeartbeat />
-          <DriverPanelModern />
+          <DriverTurnPage />
         </div>
       )}
       <AppBottomNav
