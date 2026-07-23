@@ -33,7 +33,7 @@ export const taxiDriverAnalyticsRouter = router({
 
     const { data: rides, error } = await supabase
       .from("taxi_rides")
-      .select("id,pickup_address,dropoff_address,estimated_fare,estimated_duration,distance_km,payment_method,service_type,status,requested_at,completed_at")
+      .select("id,pickup_address,dropoff_address,estimated_fare,final_fare,payment_status,settled_at,estimated_duration,distance_km,payment_method,service_type,status,requested_at,completed_at")
       .eq("driver_id", ctx.user.openId)
       .eq("status", "completed")
       .order("completed_at", { ascending: false })
@@ -56,10 +56,12 @@ export const taxiDriverAnalyticsRouter = router({
     const monthStart = startOfMonth(now).getTime();
 
     const normalized = (rides ?? []).map((ride) => {
-      const completedAt = ride.completed_at || ride.requested_at;
+      const completedAt = ride.settled_at || ride.completed_at || ride.requested_at;
+      const hasFinalFare = ride.final_fare !== null && ride.final_fare !== undefined;
       return {
         ...ride,
-        fare: Number(ride.estimated_fare ?? 0),
+        fare: Number(hasFinalFare ? ride.final_fare : ride.estimated_fare ?? 0),
+        fareSource: hasFinalFare ? "final" : "estimated",
         completedTimestamp: completedAt ? new Date(completedAt).getTime() : 0,
       };
     });
