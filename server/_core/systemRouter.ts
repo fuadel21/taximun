@@ -19,6 +19,7 @@ import { taxiSystemHealthRouter } from "../taxi-system-health-router";
 import { taxiTripAudioRouter } from "../taxi-trip-audio-router";
 import { taxiTripCallRouter } from "../taxi-trip-call-router";
 import { taxiTripChatRouter } from "../taxi-trip-chat-router";
+import { taxiTripLifecycleRouter } from "../taxi-trip-lifecycle-router";
 import { taxiTripSettlementRouter } from "../taxi-trip-settlement-router";
 import { notifyOwner } from "./notification";
 import { adminProcedure, publicProcedure, router } from "./trpc";
@@ -44,6 +45,7 @@ export const systemRouter = router({
   taxiTripAudio: taxiTripAudioRouter,
   taxiTripCall: taxiTripCallRouter,
   taxiTripChat: taxiTripChatRouter,
+  taxiTripLifecycle: taxiTripLifecycleRouter,
   taxiTripSettlement: taxiTripSettlementRouter,
 
   health: publicProcedure.input(z.object({ timestamp: z.number().min(0, "timestamp cannot be negative") })).query(() => ({ ok: true })),
