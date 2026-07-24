@@ -4,7 +4,7 @@ import { PassengerTripTrackingMap, type TrackingPoint } from "@/components/Passe
 import { TripChatPanel } from "@/components/TripChatPanel";
 import { TripSafetyCenter } from "@/components/TripSafetyCenter";
 import { Button } from "@/components/ui/button";
-import { AlertCircle, Car, CheckCircle2, Clock3, LocateFixed, MapPin, Navigation, RefreshCw, Share2 } from "lucide-react";
+import { AlertCircle, Car, CheckCircle2, Clock3, LocateFixed, LockKeyhole, MapPin, Navigation, RefreshCw, Share2 } from "lucide-react";
 
 type LiveTrip = {
   ride: {
@@ -20,6 +20,7 @@ type LiveTrip = {
     taxi_code?: string | null;
     plate?: string | null;
     share_token?: string | null;
+    pickup_pin?: string | null;
   };
   driver?: {
     driver_name?: string | null;
@@ -87,6 +88,7 @@ export function PassengerLiveTrackingSection() {
   const shareUrl = data.ride.share_token ? `${window.location.origin}/track/${data.ride.share_token}` : null;
   const phaseTitle = data.phase === "in_progress" ? "Viaje en curso" : data.phase === "driver_arrived" ? "Tu taxi ha llegado" : "El conductor está en camino";
   const phaseText = data.phase === "in_progress" ? "Sigue el recorrido hasta tu destino en tiempo real." : data.phase === "driver_arrived" ? "Dirígete al punto de recogida. El conductor está esperando." : "La posición, distancia y llegada estimada se actualizan automáticamente.";
+  const pickupPin = data.ride.status === "assigned" ? String(data.ride.pickup_pin || "").toUpperCase() : "";
 
   const shareTrip = async () => {
     if (!shareUrl) return;
@@ -115,6 +117,20 @@ export function PassengerLiveTrackingSection() {
           <div className={`rounded-2xl p-3 text-center shadow-sm ${gps.fresh ? "bg-white/80" : "bg-amber-100"}`}>{query.isFetching ? <RefreshCw className="mx-auto h-4 w-4 animate-spin" /> : <LocateFixed className="mx-auto h-4 w-4" />}<p className="mt-1 text-[10px] font-black uppercase opacity-60">Señal</p><p className="text-xs font-black">{gps.label}</p></div>
         </div>
       </div>
+
+      {pickupPin && (
+        <div className={`rounded-3xl border p-4 shadow-sm ${data.phase === "driver_arrived" ? "border-amber-300 bg-amber-100 text-amber-950" : "border-cyan-200 bg-cyan-50 text-cyan-950"}`}>
+          <div className="flex items-start gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white shadow-sm"><LockKeyhole className="h-5 w-5" /></div>
+            <div className="min-w-0 flex-1">
+              <p className="font-black">PIN de recogida</p>
+              <p className="mt-1 text-xs font-bold opacity-80">Enséñaselo o díselo al conductor solo cuando estés junto al vehículo correcto.</p>
+            </div>
+          </div>
+          <div className="mt-3 rounded-2xl bg-white px-4 py-4 text-center text-3xl font-black uppercase tracking-[0.35em] shadow-sm">{pickupPin}</div>
+          {data.phase === "driver_arrived" && <p className="mt-2 text-center text-xs font-black">El conductor necesita este código para iniciar el viaje.</p>}
+        </div>
+      )}
 
       {(pickup || dropoff || driver) ? <PassengerTripTrackingMap pickup={pickup} dropoff={dropoff} driver={driver} status={data.ride.status} driverName={data.driver?.driver_name || data.ride.driver_name} taxiCode={data.driver?.taxi_code || data.ride.taxi_code} etaMinutes={etaMinutes} /> : <div className="rounded-3xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-800"><MapPin className="mr-2 inline h-4 w-4" />El seguimiento aparecerá cuando el viaje tenga coordenadas.</div>}
 

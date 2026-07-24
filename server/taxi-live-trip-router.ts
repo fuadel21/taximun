@@ -71,7 +71,7 @@ export const taxiLiveTripRouter = router({
       assertPassenger(ctx);
       const { data: ride, error } = await supabase
         .from("taxi_rides")
-        .select("id,status,driver_id,driver_name,taxi_code,plate,pickup_address,dropoff_address,pickup_lat,pickup_lng,dropoff_lat,dropoff_lng,assigned_at,driver_arrived_at,started_at,completed_at,share_token,share_enabled")
+        .select("id,status,driver_id,driver_name,taxi_code,plate,pickup_address,dropoff_address,pickup_lat,pickup_lng,dropoff_lat,dropoff_lng,assigned_at,driver_arrived_at,started_at,completed_at,share_token,share_enabled,pickup_pin")
         .eq("passenger_id", ctx.user.openId)
         .in("status", ["assigned", "in_progress"])
         .order("assigned_at", { ascending: false })
