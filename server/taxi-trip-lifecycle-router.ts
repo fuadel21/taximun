@@ -18,6 +18,7 @@ function fail(error: { message: string } | null) {
   if (message.includes("RIDE_NOT_ASSIGNED")) throw new TRPCError({ code: "CONFLICT", message: "El viaje ya no está pendiente de inicio." });
   if (message.includes("RIDE_NOT_FOUND")) throw new TRPCError({ code: "NOT_FOUND", message: "El viaje ya no existe." });
   if (message.includes("DRIVER_MISMATCH")) throw new TRPCError({ code: "FORBIDDEN", message: "Este viaje no está asignado a tu cuenta." });
+  if (message.includes("INVALID_CANCELLATION_REASON")) throw new TRPCError({ code: "BAD_REQUEST", message: "El motivo de cancelación no es válido." });
   if (message.includes("NO_SHOW_WAIT_REQUIRED")) {
     const seconds = Number(message.split(":").pop() || 0);
     const minutes = Math.max(1, Math.ceil(seconds / 60));
@@ -28,6 +29,14 @@ function fail(error: { message: string } | null) {
   }
   throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message });
 }
+
+const driverCancellationReasonSchema = z.enum([
+  "vehicle_breakdown",
+  "driver_emergency",
+  "unsafe_pickup",
+  "operational",
+  "other",
+]);
 
 export const taxiTripLifecycleRouter = router({
   startWithPin: protectedProcedure
@@ -85,6 +94,35 @@ export const taxiTripLifecycleRouter = router({
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: "No se pudo registrar la ausencia del pasajero.",
+        });
+      }
+
+      return data;
+    }),
+
+  cancelByDriver: protectedProcedure
+    .input(
+      z.object({
+        rideId: z.string().uuid(),
+        reason: driverCancellationReasonSchema,
+        note: z.string().trim().max(500).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      assertDriver(ctx);
+
+      const { data, error } = await supabase.rpc("taximun_cancel_ride_by_driver", {
+        p_ride_id: input.rideId,
+        p_driver_id: ctx.user.openId,
+        p_reason: input.reason,
+        p_note: input.note || null,
+      });
+
+      fail(error);
+      if (!data) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "No se pudo cancelar el servicio.",
         });
       }
 
