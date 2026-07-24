@@ -45,6 +45,7 @@ type DriverStatus = {
   updated_at?: string | null;
 };
 
+const NO_SHOW_WAIT_SECONDS = 300;
 const money = (value: unknown) => `${Number(value ?? 0).toFixed(2)} €`;
 
 function point(lat: unknown, lng: unknown): TrackingPoint | null {
@@ -60,6 +61,13 @@ function openGoogleMaps(destination: TrackingPoint | null, address: string) {
   window.open(`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(value)}`, "_blank", "noopener,noreferrer");
 }
 
+function formatCountdown(seconds: number) {
+  const safe = Math.max(0, seconds);
+  const minutes = Math.floor(safe / 60);
+  const remainingSeconds = safe % 60;
+  return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
+}
+
 export default function DriverNavigationPage() {
   const [, setLocation] = useLocation();
   const utils = trpc.useUtils();
@@ -67,6 +75,7 @@ export default function DriverNavigationPage() {
   const [gpsError, setGpsError] = useState("");
   const [actionError, setActionError] = useState("");
   const [pickupPin, setPickupPin] = useState("");
+  const [clockNow, setClockNow] = useState(() => Date.now());
 
   const activeQuery = trpc.system.taxiOps.driver.getActiveRide.useQuery(undefined, {
     retry: false,
@@ -89,7 +98,17 @@ export default function DriverNavigationPage() {
   const markArrived = trpc.system.taxiLiveTrip.driver.markArrived.useMutation({
     onSuccess: async () => {
       setActionError("");
+      setClockNow(Date.now());
       await activeQuery.refetch();
+    },
+    onError: (error) => setActionError(error.message),
+  });
+  const cancelPassengerNoShow = trpc.system.taxiTripLifecycle.cancelPassengerNoShow.useMutation({
+    onSuccess: async () => {
+      setActionError("");
+      await activeQuery.refetch();
+      await utils.system.taxiOps.driver.getStatus.invalidate();
+      setLocation("/driver/queue");
     },
     onError: (error) => setActionError(error.message),
   });
@@ -115,6 +134,13 @@ export default function DriverNavigationPage() {
     return () => navigator.geolocation.clearWatch(watchId);
   }, []);
 
+  useEffect(() => {
+    if (!active?.driver_arrived_at || active.status !== "assigned") return;
+    setClockNow(Date.now());
+    const timer = window.setInterval(() => setClockNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [active?.driver_arrived_at, active?.status]);
+
   const pickup = active ? point(active.pickup_lat, active.pickup_lng) : null;
   const dropoff = active ? point(active.dropoff_lat, active.dropoff_lng) : null;
   const savedDriverLocation = point(status?.current_lat, status?.current_lng);
@@ -122,6 +148,12 @@ export default function DriverNavigationPage() {
   const target = active?.status === "assigned" ? pickup : dropoff;
   const targetAddress = active?.status === "assigned" ? active?.pickup_address : active?.dropoff_address;
   const mapReady = Boolean(pickup || dropoff || driver);
+  const arrivedAtMs = active?.driver_arrived_at ? new Date(active.driver_arrived_at).getTime() : null;
+  const waitedSeconds = arrivedAtMs && Number.isFinite(arrivedAtMs)
+    ? Math.max(0, Math.floor((clockNow - arrivedAtMs) / 1000))
+    : 0;
+  const noShowSecondsRemaining = Math.max(0, NO_SHOW_WAIT_SECONDS - waitedSeconds);
+  const canReportNoShow = Boolean(active?.status === "assigned" && active.driver_arrived_at && noShowSecondsRemaining === 0);
 
   const headline = useMemo(() => {
     if (!active) return "Sin viaje activo";
@@ -149,6 +181,14 @@ export default function DriverNavigationPage() {
   }
 
   const normalizedPin = pickupPin.toUpperCase().replace(/[^A-F0-9]/g, "").slice(0, 4);
+
+  const handleNoShow = () => {
+    const confirmed = window.confirm(
+      "¿Confirmas que el pasajero no se encuentra en el punto de recogida? Esta acción cancelará el servicio y quedará registrada."
+    );
+    if (!confirmed) return;
+    cancelPassengerNoShow.mutate({ rideId: active.id });
+  };
 
   return (
     <main className="min-h-screen bg-[#f7f8fb] px-4 py-6">
@@ -195,18 +235,46 @@ export default function DriverNavigationPage() {
             </div>
 
             {active.status === "assigned" && active.driver_arrived_at && (
-              <div className="rounded-3xl border border-cyan-100 bg-cyan-50 p-4">
-                <p className="font-black text-cyan-950"><LockKeyhole className="mr-2 inline h-5 w-5" />PIN de recogida</p>
-                <p className="mt-1 text-xs font-bold text-cyan-700">Pide al pasajero el código de cuatro caracteres que aparece en su pantalla.</p>
-                <Input
-                  value={normalizedPin}
-                  onChange={(event) => setPickupPin(event.target.value)}
-                  maxLength={4}
-                  autoCapitalize="characters"
-                  className="mt-3 h-14 rounded-2xl bg-white text-center text-2xl font-black uppercase tracking-[0.35em]"
-                  placeholder="----"
-                />
-              </div>
+              <>
+                <div className="rounded-3xl border border-cyan-100 bg-cyan-50 p-4">
+                  <p className="font-black text-cyan-950"><LockKeyhole className="mr-2 inline h-5 w-5" />PIN de recogida</p>
+                  <p className="mt-1 text-xs font-bold text-cyan-700">Pide al pasajero el código de cuatro caracteres que aparece en su pantalla.</p>
+                  <Input
+                    value={normalizedPin}
+                    onChange={(event) => setPickupPin(event.target.value)}
+                    maxLength={4}
+                    autoCapitalize="characters"
+                    className="mt-3 h-14 rounded-2xl bg-white text-center text-2xl font-black uppercase tracking-[0.35em]"
+                    placeholder="----"
+                  />
+                </div>
+
+                <div className="rounded-3xl border border-amber-200 bg-amber-50 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="font-black text-amber-950"><Clock3 className="mr-2 inline h-5 w-5" />Espera protegida</p>
+                      <p className="mt-1 text-xs font-bold text-amber-800">
+                        {canReportNoShow
+                          ? "Ya puedes registrar la ausencia si el pasajero no aparece."
+                          : "Debes esperar 5 minutos desde que marcaste tu llegada."}
+                      </p>
+                    </div>
+                    <Badge className={canReportNoShow ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-100" : "bg-white text-amber-900 hover:bg-white"}>
+                      {canReportNoShow ? "Disponible" : formatCountdown(noShowSecondsRemaining)}
+                    </Badge>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleNoShow}
+                    disabled={!canReportNoShow || cancelPassengerNoShow.isPending}
+                    className="mt-3 h-[48px] w-full rounded-2xl border-amber-300 bg-white font-black text-amber-900 hover:bg-amber-100"
+                  >
+                    {cancelPassengerNoShow.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <AlertCircle className="mr-2 h-4 w-4" />}
+                    Pasajero ausente
+                  </Button>
+                </div>
+              </>
             )}
 
             <div className="grid gap-2 sm:grid-cols-4">
