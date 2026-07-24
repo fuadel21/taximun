@@ -3,7 +3,7 @@ import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { BarChart3, CalendarDays, Car, CreditCard, Euro, ReceiptText, Route, Star } from "lucide-react";
+import { AlertTriangle, BarChart3, CalendarDays, Car, CreditCard, Euro, ReceiptText, Route, Star, XCircle } from "lucide-react";
 
 type Ride = {
   id: string;
@@ -19,6 +19,19 @@ type Ride = {
   settled_at?: string | null;
   completed_at?: string | null;
   requested_at?: string | null;
+};
+
+type DriverHistoryRide = {
+  id: string;
+  pickup_address: string;
+  dropoff_address: string;
+  status: "completed" | "cancelled" | "rejected";
+  service_type?: string | null;
+  requested_at?: string | null;
+  cancelled_at?: string | null;
+  cancelled_by_role?: string | null;
+  cancellation_reason?: string | null;
+  cancellation_note?: string | null;
 };
 
 type Dashboard = {
@@ -46,10 +59,42 @@ const paymentLabel = (value?: string | null) => value === "card" ? "Tarjeta" : v
 const serviceLabel = (value?: string | null) => value === "eco" ? "Eco" : value === "van" ? "Van" : "Taxi";
 const paymentStatusLabel = (value?: string | null) => value === "paid" ? "Cobrado" : value === "waived" ? "Sin cobro" : value === "failed" ? "Fallido" : "Pendiente";
 
+function cancellationActorLabel(value?: string | null) {
+  if (value === "passenger") return "Pasajero";
+  if (value === "driver") return "Conductor";
+  if (value === "admin") return "Administración";
+  if (value === "system") return "Sistema";
+  return "Origen no especificado";
+}
+
+function cancellationReasonLabel(value?: string | null) {
+  const labels: Record<string, string> = {
+    changed_mind: "Cambio de opinión",
+    wait_too_long: "Espera excesiva",
+    wrong_pickup: "Punto de recogida incorrecto",
+    driver_delay: "Retraso del conductor",
+    duplicate_request: "Solicitud duplicada",
+    passenger_no_show: "Pasajero ausente",
+    vehicle_breakdown: "Avería del vehículo",
+    driver_emergency: "Emergencia del conductor",
+    unsafe_pickup: "Recogida insegura",
+    operational: "Incidencia operativa",
+    other: "Otro motivo",
+    legacy_unspecified: "Registro histórico sin motivo",
+  };
+  return value ? labels[value] || value : "Sin motivo registrado";
+}
+
 export default function DriverEarningsPage() {
   const [filter, setFilter] = useState<"all" | "cash" | "card" | "bizum">("all");
   const dashboardQuery = trpc.system.taxiDriverAnalytics.getDashboard.useQuery(undefined, { retry: false, refetchInterval: 15000 });
+  const historyQuery = trpc.system.taxiOps.driver.getRideHistory.useQuery(undefined, { retry: false, refetchInterval: 15000 });
   const dashboard = (dashboardQuery.data ?? null) as Dashboard | null;
+  const driverHistory = (historyQuery.data ?? []) as DriverHistoryRide[];
+  const cancelledRides = useMemo(
+    () => driverHistory.filter((ride) => ride.status === "cancelled" || ride.status === "rejected"),
+    [driverHistory]
+  );
   const rides = useMemo(() => {
     if (!dashboard) return [];
     return filter === "all" ? dashboard.rides : dashboard.rides.filter((ride) => (ride.payment_method || "cash") === filter);
@@ -66,6 +111,7 @@ export default function DriverEarningsPage() {
 
         {dashboardQuery.isLoading && <div className="rounded-3xl bg-white p-4 text-sm font-black text-slate-500">Cargando estadísticas...</div>}
         {dashboardQuery.error && <div className="rounded-3xl bg-red-50 p-4 text-sm font-black text-red-700">{dashboardQuery.error.message}</div>}
+        {historyQuery.error && <div className="rounded-3xl bg-red-50 p-4 text-sm font-black text-red-700">{historyQuery.error.message}</div>}
 
         {dashboard && (
           <>
@@ -118,6 +164,46 @@ export default function DriverEarningsPage() {
             </Card>
           </>
         )}
+
+        <Card className="rounded-[1.75rem] border-white bg-white shadow-xl">
+          <CardContent className="space-y-4 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-xl font-black">Servicios cancelados y rechazados</h2>
+                <p className="text-xs font-bold text-slate-500">Trazabilidad operativa separada de los ingresos.</p>
+              </div>
+              <Badge className="bg-red-100 text-red-700 hover:bg-red-100">{cancelledRides.length}</Badge>
+            </div>
+
+            {historyQuery.isLoading && <p className="rounded-2xl bg-slate-50 p-4 text-sm font-bold text-slate-500">Cargando incidencias...</p>}
+            {!historyQuery.isLoading && cancelledRides.length === 0 && <p className="rounded-2xl bg-slate-50 p-4 text-center text-sm font-bold text-slate-500">No hay servicios cancelados ni rechazados.</p>}
+
+            <div className="grid gap-3 md:grid-cols-2">
+              {cancelledRides.map((ride) => (
+                <div key={ride.id} className="rounded-3xl border border-red-100 bg-red-50 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate font-black text-slate-900">{ride.dropoff_address}</p>
+                      <p className="mt-1 text-xs font-bold text-slate-500">{dateLabel(ride.cancelled_at || ride.requested_at)} · {serviceLabel(ride.service_type)}</p>
+                    </div>
+                    <Badge className={ride.status === "cancelled" ? "bg-red-600 text-white hover:bg-red-600" : "bg-slate-700 text-white hover:bg-slate-700"}>
+                      {ride.status === "cancelled" ? <XCircle className="mr-1 h-3 w-3" /> : <AlertTriangle className="mr-1 h-3 w-3" />}
+                      {ride.status === "cancelled" ? "Cancelado" : "Rechazado"}
+                    </Badge>
+                  </div>
+                  <p className="mt-3 text-xs font-semibold text-slate-600">{ride.pickup_address} → {ride.dropoff_address}</p>
+                  {ride.status === "cancelled" && (
+                    <div className="mt-3 rounded-2xl bg-white/80 p-3 text-sm text-slate-700">
+                      <p><span className="font-black">Cancelado por:</span> {cancellationActorLabel(ride.cancelled_by_role)}</p>
+                      <p className="mt-1"><span className="font-black">Motivo:</span> {cancellationReasonLabel(ride.cancellation_reason)}</p>
+                      {ride.cancellation_note && <p className="mt-1 whitespace-pre-wrap"><span className="font-black">Nota:</span> {ride.cancellation_note}</p>}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </main>
   );
