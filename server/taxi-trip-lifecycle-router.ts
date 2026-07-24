@@ -16,7 +16,16 @@ function fail(error: { message: string } | null) {
   if (message.includes("INVALID_PICKUP_PIN")) throw new TRPCError({ code: "UNAUTHORIZED", message: "El PIN de recogida no es correcto." });
   if (message.includes("DRIVER_NOT_ARRIVED")) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Primero debes marcar que has llegado al punto de recogida." });
   if (message.includes("RIDE_NOT_ASSIGNED")) throw new TRPCError({ code: "CONFLICT", message: "El viaje ya no está pendiente de inicio." });
+  if (message.includes("RIDE_NOT_FOUND")) throw new TRPCError({ code: "NOT_FOUND", message: "El viaje ya no existe." });
   if (message.includes("DRIVER_MISMATCH")) throw new TRPCError({ code: "FORBIDDEN", message: "Este viaje no está asignado a tu cuenta." });
+  if (message.includes("NO_SHOW_WAIT_REQUIRED")) {
+    const seconds = Number(message.split(":").pop() || 0);
+    const minutes = Math.max(1, Math.ceil(seconds / 60));
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: `Debes esperar aproximadamente ${minutes} minuto${minutes === 1 ? "" : "s"} más antes de registrar la ausencia.`,
+    });
+  }
   throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message });
 }
 
@@ -51,6 +60,33 @@ export const taxiTripLifecycleRouter = router({
         actionUrl: "/passenger/rides",
         metadata: { rideId: data.id, status: data.status, pinVerified: true },
       });
+
+      return data;
+    }),
+
+  cancelPassengerNoShow: protectedProcedure
+    .input(
+      z.object({
+        rideId: z.string().uuid(),
+        note: z.string().trim().max(500).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      assertDriver(ctx);
+
+      const { data, error } = await supabase.rpc("taximun_cancel_passenger_no_show", {
+        p_ride_id: input.rideId,
+        p_driver_id: ctx.user.openId,
+        p_note: input.note || null,
+      });
+
+      fail(error);
+      if (!data) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "No se pudo registrar la ausencia del pasajero.",
+        });
+      }
 
       return data;
     }),
