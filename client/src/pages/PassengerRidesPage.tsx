@@ -3,6 +3,7 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { PassengerCancellationTrace } from "@/components/PassengerCancellationTrace";
 import {
   AlertCircle,
   BellRing,
@@ -44,6 +45,9 @@ type TaxiRideRow = {
   started_at?: string | null;
   completed_at?: string | null;
   cancelled_at?: string | null;
+  cancelled_by_role?: string | null;
+  cancellation_reason?: string | null;
+  cancellation_note?: string | null;
 };
 
 type DriverLiveStatus = {
@@ -238,6 +242,14 @@ function RideDetailCard({ ride, liveStatus }: { ride: TaxiRideRow; liveStatus?: 
           <p><MapPin className="mr-2 inline h-4 w-4 text-cyan-600" />{ride.pickup_address}</p>
           <p><Navigation className="mr-2 inline h-4 w-4 text-blue-600" />{ride.dropoff_address}</p>
         </div>
+
+        <PassengerCancellationTrace
+          status={ride.status}
+          cancelledAt={ride.cancelled_at}
+          cancelledByRole={ride.cancelled_by_role}
+          reason={ride.cancellation_reason}
+          note={ride.cancellation_note}
+        />
 
         <div className="grid gap-2 sm:grid-cols-2">
           <InfoRow icon={<Car className="h-4 w-4" />} title="Servicio" value={serviceLabel(ride.service_type)} />
