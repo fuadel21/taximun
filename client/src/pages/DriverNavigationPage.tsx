@@ -21,6 +21,7 @@ import {
   ReceiptText,
   Route,
   UserRound,
+  XCircle,
 } from "lucide-react";
 
 type ActiveRide = {
@@ -44,6 +45,13 @@ type DriverStatus = {
   current_lng?: number | string | null;
   updated_at?: string | null;
 };
+
+type DriverCancellationReason =
+  | "vehicle_breakdown"
+  | "driver_emergency"
+  | "unsafe_pickup"
+  | "operational"
+  | "other";
 
 const NO_SHOW_WAIT_SECONDS = 300;
 const money = (value: unknown) => `${Number(value ?? 0).toFixed(2)} €`;
@@ -76,6 +84,9 @@ export default function DriverNavigationPage() {
   const [actionError, setActionError] = useState("");
   const [pickupPin, setPickupPin] = useState("");
   const [clockNow, setClockNow] = useState(() => Date.now());
+  const [showOperationalCancellation, setShowOperationalCancellation] = useState(false);
+  const [cancellationReason, setCancellationReason] = useState<DriverCancellationReason | "">("");
+  const [cancellationNote, setCancellationNote] = useState("");
 
   const activeQuery = trpc.system.taxiOps.driver.getActiveRide.useQuery(undefined, {
     retry: false,
@@ -106,6 +117,18 @@ export default function DriverNavigationPage() {
   const cancelPassengerNoShow = trpc.system.taxiTripLifecycle.cancelPassengerNoShow.useMutation({
     onSuccess: async () => {
       setActionError("");
+      await activeQuery.refetch();
+      await utils.system.taxiOps.driver.getStatus.invalidate();
+      setLocation("/driver/queue");
+    },
+    onError: (error) => setActionError(error.message),
+  });
+  const cancelByDriver = trpc.system.taxiTripLifecycle.cancelByDriver.useMutation({
+    onSuccess: async () => {
+      setActionError("");
+      setShowOperationalCancellation(false);
+      setCancellationReason("");
+      setCancellationNote("");
       await activeQuery.refetch();
       await utils.system.taxiOps.driver.getStatus.invalidate();
       setLocation("/driver/queue");
@@ -188,6 +211,22 @@ export default function DriverNavigationPage() {
     );
     if (!confirmed) return;
     cancelPassengerNoShow.mutate({ rideId: active.id });
+  };
+
+  const handleOperationalCancellation = () => {
+    if (!cancellationReason) {
+      setActionError("Selecciona el motivo de la cancelación.");
+      return;
+    }
+    const confirmed = window.confirm(
+      "¿Confirmas que no puedes realizar este servicio? El pasajero recibirá el motivo y la cancelación quedará registrada."
+    );
+    if (!confirmed) return;
+    cancelByDriver.mutate({
+      rideId: active.id,
+      reason: cancellationReason,
+      note: cancellationNote.trim() || undefined,
+    });
   };
 
   return (
@@ -275,6 +314,60 @@ export default function DriverNavigationPage() {
                   </Button>
                 </div>
               </>
+            )}
+
+            {active.status === "assigned" && (
+              <div className="rounded-3xl border border-red-200 bg-red-50 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-black text-red-950"><XCircle className="mr-2 inline h-5 w-5" />No puedo realizar el servicio</p>
+                    <p className="mt-1 text-xs font-bold text-red-700">Úsalo solo por avería, emergencia, riesgo en la recogida o una incidencia operativa real.</p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setShowOperationalCancellation((value) => !value)}
+                    className="rounded-2xl border-red-300 bg-white font-black text-red-800 hover:bg-red-100"
+                  >
+                    {showOperationalCancellation ? "Cerrar" : "Cancelar servicio"}
+                  </Button>
+                </div>
+
+                {showOperationalCancellation && (
+                  <div className="mt-4 space-y-3">
+                    <label className="block text-xs font-black uppercase tracking-wide text-red-900" htmlFor="driver-cancellation-reason">Motivo obligatorio</label>
+                    <select
+                      id="driver-cancellation-reason"
+                      value={cancellationReason}
+                      onChange={(event) => setCancellationReason(event.target.value as DriverCancellationReason | "")}
+                      className="h-12 w-full rounded-2xl border border-red-200 bg-white px-3 text-sm font-bold text-slate-800"
+                    >
+                      <option value="">Selecciona un motivo</option>
+                      <option value="vehicle_breakdown">Avería del vehículo</option>
+                      <option value="driver_emergency">Emergencia del conductor</option>
+                      <option value="unsafe_pickup">Recogida insegura</option>
+                      <option value="operational">Incidencia operativa</option>
+                      <option value="other">Otro motivo</option>
+                    </select>
+                    <textarea
+                      value={cancellationNote}
+                      onChange={(event) => setCancellationNote(event.target.value.slice(0, 500))}
+                      rows={3}
+                      placeholder="Nota opcional para explicar la incidencia"
+                      className="w-full rounded-2xl border border-red-200 bg-white p-3 text-sm font-semibold text-slate-800"
+                    />
+                    <Button
+                      type="button"
+                      onClick={handleOperationalCancellation}
+                      disabled={!cancellationReason || cancelByDriver.isPending}
+                      className="h-[50px] w-full rounded-2xl bg-red-700 font-black text-white hover:bg-red-600"
+                    >
+                      {cancelByDriver.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <XCircle className="mr-2 h-4 w-4" />}
+                      Confirmar cancelación operativa
+                    </Button>
+                  </div>
+                )}
+              </div>
             )}
 
             <div className="grid gap-2 sm:grid-cols-4">
