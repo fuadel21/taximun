@@ -1,4 +1,5 @@
 import { useMemo, useState, type ReactNode } from "react";
+import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -10,7 +11,6 @@ import {
   Clock3,
   CreditCard,
   Euro,
-  Loader2,
   MapPin,
   Navigation,
   Route,
@@ -83,6 +83,7 @@ function openMaps(destination: string) {
 }
 
 export default function DriverServicesPage() {
+  const [, setLocation] = useLocation();
   const utils = trpc.useUtils();
   const [error, setError] = useState("");
   const [filter, setFilter] = useState<"all" | "taxi" | "eco" | "van">("all");
@@ -102,15 +103,13 @@ export default function DriverServicesPage() {
 
   const acceptRide = trpc.system.taxiOps.driver.acceptRide.useMutation({ onSuccess: invalidate, onError: (err) => setError(err.message) });
   const rejectRide = trpc.system.taxiOps.driver.rejectRide.useMutation({ onSuccess: invalidate, onError: (err) => setError(err.message) });
-  const startRide = trpc.system.taxiOps.driver.startRide.useMutation({ onSuccess: invalidate, onError: (err) => setError(err.message) });
-  const completeRide = trpc.system.taxiOps.driver.completeRide.useMutation({ onSuccess: invalidate, onError: (err) => setError(err.message) });
 
   const operation = (operationQuery.data ?? null) as DriverOperationState | null;
   const live = (statusQuery.data ?? null) as DriverStatus | null;
   const pending = (pendingQuery.data ?? []) as Ride[];
   const active = (activeQuery.data ?? null) as Ride | null;
   const filteredPending = useMemo(() => filter === "all" ? pending : pending.filter((ride) => (ride.service_type || "taxi") === filter), [pending, filter]);
-  const saving = acceptRide.isPending || rejectRide.isPending || startRide.isPending || completeRide.isPending;
+  const saving = acceptRide.isPending || rejectRide.isPending;
   const canOperate = Boolean(operation?.canOperate);
   const isOnline = live?.status === "available" || live?.status === "busy";
 
@@ -122,7 +121,7 @@ export default function DriverServicesPage() {
             <div>
               <p className="text-xs font-black uppercase tracking-[0.25em] text-cyan-200">Taximun Driver</p>
               <h1 className="mt-1 text-3xl font-black">Servicios</h1>
-              <p className="mt-2 text-sm font-semibold text-slate-300">Gestiona solicitudes y viajes activos sin mezclarlo con la configuración del turno.</p>
+              <p className="mt-2 text-sm font-semibold text-slate-300">Gestiona solicitudes y entra siempre por el flujo seguro del viaje.</p>
             </div>
             <Car className="h-8 w-8 text-cyan-200" />
           </div>
@@ -136,14 +135,8 @@ export default function DriverServicesPage() {
         {error && <div className="rounded-3xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700"><AlertCircle className="mr-2 inline h-4 w-4" />{error}</div>}
         {(operationQuery.error || statusQuery.error || pendingQuery.error || activeQuery.error) && <div className="rounded-3xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700">{operationQuery.error?.message || statusQuery.error?.message || pendingQuery.error?.message || activeQuery.error?.message}</div>}
 
-        {!canOperate && (
-          <div className="rounded-3xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-800">
-            <ShieldCheck className="mr-2 inline h-4 w-4" />{operation?.message || "Completa la verificación para recibir servicios."}
-          </div>
-        )}
-        {canOperate && !isOnline && (
-          <div className="rounded-3xl border border-slate-200 bg-white p-4 text-sm font-bold text-slate-700 shadow-sm">Ponte Online desde la pestaña Turno para recibir nuevas solicitudes.</div>
-        )}
+        {!canOperate && <div className="rounded-3xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-800"><ShieldCheck className="mr-2 inline h-4 w-4" />{operation?.message || "Completa la verificación para recibir servicios."}</div>}
+        {canOperate && !isOnline && <div className="rounded-3xl border border-slate-200 bg-white p-4 text-sm font-bold text-slate-700 shadow-sm">Ponte Online desde la pestaña Turno para recibir nuevas solicitudes.</div>}
 
         {active && (
           <Card className="rounded-[1.75rem] border-white bg-white shadow-xl">
@@ -151,16 +144,24 @@ export default function DriverServicesPage() {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-xs font-black uppercase tracking-[0.18em] text-cyan-700">Servicio activo</p>
-                  <h2 className="mt-1 text-2xl font-black">{active.status === "assigned" ? "Ir a recogida" : "Viaje en curso"}</h2>
+                  <h2 className="mt-1 text-2xl font-black">{active.status === "assigned" ? "Recogida protegida" : "Viaje en curso"}</h2>
                 </div>
                 {statusBadge(active.status)}
               </div>
               <RideSummary ride={active} />
-              <div className="grid gap-2 sm:grid-cols-3">
+              <div className="grid gap-2 sm:grid-cols-2">
                 <Button onClick={() => openMaps(active.status === "assigned" ? active.pickup_address : active.dropoff_address)} variant="outline" className="h-12 rounded-2xl bg-white font-black"><Navigation className="mr-2 h-4 w-4" />Abrir ruta</Button>
-                {active.status === "assigned" && <Button onClick={() => startRide.mutate({ rideId: active.id })} disabled={saving} className="h-12 rounded-2xl bg-blue-600 font-black text-white hover:bg-blue-500"><Navigation className="mr-2 h-4 w-4" />Iniciar</Button>}
-                <Button onClick={() => completeRide.mutate({ rideId: active.id })} disabled={saving} className="h-12 rounded-2xl bg-emerald-600 font-black text-white hover:bg-emerald-500"><CheckCircle2 className="mr-2 h-4 w-4" />Finalizar</Button>
+                <Button
+                  onClick={() => setLocation(active.status === "assigned" ? "/driver/navigation" : "/driver/queue")}
+                  className={active.status === "assigned" ? "h-12 rounded-2xl bg-blue-600 font-black text-white hover:bg-blue-500" : "h-12 rounded-2xl bg-emerald-600 font-black text-white hover:bg-emerald-500"}
+                >
+                  {active.status === "assigned" ? <Navigation className="mr-2 h-4 w-4" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
+                  {active.status === "assigned" ? "Llegada y PIN" : "Cierre profesional"}
+                </Button>
               </div>
+              <p className="rounded-2xl bg-cyan-50 p-3 text-xs font-bold text-cyan-800">
+                El inicio solo se realiza desde Navegación tras marcar llegada y verificar el PIN. El cierre se realiza mediante la liquidación profesional.
+              </p>
             </CardContent>
           </Card>
         )}
@@ -168,10 +169,7 @@ export default function DriverServicesPage() {
         <Card className="rounded-[1.75rem] border-white bg-white shadow-xl">
           <CardContent className="space-y-4 p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h2 className="text-xl font-black">Solicitudes disponibles</h2>
-                <p className="text-xs font-bold text-slate-500">Actualización automática cada 4 segundos.</p>
-              </div>
+              <div><h2 className="text-xl font-black">Solicitudes disponibles</h2><p className="text-xs font-bold text-slate-500">Actualización automática cada 4 segundos.</p></div>
               <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">{filteredPending.length} nuevas</Badge>
             </div>
 
@@ -208,10 +206,7 @@ function RideRequestCard({ ride, saving, onAccept, onReject }: { ride: Ride; sav
   return (
     <div className="rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="font-black"><UserRound className="mr-2 inline h-4 w-4 text-cyan-600" />{ride.passenger_name || "Pasajero"}</p>
-          <p className="mt-1 text-xs font-bold text-slate-500">{formatDate(ride.requested_at)}</p>
-        </div>
+        <div><p className="font-black"><UserRound className="mr-2 inline h-4 w-4 text-cyan-600" />{ride.passenger_name || "Pasajero"}</p><p className="mt-1 text-xs font-bold text-slate-500">{formatDate(ride.requested_at)}</p></div>
         {statusBadge(ride.status)}
       </div>
       <RideSummary ride={ride} />
