@@ -3,15 +3,6 @@ import { z } from "zod";
 import { protectedProcedure, router } from "./_core/trpc";
 import { supabase } from "./supabase-client";
 
-const rideStatusSchema = z.enum([
-  "pending",
-  "assigned",
-  "in_progress",
-  "completed",
-  "cancelled",
-  "rejected",
-]);
-
 const driverStatusSchema = z.enum(["available", "busy", "offline"]);
 const serviceTypeSchema = z.enum(["taxi", "eco", "van"]);
 const paymentMethodSchema = z.enum(["cash", "card", "bizum"]);
@@ -139,15 +130,6 @@ function actorRole(ctx: any): "passenger" | "driver" | "admin" {
   return "passenger";
 }
 
-function statusTitle(status: string) {
-  if (status === "assigned") return "Taxi asignado";
-  if (status === "in_progress") return "Viaje iniciado";
-  if (status === "completed") return "Viaje finalizado";
-  if (status === "cancelled") return "Viaje cancelado";
-  if (status === "rejected") return "Viaje rechazado";
-  return "Estado del viaje actualizado";
-}
-
 function throwAcceptRideError(error: { message: string } | null) {
   if (!error) return;
   const message = String(error.message || "");
@@ -268,31 +250,6 @@ export const taxiOpsRouter = router({
       throwIfSupabaseError(error);
       return data ?? [];
     }),
-
-    cancelRide: protectedProcedure
-      .input(z.object({ rideId: z.string().uuid() }))
-      .mutation(async ({ ctx, input }) => {
-        assertPassenger(ctx);
-
-        const { data, error } = await supabase
-          .from("taxi_rides")
-          .update({ status: "cancelled", cancelled_at: new Date().toISOString() })
-          .eq("id", input.rideId)
-          .eq("passenger_id", ctx.user.openId)
-          .in("status", ["pending", "assigned"])
-          .select()
-          .single();
-
-        throwIfSupabaseError(error);
-        await logActivity({
-          actorId: ctx.user.openId,
-          actorRole: actorRole(ctx),
-          message: "Viaje cancelado por pasajero",
-          rideId: input.rideId,
-        });
-
-        return data;
-      }),
   }),
 
   driver: router({
@@ -455,43 +412,6 @@ export const taxiOpsRouter = router({
         return data;
       }),
 
-    startRide: protectedProcedure
-      .input(z.object({ rideId: z.string().uuid() }))
-      .mutation(async ({ ctx, input }) => {
-        assertDriver(ctx);
-
-        const { data, error } = await supabase
-          .from("taxi_rides")
-          .update({ status: "in_progress", started_at: new Date().toISOString() })
-          .eq("id", input.rideId)
-          .eq("driver_id", ctx.user.openId)
-          .eq("status", "assigned")
-          .select()
-          .single();
-
-        throwIfSupabaseError(error);
-        await logActivity({
-          actorId: ctx.user.openId,
-          actorRole: actorRole(ctx),
-          message: "Viaje iniciado",
-          rideId: input.rideId,
-        });
-
-        await notifyUser({
-          recipientId: data.passenger_id,
-          recipientRole: "passenger",
-          actorId: ctx.user.openId,
-          actorRole: actorRole(ctx),
-          type: "info",
-          title: "Viaje iniciado",
-          body: `Tu viaje hacia ${data.dropoff_address || "tu destino"} ha comenzado.`,
-          actionUrl: "/passenger",
-          metadata: { rideId: data.id, status: data.status },
-        });
-
-        return data;
-      }),
-
     rejectRide: protectedProcedure
       .input(z.object({ rideId: z.string().uuid() }))
       .mutation(async ({ ctx, input }) => {
@@ -531,61 +451,6 @@ export const taxiOpsRouter = router({
 
         return ride;
       }),
-
-    completeRide: protectedProcedure
-      .input(z.object({ rideId: z.string().uuid() }))
-      .mutation(async ({ ctx, input }) => {
-        assertDriver(ctx);
-
-        const { data, error } = await supabase
-          .from("taxi_rides")
-          .update({ status: "completed", completed_at: new Date().toISOString() })
-          .eq("id", input.rideId)
-          .eq("driver_id", ctx.user.openId)
-          .in("status", ["assigned", "in_progress"])
-          .select()
-          .single();
-
-        throwIfSupabaseError(error);
-
-        const fare = Number(data.estimated_fare ?? 0);
-        const { data: status } = await supabase
-          .from("driver_live_status")
-          .select("total_earnings,total_rides")
-          .eq("driver_id", ctx.user.openId)
-          .maybeSingle();
-
-        await supabase
-          .from("driver_live_status")
-          .upsert({
-            driver_id: ctx.user.openId,
-            driver_name: ctx.user.name || "Conductor",
-            status: "available",
-            total_earnings: Number(status?.total_earnings ?? 0) + fare,
-            total_rides: Number(status?.total_rides ?? 0) + 1,
-          });
-
-        await logActivity({
-          actorId: ctx.user.openId,
-          actorRole: actorRole(ctx),
-          message: "Viaje finalizado",
-          rideId: input.rideId,
-        });
-
-        await notifyUser({
-          recipientId: data.passenger_id,
-          recipientRole: "passenger",
-          actorId: ctx.user.openId,
-          actorRole: actorRole(ctx),
-          type: "success",
-          title: "Viaje finalizado",
-          body: `Tu viaje ha finalizado. Importe estimado: ${fare.toFixed(2)} €.`,
-          actionUrl: "/passenger",
-          metadata: { rideId: data.id, status: data.status, estimatedFare: fare },
-        });
-
-        return data;
-      }),
   }),
 
   activity: protectedProcedure.query(async ({ ctx }) => {
@@ -613,40 +478,5 @@ export const taxiOpsRouter = router({
       throwIfSupabaseError(error);
       return data ?? [];
     }),
-
-    updateRideStatus: protectedProcedure
-      .input(z.object({ rideId: z.string().uuid(), status: rideStatusSchema }))
-      .mutation(async ({ ctx, input }) => {
-        if (ctx.user?.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
-
-        const { data, error } = await supabase
-          .from("taxi_rides")
-          .update({ status: input.status })
-          .eq("id", input.rideId)
-          .select()
-          .single();
-
-        throwIfSupabaseError(error);
-        await logActivity({
-          actorId: ctx.user.openId,
-          actorRole: "admin",
-          message: `Admin cambió estado a ${input.status}`,
-          rideId: input.rideId,
-        });
-
-        await notifyUser({
-          recipientId: data.passenger_id,
-          recipientRole: "passenger",
-          actorId: ctx.user.openId,
-          actorRole: "admin",
-          type: input.status === "cancelled" || input.status === "rejected" ? "warning" : input.status === "completed" ? "success" : "info",
-          title: statusTitle(input.status),
-          body: `El estado de tu viaje cambió a ${input.status}.`,
-          actionUrl: "/passenger",
-          metadata: { rideId: data.id, status: data.status },
-        });
-
-        return data;
-      }),
   }),
 });
