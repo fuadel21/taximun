@@ -4,8 +4,10 @@ import { PassengerDispatchStatus } from "@/components/PassengerDispatchStatus";
 import { PassengerDriverPublicProfileSection } from "@/components/PassengerDriverPublicProfileSection";
 import { PassengerLiveTrackingSection } from "@/components/PassengerLiveTrackingSection";
 import { PassengerPostTripRatingSection } from "@/components/PassengerPostTripRatingSection";
+import { PassengerSafeCancellationCard } from "@/components/PassengerSafeCancellationCard";
 import { TaxiProfileSettings } from "@/components/TaxiProfileSettings";
 import { TaxiSupportActions } from "@/components/TaxiSupportActions";
+import "@/styles/passenger-safe-cancellation.css";
 import { Car, Clock3, Home, ShieldCheck } from "lucide-react";
 import { useLocation } from "wouter";
 import PassengerPanelModern from "./PassengerPanelModern";
@@ -44,7 +46,10 @@ export default function PassengerApp() {
         <div>
           <PassengerDispatchStatus />
           <PassengerCommandGrid />
-          <PassengerPanelModern />
+          <PassengerSafeCancellationCard />
+          <div className="passenger-panel-modern-shell">
+            <PassengerPanelModern />
+          </div>
         </div>
       )}
       <AppBottomNav
