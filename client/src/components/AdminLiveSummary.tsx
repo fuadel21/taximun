@@ -1,5 +1,6 @@
+import type { ReactNode } from "react";
 import { trpc } from "@/lib/trpc";
-import { Activity, BellRing, Car, Clock3, Radio, RefreshCw, ShieldAlert, Users } from "lucide-react";
+import { BellRing, Car, Clock3, Radio, RefreshCw, ShieldAlert, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 function statusLabel(status: string) {
@@ -91,7 +92,7 @@ export function AdminLiveSummary() {
   );
 }
 
-function Metric({ icon, title, value, note }: { icon: React.ReactNode; title: string; value: string; note: string }) {
+function Metric({ icon, title, value, note }: { icon: ReactNode; title: string; value: string; note: string }) {
   return (
     <div className="min-h-36 rounded-[1.75rem] bg-gradient-to-br from-slate-900 to-blue-950 p-4 text-white shadow-lg">
       <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/15 text-cyan-200">{icon}</div>
