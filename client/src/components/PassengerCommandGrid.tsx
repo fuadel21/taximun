@@ -1,10 +1,11 @@
+import type { ReactNode } from "react";
 import { BellRing, Car, ShieldCheck, UserRound } from "lucide-react";
 import { useLocation } from "wouter";
 
 type CommandTileProps = {
   title: string;
   note: string;
-  icon: React.ReactNode;
+  icon: ReactNode;
   className: string;
   onClick: () => void;
 };
