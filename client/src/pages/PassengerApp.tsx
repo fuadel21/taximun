@@ -17,7 +17,7 @@ export default function PassengerApp() {
   const isRides = location.includes("/rides");
 
   return (
-    <div className="pb-24 md:pb-0">
+    <div className="pb-36 md:pb-0">
       {isProfile ? (
         <TaxiProfileSettings role="passenger" />
       ) : isSecurity ? (
@@ -47,10 +47,10 @@ export default function PassengerApp() {
       )}
       <AppBottomNav
         items={[
-          { label: "Inicio", active: !isProfile && !isSecurity && !isRides, icon: <Home className="h-5 w-5" />, onClick: () => setLocation("/passenger") },
-          { label: "Viaje", active: isRides, icon: <Car className="h-5 w-5" />, onClick: () => setLocation("/passenger/rides") },
-          { label: "Seguro", active: isSecurity, icon: <ShieldCheck className="h-5 w-5" />, onClick: () => setLocation("/passenger/security") },
-          { label: "Perfil", active: isProfile, icon: <Clock3 className="h-5 w-5" />, onClick: () => setLocation("/passenger/profile") },
+          { label: "Inicio", active: !isProfile && !isSecurity && !isRides, icon: <Home className="h-6 w-6" />, onClick: () => setLocation("/passenger") },
+          { label: "Viaje", active: isRides, icon: <Car className="h-6 w-6" />, onClick: () => setLocation("/passenger/rides") },
+          { label: "Seguro", active: isSecurity, icon: <ShieldCheck className="h-6 w-6" />, onClick: () => setLocation("/passenger/security") },
+          { label: "Perfil", active: isProfile, icon: <Clock3 className="h-6 w-6" />, onClick: () => setLocation("/passenger/profile") },
         ]}
       />
     </div>
