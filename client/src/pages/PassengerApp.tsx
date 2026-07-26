@@ -1,4 +1,5 @@
 import { AppBottomNav } from "@/components/AppBottomNav";
+import { PassengerCommandGrid } from "@/components/PassengerCommandGrid";
 import { PassengerDispatchStatus } from "@/components/PassengerDispatchStatus";
 import { PassengerDriverPublicProfileSection } from "@/components/PassengerDriverPublicProfileSection";
 import { PassengerLiveTrackingSection } from "@/components/PassengerLiveTrackingSection";
@@ -42,6 +43,7 @@ export default function PassengerApp() {
       ) : (
         <div>
           <PassengerDispatchStatus />
+          <PassengerCommandGrid />
           <PassengerPanelModern />
         </div>
       )}
