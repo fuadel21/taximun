@@ -21,7 +21,7 @@ export default function DriverApp() {
   const isNavigation = location.includes("/navigation");
 
   return (
-    <div className="pb-24 md:pb-0">
+    <div className="pb-64 md:pb-0">
       <DriverRideOfferOverlay />
       {!isProfile && !isSecurity && <DriverSessionRecovery />}
       {isProfile ? (
@@ -58,12 +58,12 @@ export default function DriverApp() {
       )}
       <AppBottomNav
         items={[
-          { label: "Turno", active: !isProfile && !isSecurity && !isQueue && !isEarnings && !isNavigation, icon: <Home className="h-5 w-5" />, onClick: () => setLocation("/driver") },
-          { label: "Servicios", active: isQueue, icon: <Car className="h-5 w-5" />, onClick: () => setLocation("/driver/queue") },
-          { label: "Navegar", active: isNavigation, icon: <Navigation className="h-5 w-5" />, onClick: () => setLocation("/driver/navigation") },
-          { label: "Ingresos", active: isEarnings, icon: <BarChart3 className="h-5 w-5" />, onClick: () => setLocation("/driver/earnings") },
-          { label: "Seguro", active: isSecurity, icon: <ShieldCheck className="h-5 w-5" />, onClick: () => setLocation("/driver/security") },
-          { label: "Perfil", active: isProfile, icon: <UserRound className="h-5 w-5" />, onClick: () => setLocation("/driver/profile") },
+          { label: "Turno", active: !isProfile && !isSecurity && !isQueue && !isEarnings && !isNavigation, icon: <Home className="h-6 w-6" />, onClick: () => setLocation("/driver") },
+          { label: "Servicios", active: isQueue, icon: <Car className="h-6 w-6" />, onClick: () => setLocation("/driver/queue") },
+          { label: "Navegar", active: isNavigation, icon: <Navigation className="h-6 w-6" />, onClick: () => setLocation("/driver/navigation") },
+          { label: "Ingresos", active: isEarnings, icon: <BarChart3 className="h-6 w-6" />, onClick: () => setLocation("/driver/earnings") },
+          { label: "Seguro", active: isSecurity, icon: <ShieldCheck className="h-6 w-6" />, onClick: () => setLocation("/driver/security") },
+          { label: "Perfil", active: isProfile, icon: <UserRound className="h-6 w-6" />, onClick: () => setLocation("/driver/profile") },
         ]}
       />
     </div>
