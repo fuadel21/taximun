@@ -1,4 +1,5 @@
 import { AppBottomNav } from "@/components/AppBottomNav";
+import { DriverCommandGrid } from "@/components/DriverCommandGrid";
 import { DriverGpsHeartbeat } from "@/components/DriverGpsHeartbeat";
 import { DriverRideOfferOverlay } from "@/components/DriverRideOfferOverlay";
 import { DriverSessionRecovery } from "@/components/DriverSessionRecovery";
@@ -53,6 +54,7 @@ export default function DriverApp() {
       ) : (
         <div className="min-h-screen bg-slate-950">
           <DriverGpsHeartbeat />
+          <DriverCommandGrid />
           <DriverTurnPage />
         </div>
       )}
