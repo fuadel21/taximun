@@ -17,6 +17,7 @@ import PassengerProfile from "./pages/PassengerProfile";
 import DriverApp from "./pages/DriverApp";
 import DriverProfile from "./pages/DriverProfile";
 import AdminPanel from "./pages/AdminPanel";
+import AdminDashboardPage from "./pages/AdminDashboardPage";
 import AdminSafetyPage from "./pages/AdminSafetyPage";
 import AdminAlertsPanel from "./pages/AdminAlertsPanel";
 import AdminVerificationPage from "./pages/AdminVerificationPage";
@@ -49,8 +50,8 @@ function Router() {
       <Route path={"/driver/earnings"}>{driver(<DriverApp />)}</Route>
       <Route path={"/driver/security"}>{driver(<DriverApp />)}</Route>
       <Route path={"/driver/profile"}>{driver(<DriverProfile />)}</Route>
-      <Route path={"/admin"}>{admin(<AdminPanel />)}</Route>
-      <Route path={"/admin/dashboard"}>{admin(<AdminPanel />)}</Route>
+      <Route path={"/admin"}>{admin(<AdminDashboardPage />)}</Route>
+      <Route path={"/admin/dashboard"}>{admin(<AdminDashboardPage />)}</Route>
       <Route path={"/admin/operations"}>{admin(<AdminOperationsCenterPage />)}</Route>
       <Route path={"/admin/users"}>{admin(<AdminPanel />)}</Route>
       <Route path={"/admin/verification"}>{admin(<AdminVerificationPage />)}</Route>
