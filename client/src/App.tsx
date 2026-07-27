@@ -6,6 +6,7 @@ import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { GlobalNotificationDock } from "./components/GlobalNotificationDock";
 import { AdminUrgentAlertDock } from "./components/AdminUrgentAlertDock";
+import { AdminPremiumShell } from "./components/AdminPremiumShell";
 import { RoleRouteGuard } from "./components/RoleRouteGuard";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
@@ -13,9 +14,7 @@ import AuthReal from "./pages/AuthReal";
 import TestHub from "./pages/TestHub";
 import NotificationsPage from "./pages/NotificationsPage";
 import PassengerApp from "./pages/PassengerApp";
-import PassengerProfile from "./pages/PassengerProfile";
 import DriverApp from "./pages/DriverApp";
-import DriverProfile from "./pages/DriverProfile";
 import AdminPanel from "./pages/AdminPanel";
 import AdminDashboardPage from "./pages/AdminDashboardPage";
 import AdminSafetyPage from "./pages/AdminSafetyPage";
@@ -30,6 +29,7 @@ const passenger = (node: ReactNode) => <RoleRouteGuard allowed={["passenger", "a
 const driver = (node: ReactNode) => <RoleRouteGuard allowed={["driver", "admin"]}>{node}</RoleRouteGuard>;
 const admin = (node: ReactNode) => <RoleRouteGuard allowed={["admin"]}>{node}</RoleRouteGuard>;
 const signedIn = (node: ReactNode) => <RoleRouteGuard allowed={["passenger", "driver", "admin"]}>{node}</RoleRouteGuard>;
+const adminInternal = (node: ReactNode) => admin(<AdminPremiumShell>{node}</AdminPremiumShell>);
 
 function Router() {
   return (
@@ -43,23 +43,23 @@ function Router() {
       <Route path={"/passenger/rides"}>{passenger(<PassengerApp />)}</Route>
       <Route path={"/passenger/book"}>{passenger(<PassengerApp />)}</Route>
       <Route path={"/passenger/security"}>{passenger(<PassengerApp />)}</Route>
-      <Route path={"/passenger/profile"}>{passenger(<PassengerProfile />)}</Route>
+      <Route path={"/passenger/profile"}>{passenger(<PassengerApp />)}</Route>
       <Route path={"/driver"}>{driver(<DriverApp />)}</Route>
       <Route path={"/driver/queue"}>{driver(<DriverApp />)}</Route>
       <Route path={"/driver/navigation"}>{driver(<DriverApp />)}</Route>
       <Route path={"/driver/earnings"}>{driver(<DriverApp />)}</Route>
       <Route path={"/driver/security"}>{driver(<DriverApp />)}</Route>
-      <Route path={"/driver/profile"}>{driver(<DriverProfile />)}</Route>
+      <Route path={"/driver/profile"}>{driver(<DriverApp />)}</Route>
       <Route path={"/admin"}>{admin(<AdminDashboardPage />)}</Route>
       <Route path={"/admin/dashboard"}>{admin(<AdminDashboardPage />)}</Route>
-      <Route path={"/admin/operations"}>{admin(<AdminOperationsCenterPage />)}</Route>
+      <Route path={"/admin/operations"}>{adminInternal(<AdminOperationsCenterPage />)}</Route>
       <Route path={"/admin/users"}>{admin(<AdminPanel />)}</Route>
-      <Route path={"/admin/verification"}>{admin(<AdminVerificationPage />)}</Route>
-      <Route path={"/admin/safety"}>{admin(<AdminSafetyPage />)}</Route>
-      <Route path={"/admin/health"}>{admin(<AdminSystemHealthPage />)}</Route>
+      <Route path={"/admin/verification"}>{adminInternal(<AdminVerificationPage />)}</Route>
+      <Route path={"/admin/safety"}>{adminInternal(<AdminSafetyPage />)}</Route>
+      <Route path={"/admin/health"}>{adminInternal(<AdminSystemHealthPage />)}</Route>
       <Route path={"/admin/journey-test"}>{admin(<AdminJourneyValidationPage />)}</Route>
-      <Route path={"/admin/alerts"}>{admin(<AdminAlertsPanel />)}</Route>
-      <Route path={"/admin/incidents"}>{admin(<AdminAlertsPanel />)}</Route>
+      <Route path={"/admin/alerts"}>{adminInternal(<AdminAlertsPanel />)}</Route>
+      <Route path={"/admin/incidents"}>{adminInternal(<AdminAlertsPanel />)}</Route>
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
     </Switch>

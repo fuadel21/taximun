@@ -4,6 +4,7 @@ import { DriverGpsHeartbeat } from "@/components/DriverGpsHeartbeat";
 import { DriverRideOfferOverlay } from "@/components/DriverRideOfferOverlay";
 import { DriverSessionRecovery } from "@/components/DriverSessionRecovery";
 import { DriverTripSettlementSection } from "@/components/DriverTripSettlementSection";
+import { PremiumInternalHeader } from "@/components/PremiumInternalHeader";
 import { TaxiProfileSettings } from "@/components/TaxiProfileSettings";
 import { TaxiSupportActions } from "@/components/TaxiSupportActions";
 import { BarChart3, Car, Home, Navigation, ShieldCheck, UserRound } from "lucide-react";
@@ -22,37 +23,41 @@ export default function DriverApp() {
   const isNavigation = location.includes("/navigation");
 
   return (
-    <div className="pb-64 md:pb-0">
+    <div className="bg-black pb-64 md:pb-0">
       <DriverRideOfferOverlay />
       {!isProfile && !isSecurity && <DriverSessionRecovery />}
       {isProfile ? (
-        <TaxiProfileSettings role="driver" />
+        <>
+          <PremiumInternalHeader eyebrow="Taximun Driver" title="Mi perfil" description="Gestiona documentación, vehículo y datos profesionales." homePath="/driver" icon={<UserRound className="h-8 w-8" />} tone="dark" />
+          <TaxiProfileSettings role="driver" />
+        </>
       ) : isSecurity ? (
-        <main className="min-h-screen bg-[#f7f8fb] px-4 py-6">
-          <div className="mx-auto max-w-3xl space-y-4">
-            <div>
-              <p className="text-xs font-black uppercase tracking-[0.25em] text-cyan-700">Taximun Driver</p>
-              <h1 className="text-3xl font-black">Seguridad conductor</h1>
-              <p className="mt-2 text-sm font-semibold text-slate-500">Registra incidencias reales para revisión del administrador.</p>
-            </div>
+        <main className="min-h-screen bg-black">
+          <PremiumInternalHeader eyebrow="Taximun Driver" title="Seguridad" description="Registra incidencias operativas y accede a la ayuda del servicio." homePath="/driver" icon={<ShieldCheck className="h-8 w-8" />} tone="dark" />
+          <div className="mx-auto max-w-3xl px-4 py-6">
             <TaxiSupportActions role="driver" />
           </div>
         </main>
       ) : isQueue ? (
-        <div className="min-h-screen bg-[#f7f8fb]">
+        <div className="min-h-screen bg-black">
+          <PremiumInternalHeader eyebrow="Taximun Driver" title="Servicios" description="Revisa ofertas, viaje activo y cierre del servicio." homePath="/driver" icon={<Car className="h-8 w-8" />} tone="dark" />
           <DriverGpsHeartbeat />
           <DriverTripSettlementSection />
           <DriverServicesPage />
         </div>
       ) : isNavigation ? (
-        <div className="min-h-screen bg-[#f7f8fb]">
+        <div className="min-h-screen bg-black">
+          <PremiumInternalHeader eyebrow="Taximun Driver" title="Navegación" description="Ruta, llegada, PIN de recogida y seguimiento del viaje." homePath="/driver" icon={<Navigation className="h-8 w-8" />} tone="dark" />
           <DriverGpsHeartbeat />
           <DriverNavigationPage />
         </div>
       ) : isEarnings ? (
-        <DriverEarningsPage />
+        <div className="min-h-screen bg-black">
+          <PremiumInternalHeader eyebrow="Taximun Driver" title="Ingresos" description="Consulta cobros, liquidaciones e historial profesional." homePath="/driver" icon={<BarChart3 className="h-8 w-8" />} tone="dark" />
+          <DriverEarningsPage />
+        </div>
       ) : (
-        <div className="min-h-screen bg-slate-950">
+        <div className="min-h-screen bg-black">
           <DriverGpsHeartbeat />
           <DriverCommandGrid />
           <DriverTurnPage />
