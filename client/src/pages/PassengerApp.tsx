@@ -5,10 +5,11 @@ import { PassengerDriverPublicProfileSection } from "@/components/PassengerDrive
 import { PassengerLiveTrackingSection } from "@/components/PassengerLiveTrackingSection";
 import { PassengerPostTripRatingSection } from "@/components/PassengerPostTripRatingSection";
 import { PassengerSafeCancellationCard } from "@/components/PassengerSafeCancellationCard";
+import { PremiumInternalHeader } from "@/components/PremiumInternalHeader";
 import { TaxiProfileSettings } from "@/components/TaxiProfileSettings";
 import { TaxiSupportActions } from "@/components/TaxiSupportActions";
 import "@/styles/passenger-safe-cancellation.css";
-import { Car, Clock3, Home, ShieldCheck } from "lucide-react";
+import { Car, Clock3, Home, ReceiptText, ShieldCheck, UserRound } from "lucide-react";
 import { useLocation } from "wouter";
 import PassengerPanelModern from "./PassengerPanelModern";
 import PassengerRidesPage from "./PassengerRidesPage";
@@ -20,22 +21,22 @@ export default function PassengerApp() {
   const isRides = location.includes("/rides");
 
   return (
-    <div className="pb-36 md:pb-0">
+    <div className="bg-[#f3f3f3] pb-36 md:pb-0">
       {isProfile ? (
-        <TaxiProfileSettings role="passenger" />
+        <>
+          <PremiumInternalHeader eyebrow="Taximun pasajero" title="Mi perfil" description="Gestiona tus datos, preferencias y configuración de cuenta." homePath="/passenger" icon={<UserRound className="h-8 w-8" />} />
+          <TaxiProfileSettings role="passenger" />
+        </>
       ) : isSecurity ? (
-        <main className="min-h-screen bg-[#f7f8fb] px-4 py-6">
-          <div className="mx-auto max-w-3xl space-y-4">
-            <div>
-              <p className="text-xs font-black uppercase tracking-[0.25em] text-cyan-700">Taximun</p>
-              <h1 className="text-3xl font-black">Seguridad pasajero</h1>
-              <p className="mt-2 text-sm font-semibold text-slate-500">Registra incidencias reales para revisión del administrador.</p>
-            </div>
+        <main className="min-h-screen bg-[#f3f3f3]">
+          <PremiumInternalHeader eyebrow="Taximun pasajero" title="Seguridad" description="Registra incidencias reales y accede rápidamente a la ayuda." homePath="/passenger" icon={<ShieldCheck className="h-8 w-8" />} />
+          <div className="mx-auto max-w-3xl px-4 py-6">
             <TaxiSupportActions role="passenger" />
           </div>
         </main>
       ) : isRides ? (
-        <div className="min-h-screen bg-[#f7f8fb]">
+        <div className="min-h-screen bg-[#f3f3f3]">
+          <PremiumInternalHeader eyebrow="Taximun pasajero" title="Mis viajes" description="Consulta el viaje activo, el historial, el conductor y los recibos." homePath="/passenger" icon={<ReceiptText className="h-8 w-8" />} />
           <PassengerDispatchStatus />
           <PassengerLiveTrackingSection />
           <PassengerPostTripRatingSection />
