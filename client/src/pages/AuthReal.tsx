@@ -1,11 +1,10 @@
 import { useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { hasSupabaseBrowserConfig, supabase } from "@/lib/supabase";
-import { AlertCircle, ArrowRight, Car, CheckCircle2, Lock, Mail, UserRound, Users } from "lucide-react";
+import { AlertCircle, ArrowRight, Car, CheckCircle2, Lock, Mail, ShieldCheck, UserRound, Users } from "lucide-react";
 
 type PublicAuthRole = "passenger" | "driver";
 type AuthMode = "login" | "signup";
@@ -64,7 +63,6 @@ export default function AuthReal() {
     setLoading(true);
     try {
       clearGuest();
-
       if (mode === "login") {
         const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
         if (signInError) throw signInError;
@@ -75,10 +73,7 @@ export default function AuthReal() {
       const { data, error: signUpError } = await supabase.auth.signUp({
         email,
         password,
-        options: {
-          data: { name, role },
-          emailRedirectTo: `${window.location.origin}/auth`,
-        },
+        options: { data: { name, role }, emailRedirectTo: `${window.location.origin}/auth` },
       });
       if (signUpError) throw signUpError;
 
@@ -87,7 +82,6 @@ export default function AuthReal() {
         setMode("login");
         return;
       }
-
       await redirectByServerRole();
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo completar el acceso.");
@@ -97,96 +91,66 @@ export default function AuthReal() {
   };
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.20),_transparent_32%),linear-gradient(180deg,_#f8fbff_0%,_#eef7ff_52%,_#ffffff_100%)] px-4 py-8 text-slate-950">
-      <section className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-5xl flex-col justify-center gap-6 lg:grid lg:grid-cols-[0.95fr_1.05fr] lg:items-center">
-        <div>
-          <div className="mb-5 inline-flex items-center gap-3 rounded-full border border-white/70 bg-white/75 px-4 py-2 shadow-lg backdrop-blur-xl">
-            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 text-white">
-              <Car className="h-6 w-6" />
-            </span>
-            <div>
-              <p className="text-sm font-black uppercase tracking-[0.22em] text-cyan-700">Taximun</p>
-              <p className="text-xs font-medium text-slate-500">Acceso seguro Supabase</p>
-            </div>
-          </div>
-          <h1 className="text-4xl font-black tracking-tight sm:text-6xl">Entra a tu panel real</h1>
-          <p className="mt-4 max-w-xl text-base leading-7 text-slate-600">
-            Al iniciar sesión conservamos el rol real de tu cuenta. Los administradores se reconocen automáticamente por el servidor.
-          </p>
+    <main className="min-h-screen bg-white text-black lg:grid lg:grid-cols-[1.05fr_0.95fr]">
+      <section className="hidden min-h-screen flex-col justify-between bg-black p-10 text-white lg:flex xl:p-16">
+        <div className="flex items-center gap-3 text-2xl font-black tracking-tight">
+          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white text-black"><Car className="h-7 w-7" /></span>
+          Taximun
         </div>
+        <div className="max-w-xl">
+          <p className="mb-4 text-sm font-bold uppercase tracking-[0.28em] text-zinc-400">Movilidad simple</p>
+          <h1 className="text-6xl font-black leading-[0.98] tracking-[-0.05em] xl:text-7xl">Muévete con claridad.</h1>
+          <p className="mt-6 max-w-lg text-lg font-medium leading-8 text-zinc-300">Accede a viajes, turnos y operaciones desde una experiencia directa, segura y fácil de usar.</p>
+        </div>
+        <div className="flex items-center gap-3 text-sm font-bold text-zinc-400"><ShieldCheck className="h-5 w-5" /> Acceso protegido con Supabase</div>
+      </section>
 
-        <Card className="border-white/70 bg-white/90 shadow-2xl backdrop-blur-xl">
-          <CardHeader>
-            <CardTitle className="text-3xl font-black">{mode === "login" ? "Iniciar sesión" : "Crear cuenta"}</CardTitle>
-            <CardDescription>{mode === "login" ? "Accede con tu correo y contraseña." : "Selecciona el tipo de cuenta que deseas crear."}</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-5">
+      <section className="flex min-h-screen items-center justify-center px-4 py-8 sm:px-8">
+        <div className="w-full max-w-md">
+          <div className="mb-8 flex items-center gap-3 lg:hidden">
+            <span className="flex h-11 w-11 items-center justify-center rounded-full bg-black text-white"><Car className="h-6 w-6" /></span>
+            <span className="text-2xl font-black">Taximun</span>
+          </div>
+
+          <h2 className="text-4xl font-black tracking-[-0.04em]">{mode === "login" ? "Bienvenido" : "Crear cuenta"}</h2>
+          <p className="mt-2 text-base font-medium text-zinc-500">{mode === "login" ? "Introduce tus datos para continuar." : "Elige tu tipo de cuenta y completa el registro."}</p>
+
+          <div className="mt-8 grid grid-cols-2 gap-2 rounded-2xl bg-zinc-100 p-1.5">
+            <button type="button" onClick={() => setMode("login")} className={`min-h-12 rounded-xl px-4 text-sm font-black transition ${mode === "login" ? "bg-white text-black shadow-sm" : "text-zinc-500"}`}>Iniciar sesión</button>
+            <button type="button" onClick={() => setMode("signup")} className={`min-h-12 rounded-xl px-4 text-sm font-black transition ${mode === "signup" ? "bg-white text-black shadow-sm" : "text-zinc-500"}`}>Registrarse</button>
+          </div>
+
+          <div className="mt-6 space-y-5">
             {mode === "signup" && (
-              <div className="grid grid-cols-2 gap-2">
-                <RoleButton active={role === "passenger"} onClick={() => setRole("passenger")} icon={<Users className="h-5 w-5" />} label="Pasajero" />
-                <RoleButton active={role === "driver"} onClick={() => setRole("driver")} icon={<Car className="h-5 w-5" />} label="Conductor" />
+              <div className="grid grid-cols-2 gap-3">
+                <RoleButton active={role === "passenger"} onClick={() => setRole("passenger")} icon={<Users className="h-7 w-7" />} label="Pasajero" />
+                <RoleButton active={role === "driver"} onClick={() => setRole("driver")} icon={<Car className="h-7 w-7" />} label="Conductor" />
               </div>
             )}
 
-            <div className="grid grid-cols-2 rounded-2xl bg-slate-100 p-1">
-              <button type="button" onClick={() => setMode("login")} className={`rounded-xl px-4 py-3 text-sm font-black ${mode === "login" ? "bg-white text-slate-950 shadow" : "text-slate-500"}`}>Iniciar sesión</button>
-              <button type="button" onClick={() => setMode("signup")} className={`rounded-xl px-4 py-3 text-sm font-black ${mode === "signup" ? "bg-white text-slate-950 shadow" : "text-slate-500"}`}>Registrarse</button>
-            </div>
+            {mode === "signup" && <AuthField label="Nombre" icon={<UserRound className="h-5 w-5" />}><Input value={name} onChange={(event) => setName(event.target.value)} placeholder="Nombre completo" className="h-14 rounded-xl border-0 bg-zinc-100 pl-12 text-base font-semibold shadow-none focus-visible:ring-2 focus-visible:ring-black" /></AuthField>}
+            <AuthField label="Correo" icon={<Mail className="h-5 w-5" />}><Input value={email} onChange={(event) => setEmail(event.target.value)} type="email" placeholder="correo@ejemplo.com" className="h-14 rounded-xl border-0 bg-zinc-100 pl-12 text-base font-semibold shadow-none focus-visible:ring-2 focus-visible:ring-black" /></AuthField>
+            <AuthField label="Contraseña" icon={<Lock className="h-5 w-5" />}><Input value={password} onChange={(event) => setPassword(event.target.value)} type="password" placeholder="Contraseña" className="h-14 rounded-xl border-0 bg-zinc-100 pl-12 text-base font-semibold shadow-none focus-visible:ring-2 focus-visible:ring-black" /></AuthField>
+            {mode === "signup" && <AuthField label="Confirmar contraseña" icon={<Lock className="h-5 w-5" />}><Input value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} type="password" placeholder="Confirmar contraseña" className="h-14 rounded-xl border-0 bg-zinc-100 pl-12 text-base font-semibold shadow-none focus-visible:ring-2 focus-visible:ring-black" /></AuthField>}
 
-            {mode === "signup" && (
-              <div className="space-y-2">
-                <Label className="font-bold">Nombre</Label>
-                <div className="relative">
-                  <UserRound className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
-                  <Input value={name} onChange={(event) => setName(event.target.value)} placeholder="Nombre completo" className="h-14 rounded-2xl pl-12" />
-                </div>
-              </div>
-            )}
+            {error && <Alert className="rounded-xl border-red-200 bg-red-50 text-red-700"><AlertCircle className="h-5 w-5" /><AlertDescription className="font-semibold">{error}</AlertDescription></Alert>}
+            {success && <Alert className="rounded-xl border-emerald-200 bg-emerald-50 text-emerald-800"><CheckCircle2 className="h-5 w-5" /><AlertDescription className="font-semibold">{success}</AlertDescription></Alert>}
 
-            <div className="space-y-2">
-              <Label className="font-bold">Correo</Label>
-              <div className="relative">
-                <Mail className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
-                <Input value={email} onChange={(event) => setEmail(event.target.value)} type="email" placeholder="correo@ejemplo.com" className="h-14 rounded-2xl pl-12" />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label className="font-bold">Contraseña</Label>
-              <div className="relative">
-                <Lock className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
-                <Input value={password} onChange={(event) => setPassword(event.target.value)} type="password" placeholder="Contraseña" className="h-14 rounded-2xl pl-12" />
-              </div>
-            </div>
-
-            {mode === "signup" && (
-              <div className="space-y-2">
-                <Label className="font-bold">Confirmar contraseña</Label>
-                <div className="relative">
-                  <Lock className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
-                  <Input value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} type="password" placeholder="Confirmar contraseña" className="h-14 rounded-2xl pl-12" />
-                </div>
-              </div>
-            )}
-
-            {error && <Alert className="rounded-2xl border-red-200 bg-red-50 text-red-700"><AlertCircle className="h-5 w-5" /><AlertDescription className="font-semibold">{error}</AlertDescription></Alert>}
-            {success && <Alert className="rounded-2xl border-cyan-200 bg-cyan-50 text-cyan-800"><CheckCircle2 className="h-5 w-5" /><AlertDescription className="font-semibold">{success}</AlertDescription></Alert>}
-
-            <Button onClick={handleSubmit} disabled={loading} className="h-14 w-full rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 text-base font-black text-white">
-              {loading ? "Procesando..." : mode === "login" ? "Entrar" : "Crear cuenta"}
+            <Button onClick={handleSubmit} disabled={loading} className="min-h-14 w-full rounded-xl bg-black text-base font-black text-white hover:bg-zinc-800">
+              {loading ? "Procesando..." : mode === "login" ? "Continuar" : "Crear cuenta"}
               <ArrowRight className="ml-2 h-5 w-5" />
             </Button>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </section>
     </main>
   );
 }
 
+function AuthField({ label, icon, children }: { label: string; icon: ReactNode; children: ReactNode }) {
+  return <div className="space-y-2"><Label className="text-sm font-black">{label}</Label><div className="relative"><span className="absolute left-4 top-1/2 z-10 -translate-y-1/2 text-zinc-500">{icon}</span>{children}</div></div>;
+}
+
 function RoleButton({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: ReactNode; label: string }) {
-  return (
-    <button type="button" onClick={onClick} className={`rounded-2xl border p-3 text-sm font-black transition ${active ? "border-cyan-400 bg-cyan-50 text-cyan-800 shadow" : "border-slate-200 bg-white text-slate-700"}`}>
-      <span className="mb-2 flex justify-center">{icon}</span>{label}
-    </button>
-  );
+  return <button type="button" onClick={onClick} className={`flex min-h-28 flex-col items-center justify-center rounded-2xl border-2 p-4 text-base font-black transition active:scale-[0.98] ${active ? "border-black bg-black text-white" : "border-zinc-200 bg-white text-black hover:border-zinc-400"}`}><span className="mb-2">{icon}</span>{label}</button>;
 }
