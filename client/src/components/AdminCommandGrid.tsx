@@ -6,22 +6,22 @@ type AdminTileProps = {
   title: string;
   note: string;
   icon: ReactNode;
-  className: string;
+  featured?: boolean;
   onClick: () => void;
 };
 
-function AdminTile({ title, note, icon, className, onClick }: AdminTileProps) {
+function AdminTile({ title, note, icon, featured = false, onClick }: AdminTileProps) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`group flex min-h-[10rem] flex-col items-center justify-center rounded-[2rem] p-5 text-center text-white shadow-xl transition-all duration-200 hover:-translate-y-1 hover:shadow-2xl active:scale-[0.97] ${className}`}
+      className={`group flex min-h-[10rem] flex-col items-start justify-between rounded-3xl border p-5 text-left transition-all duration-200 active:scale-[0.98] ${featured ? "border-black bg-black text-white shadow-xl" : "border-zinc-200 bg-white text-black shadow-sm hover:border-zinc-400"}`}
     >
-      <span className="mb-3 flex h-16 w-16 items-center justify-center rounded-[1.5rem] bg-white/15 shadow-inner transition-transform group-hover:scale-105">
-        {icon}
+      <span className={`flex h-14 w-14 items-center justify-center rounded-full ${featured ? "bg-white text-black" : "bg-zinc-100 text-black"}`}>{icon}</span>
+      <span>
+        <span className="block text-xl font-black tracking-tight">{title}</span>
+        <span className={`mt-1 block text-sm font-semibold ${featured ? "text-zinc-300" : "text-zinc-500"}`}>{note}</span>
       </span>
-      <span className="text-lg font-black leading-tight">{title}</span>
-      <span className="mt-1 text-xs font-bold text-white/75">{note}</span>
     </button>
   );
 }
@@ -30,62 +30,24 @@ export function AdminCommandGrid() {
   const [, setLocation] = useLocation();
 
   return (
-    <section className="bg-[linear-gradient(180deg,#eef6ff_0%,#f8fbff_100%)] px-4 pb-2 pt-6">
-      <div className="mx-auto max-w-7xl rounded-[2rem] border border-white bg-white/90 p-4 shadow-[0_24px_70px_rgba(15,23,42,0.12)] backdrop-blur-xl sm:p-6">
+    <section className="bg-white px-4 pb-3 pt-6">
+      <div className="mx-auto max-w-7xl rounded-[2rem] bg-white p-1 sm:p-3">
         <div className="mb-5">
-          <p className="text-xs font-black uppercase tracking-[0.24em] text-cyan-700">Centro de mando</p>
-          <h2 className="mt-1 text-2xl font-black text-slate-950 sm:text-3xl">Accesos administrativos</h2>
-          <p className="mt-1 text-sm font-semibold text-slate-500">Botones grandes para llegar directamente a cada área operativa.</p>
+          <p className="text-sm font-black text-zinc-500">Taximun Admin</p>
+          <h2 className="mt-1 text-3xl font-black tracking-[-0.04em] text-black">Centro de mando</h2>
+          <p className="mt-2 text-sm font-semibold text-zinc-500">Accesos grandes para llegar directamente a cada área operativa.</p>
         </div>
 
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
-          <AdminTile
-            title="Resumen"
-            note="Indicadores y actividad"
-            icon={<LayoutDashboard className="h-9 w-9" />}
-            className="bg-gradient-to-br from-slate-700 to-slate-950"
-            onClick={() => setLocation("/admin/dashboard")}
-          />
-          <AdminTile
-            title="Operaciones"
-            note="Viajes y control en vivo"
-            icon={<Activity className="h-9 w-9" />}
-            className="bg-gradient-to-br from-blue-600 to-indigo-700"
-            onClick={() => setLocation("/admin/operations")}
-          />
-          <AdminTile
-            title="Verificación"
-            note="Conductores y documentación"
-            icon={<UserCheck className="h-9 w-9" />}
-            className="bg-gradient-to-br from-violet-600 to-purple-800"
-            onClick={() => setLocation("/admin/verification")}
-          />
-          <AdminTile
-            title="Seguridad"
-            note="Auditoría e incidencias"
-            icon={<ShieldCheck className="h-9 w-9" />}
-            className="bg-gradient-to-br from-emerald-600 to-green-800"
-            onClick={() => setLocation("/admin/safety")}
-          />
-          <AdminTile
-            title="Salud sistema"
-            note="Servicios y conexiones"
-            icon={<Stethoscope className="h-9 w-9" />}
-            className="bg-gradient-to-br from-cyan-600 to-teal-700"
-            onClick={() => setLocation("/admin/health")}
-          />
-          <AdminTile
-            title="Alertas"
-            note="Avisos que requieren atención"
-            icon={<BellRing className="h-9 w-9" />}
-            className="bg-gradient-to-br from-orange-500 to-red-600"
-            onClick={() => setLocation("/admin/alerts")}
-          />
+          <AdminTile featured title="Resumen" note="Indicadores y actividad" icon={<LayoutDashboard className="h-8 w-8" />} onClick={() => setLocation("/admin/dashboard")} />
+          <AdminTile title="Operaciones" note="Viajes y control en vivo" icon={<Activity className="h-8 w-8" />} onClick={() => setLocation("/admin/operations")} />
+          <AdminTile title="Verificación" note="Conductores y documentación" icon={<UserCheck className="h-8 w-8" />} onClick={() => setLocation("/admin/verification")} />
+          <AdminTile title="Seguridad" note="Auditoría e incidencias" icon={<ShieldCheck className="h-8 w-8" />} onClick={() => setLocation("/admin/safety")} />
+          <AdminTile title="Salud sistema" note="Servicios y conexiones" icon={<Stethoscope className="h-8 w-8" />} onClick={() => setLocation("/admin/health")} />
+          <AdminTile title="Alertas" note="Avisos que requieren atención" icon={<BellRing className="h-8 w-8" />} onClick={() => setLocation("/admin/alerts")} />
         </div>
 
-        <p className="mt-4 rounded-2xl bg-amber-50 p-3 text-xs font-bold text-amber-800">
-          El panel general todavía contiene algunos gráficos y viajes de demostración; las áreas operativas enlazadas mantienen sus conexiones reales cuando están disponibles.
-        </p>
+        <p className="mt-4 rounded-2xl bg-zinc-100 p-3 text-xs font-bold text-zinc-600">El panel general todavía contiene algunos gráficos y viajes de demostración; las áreas operativas mantienen sus conexiones reales cuando están disponibles.</p>
       </div>
     </section>
   );
