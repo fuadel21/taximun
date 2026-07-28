@@ -15,8 +15,8 @@ import TestHub from "./pages/TestHub";
 import NotificationsPage from "./pages/NotificationsPage";
 import PassengerApp from "./pages/PassengerApp";
 import DriverApp from "./pages/DriverApp";
-import AdminPanel from "./pages/AdminPanel";
 import AdminDashboardPage from "./pages/AdminDashboardPage";
+import AdminResourcesPage from "./pages/AdminResourcesPage";
 import AdminSafetyPage from "./pages/AdminSafetyPage";
 import AdminAlertsPanel from "./pages/AdminAlertsPanel";
 import AdminVerificationPage from "./pages/AdminVerificationPage";
@@ -53,7 +53,8 @@ function Router() {
       <Route path={"/admin"}>{admin(<AdminDashboardPage />)}</Route>
       <Route path={"/admin/dashboard"}>{admin(<AdminDashboardPage />)}</Route>
       <Route path={"/admin/operations"}>{adminInternal(<AdminOperationsCenterPage />)}</Route>
-      <Route path={"/admin/users"}>{admin(<AdminPanel />)}</Route>
+      <Route path={"/admin/users"}>{adminInternal(<AdminResourcesPage />)}</Route>
+      <Route path={"/admin/resources"}>{adminInternal(<AdminResourcesPage />)}</Route>
       <Route path={"/admin/verification"}>{adminInternal(<AdminVerificationPage />)}</Route>
       <Route path={"/admin/safety"}>{adminInternal(<AdminSafetyPage />)}</Route>
       <Route path={"/admin/health"}>{adminInternal(<AdminSystemHealthPage />)}</Route>
