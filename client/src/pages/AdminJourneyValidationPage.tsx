@@ -1,12 +1,12 @@
 import { useState } from "react";
-import { Link } from "wouter";
-import { AlertTriangle, ArrowLeft, CheckCircle2, Clock3, Loader2, PlayCircle, Route, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock3, Loader2, PlayCircle, Route, XCircle } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { PremiumInternalHeader } from "@/components/PremiumInternalHeader";
 
 type StepStatus = "ok" | "warning" | "error" | "pending";
 
@@ -21,16 +21,12 @@ export default function AdminJourneyValidationPage() {
   const { user, isGuest } = useAuth() as any;
   const isAdmin = !isGuest && user?.role === "admin";
   const [rideId, setRideId] = useState("");
-  const [requestedRideId, setRequestedRideId] = useState<string | undefined>(undefined);
+  const [requestedRideId, setRequestedRideId] = useState<string | undefined>();
   const [enabled, setEnabled] = useState(false);
 
   const validation = trpc.system.taxiJourneyValidation.run.useQuery(
     requestedRideId ? { rideId: requestedRideId } : undefined,
-    {
-      enabled: isAdmin && enabled,
-      retry: false,
-      refetchOnWindowFocus: false,
-    },
+    { enabled: isAdmin && enabled, retry: false, refetchOnWindowFocus: false }
   );
 
   const runValidation = () => {
@@ -42,16 +38,12 @@ export default function AdminJourneyValidationPage() {
 
   if (!isAdmin) {
     return (
-      <main className="min-h-screen bg-slate-50 p-6">
-        <Card className="mx-auto max-w-xl border-red-200">
-          <CardHeader>
-            <CardTitle>Acceso restringido</CardTitle>
-            <CardDescription>Esta prueba solo puede ejecutarla un administrador real.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button asChild><Link href="/">Volver al inicio</Link></Button>
-          </CardContent>
-        </Card>
+      <main className="flex min-h-screen items-center justify-center bg-black px-4 text-white">
+        <section className="w-full max-w-xl rounded-[2rem] border border-white/10 bg-[#111] p-8 text-center">
+          <XCircle className="mx-auto h-12 w-12" />
+          <h1 className="mt-4 text-3xl font-black">Acceso restringido</h1>
+          <p className="mt-2 text-sm font-semibold text-white/55">Esta prueba solo puede ejecutarla un administrador real.</p>
+        </section>
       </main>
     );
   }
@@ -59,66 +51,50 @@ export default function AdminJourneyValidationPage() {
   const result = validation.data as any;
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-slate-50 via-cyan-50/40 to-blue-50 p-4 sm:p-6">
-      <div className="mx-auto max-w-6xl space-y-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <Button variant="ghost" asChild className="mb-2 -ml-3">
-              <Link href="/admin"><ArrowLeft className="mr-2 h-4 w-4" />Volver al panel</Link>
-            </Button>
-            <h1 className="flex items-center gap-3 text-3xl font-black tracking-tight text-slate-950">
-              <Route className="h-8 w-8 text-cyan-600" /> Prueba integral del viaje
-            </h1>
-            <p className="mt-2 max-w-3xl text-slate-600">
-              Audita un viaje real de principio a fin sin modificar datos. Deja el identificador vacío para revisar automáticamente el viaje más reciente.
-            </p>
-          </div>
-          {result?.checkedAt && (
-            <Badge variant="outline" className="w-fit bg-white px-3 py-2">
-              {new Date(result.checkedAt).toLocaleString("es-ES")} · {result.latencyMs} ms
-            </Badge>
-          )}
-        </div>
+    <main className="min-h-screen bg-[#f3f3f3] text-black">
+      <PremiumInternalHeader
+        eyebrow="Taximun Admin"
+        title="Prueba integral del viaje"
+        description="Audita un viaje real de principio a fin sin modificar datos."
+        homePath="/admin/dashboard"
+        icon={<Route className="h-8 w-8" />}
+      />
 
-        <Card className="border-white/70 bg-white/90 shadow-xl backdrop-blur-xl">
+      <div className="mx-auto max-w-6xl space-y-5 px-4 py-6">
+        <Card className="rounded-[2rem] border-black/5 bg-white shadow-lg">
           <CardHeader>
-            <CardTitle>Seleccionar viaje</CardTitle>
-            <CardDescription>Puedes pegar un UUID concreto o ejecutar la prueba sobre el último viaje creado.</CardDescription>
+            <CardTitle className="text-2xl font-black">Seleccionar viaje</CardTitle>
+            <CardDescription>Pega un UUID concreto o deja el campo vacío para revisar el viaje más reciente.</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3 sm:flex-row">
-            <Input
-              value={rideId}
-              onChange={(event) => setRideId(event.target.value)}
-              placeholder="UUID del viaje (opcional)"
-              className="flex-1"
-            />
-            <Button onClick={runValidation} disabled={validation.isFetching} className="bg-cyan-600 hover:bg-cyan-700">
-              {validation.isFetching ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlayCircle className="mr-2 h-4 w-4" />}
+            <Input value={rideId} onChange={(event) => setRideId(event.target.value)} placeholder="UUID del viaje (opcional)" className="h-16 flex-1 rounded-2xl bg-[#f3f3f3] px-5 font-semibold" />
+            <Button onClick={runValidation} disabled={validation.isFetching} className="h-16 rounded-2xl bg-black px-6 font-black text-white hover:bg-black/85">
+              {validation.isFetching ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <PlayCircle className="mr-2 h-5 w-5" />}
               Ejecutar prueba completa
             </Button>
           </CardContent>
         </Card>
 
+        {result?.checkedAt && (
+          <div className="rounded-2xl bg-black p-4 text-sm font-bold text-white">
+            Comprobado {new Date(result.checkedAt).toLocaleString("es-ES")} · {result.latencyMs} ms
+          </div>
+        )}
+
         {validation.error && (
-          <Card className="border-red-200 bg-red-50">
-            <CardContent className="flex gap-3 p-5 text-red-800">
-              <XCircle className="mt-0.5 h-5 w-5 shrink-0" />
-              <div><p className="font-bold">No se pudo ejecutar la prueba</p><p className="text-sm">{validation.error.message}</p></div>
-            </CardContent>
+          <Card className="rounded-[1.75rem] border-red-200 bg-red-50">
+            <CardContent className="flex gap-3 p-5 text-red-800"><XCircle className="h-5 w-5 shrink-0" /><div><p className="font-black">No se pudo ejecutar la prueba</p><p className="text-sm">{validation.error.message}</p></div></CardContent>
           </Card>
         )}
 
         {result?.ride && (
-          <Card className="border-white/70 bg-white/90 shadow-lg">
-            <CardHeader>
-              <CardTitle>Viaje auditado</CardTitle>
-              <CardDescription className="break-all">{result.ride.id}</CardDescription>
-            </CardHeader>
+          <Card className="rounded-[2rem] border-black/5 bg-white shadow-lg">
+            <CardHeader><CardTitle>Viaje auditado</CardTitle><CardDescription className="break-all">{result.ride.id}</CardDescription></CardHeader>
             <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <div><p className="text-xs font-bold uppercase text-slate-400">Estado</p><p className="mt-1 font-bold">{result.ride.status}</p></div>
-              <div><p className="text-xs font-bold uppercase text-slate-400">Origen</p><p className="mt-1 text-sm">{result.ride.pickupAddress || "Sin dirección"}</p></div>
-              <div><p className="text-xs font-bold uppercase text-slate-400">Destino</p><p className="mt-1 text-sm">{result.ride.dropoffAddress || "Sin dirección"}</p></div>
-              <div><p className="text-xs font-bold uppercase text-slate-400">Conductor</p><p className="mt-1 break-all text-sm">{result.ride.driverId || "Sin asignar"}</p></div>
+              <Info label="Estado" value={result.ride.status} />
+              <Info label="Origen" value={result.ride.pickupAddress || "Sin dirección"} />
+              <Info label="Destino" value={result.ride.dropoffAddress || "Sin dirección"} />
+              <Info label="Conductor" value={result.ride.driverId || "Sin asignar"} />
             </CardContent>
           </Card>
         )}
@@ -128,18 +104,9 @@ export default function AdminJourneyValidationPage() {
             {(["ok", "warning", "error", "pending"] as StepStatus[]).map((status) => {
               const config = statusConfig[status];
               const Icon = config.icon;
-              return (
-                <Card key={status} className={config.className}>
-                  <CardContent className="flex items-center justify-between p-4">
-                    <div><p className="text-xs font-black uppercase">{config.label}</p><p className="mt-1 text-3xl font-black">{result.summary[status]}</p></div>
-                    <Icon className="h-7 w-7" />
-                  </CardContent>
-                </Card>
-              );
+              return <Card key={status} className={`rounded-[1.5rem] ${config.className}`}><CardContent className="flex items-center justify-between p-4"><div><p className="text-xs font-black uppercase">{config.label}</p><p className="mt-1 text-3xl font-black">{result.summary[status]}</p></div><Icon className="h-7 w-7" /></CardContent></Card>;
             })}
-            <Card className="border-blue-200 bg-blue-50 text-blue-700">
-              <CardContent className="p-4"><p className="text-xs font-black uppercase">Total</p><p className="mt-1 text-3xl font-black">{result.summary.total}</p></CardContent>
-            </Card>
+            <Card className="rounded-[1.5rem] border-black bg-black text-white"><CardContent className="p-4"><p className="text-xs font-black uppercase">Total</p><p className="mt-1 text-3xl font-black">{result.summary.total}</p></CardContent></Card>
           </div>
         )}
 
@@ -149,23 +116,14 @@ export default function AdminJourneyValidationPage() {
               const config = statusConfig[item.status as StepStatus];
               const Icon = config.icon;
               return (
-                <Card key={item.key} className="border-white/70 bg-white/90 shadow-md">
+                <Card key={item.key} className="rounded-[1.75rem] border-black/5 bg-white shadow-sm">
                   <CardContent className="flex gap-4 p-5">
-                    <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full border ${config.className}`}>
-                      <Icon className="h-5 w-5" />
-                    </div>
+                    <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full border ${config.className}`}><Icon className="h-5 w-5" /></div>
                     <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-xs font-black text-slate-400">PASO {index + 1}</span>
-                        <Badge variant="outline" className={config.className}>{config.label}</Badge>
-                      </div>
-                      <h2 className="mt-1 text-lg font-black text-slate-950">{item.title}</h2>
-                      <p className="mt-1 text-sm text-slate-600">{item.message}</p>
-                      {item.details && (
-                        <pre className="mt-3 overflow-x-auto rounded-xl bg-slate-950 p-3 text-xs text-slate-100">
-                          {JSON.stringify(item.details, null, 2)}
-                        </pre>
-                      )}
+                      <div className="flex flex-wrap items-center gap-2"><span className="text-xs font-black text-black/40">PASO {index + 1}</span><Badge variant="outline" className={config.className}>{config.label}</Badge></div>
+                      <h2 className="mt-2 text-lg font-black">{item.title}</h2>
+                      <p className="mt-1 text-sm font-semibold text-black/55">{item.message}</p>
+                      {item.details && <pre className="mt-3 overflow-x-auto rounded-2xl bg-black p-4 text-xs text-white">{JSON.stringify(item.details, null, 2)}</pre>}
                     </div>
                   </CardContent>
                 </Card>
@@ -175,15 +133,17 @@ export default function AdminJourneyValidationPage() {
         )}
 
         {!enabled && (
-          <Card className="border-dashed border-cyan-300 bg-white/60">
-            <CardContent className="py-12 text-center">
-              <PlayCircle className="mx-auto h-12 w-12 text-cyan-500" />
-              <p className="mt-4 font-bold text-slate-800">La prueba todavía no se ha ejecutado.</p>
-              <p className="mt-1 text-sm text-slate-500">Pulsa el botón para revisar todo el ciclo del viaje.</p>
-            </CardContent>
-          </Card>
+          <div className="rounded-[2rem] border border-dashed border-black/20 bg-white p-10 text-center">
+            <PlayCircle className="mx-auto h-12 w-12" />
+            <p className="mt-4 font-black">La prueba todavía no se ha ejecutado.</p>
+            <p className="mt-1 text-sm font-semibold text-black/50">Pulsa el botón grande para revisar todo el ciclo del viaje.</p>
+          </div>
         )}
       </div>
     </main>
   );
+}
+
+function Info({ label, value }: { label: string; value: string }) {
+  return <div className="rounded-2xl bg-[#f3f3f3] p-4"><p className="text-xs font-black uppercase text-black/40">{label}</p><p className="mt-1 break-all text-sm font-bold">{value}</p></div>;
 }

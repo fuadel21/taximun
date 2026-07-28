@@ -1,33 +1,54 @@
-import { useLocation } from "wouter";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { TaxiNotificationCenter } from "@/components/TaxiNotificationCenter";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { ArrowLeft, Bell } from "lucide-react";
+import { PremiumInternalHeader } from "@/components/PremiumInternalHeader";
+import { Bell, CheckCircle2, ShieldCheck } from "lucide-react";
 
 export default function NotificationsPage() {
-  const [, setLocation] = useLocation();
+  const { user } = useAuth() as any;
+  const homePath = user?.role === "driver" ? "/driver" : user?.role === "admin" ? "/admin/dashboard" : "/passenger";
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.18),_transparent_30%),linear-gradient(180deg,_#f8fbff_0%,_#eef6ff_45%,_#ffffff_100%)] p-4 text-slate-950">
-      <div className="mx-auto max-w-3xl space-y-4">
-        <div className="flex items-center justify-between gap-3 py-2">
-          <Button variant="outline" onClick={() => window.history.back()} className="rounded-2xl bg-white/80 font-black">
-            <ArrowLeft className="mr-2 h-4 w-4" /> Volver
-          </Button>
-          <TaxiNotificationCenter />
-        </div>
+    <main className="min-h-screen bg-[#f3f3f3] text-black">
+      <PremiumInternalHeader
+        eyebrow="Taximun"
+        title="Notificaciones"
+        description="Consulta avisos de viajes, seguridad, documentos y administración."
+        homePath={homePath}
+        icon={<Bell className="h-8 w-8" />}
+      />
 
-        <Card className="rounded-[1.75rem] border-white bg-white/90 shadow-xl backdrop-blur-xl">
-          <CardContent className="space-y-4 p-6 text-center">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-cyan-50 text-cyan-700">
-              <Bell className="h-8 w-8" />
+      <div className="mx-auto max-w-4xl space-y-4 px-4 py-6">
+        <section className="rounded-[2rem] border border-black/5 bg-white p-6 shadow-lg">
+          <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.24em] text-black/45">Bandeja interna</p>
+              <h2 className="mt-1 text-2xl font-black">Tus avisos importantes</h2>
+              <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-black/55">
+                Abre la bandeja para revisar aprobaciones, rechazos, cambios del viaje y mensajes administrativos.
+              </p>
             </div>
-            <h1 className="text-3xl font-black">Centro de notificaciones</h1>
-            <p className="text-sm font-bold text-slate-500">
-              Pulsa el botón “Avisos” para abrir tu bandeja interna. Aquí verás aprobaciones, rechazos, documentos enviados y avisos de administración.
-            </p>
-          </CardContent>
-        </Card>
+            <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-black text-white">
+              <Bell className="h-9 w-9" />
+            </div>
+          </div>
+
+          <div className="mt-6 rounded-[1.5rem] bg-black p-4 text-white">
+            <TaxiNotificationCenter />
+          </div>
+        </section>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="min-h-32 rounded-[1.75rem] bg-white p-4 shadow-sm">
+            <CheckCircle2 className="h-8 w-8" />
+            <p className="mt-4 font-black">Estado del viaje</p>
+            <p className="mt-1 text-xs font-semibold text-black/50">Asignaciones, llegadas y finalizaciones.</p>
+          </div>
+          <div className="min-h-32 rounded-[1.75rem] bg-white p-4 shadow-sm">
+            <ShieldCheck className="h-8 w-8" />
+            <p className="mt-4 font-black">Seguridad</p>
+            <p className="mt-1 text-xs font-semibold text-black/50">Incidencias y avisos que requieren atención.</p>
+          </div>
+        </div>
       </div>
     </main>
   );
