@@ -35,11 +35,11 @@ export function AdminCommandGrid() {
         <div className="mb-5">
           <p className="text-sm font-black text-zinc-500">Taximun Admin</p>
           <h2 className="mt-1 text-3xl font-black tracking-[-0.04em] text-black">Centro de mando</h2>
-          <p className="mt-2 text-sm font-semibold text-zinc-500">Accesos grandes para llegar directamente a cada área operativa.</p>
+          <p className="mt-2 text-sm font-semibold text-zinc-500">Accesos grandes a las áreas operativas y datos conectados en tiempo real.</p>
         </div>
 
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
-          <AdminTile featured title="Resumen" note="Indicadores y actividad" icon={<LayoutDashboard className="h-8 w-8" />} onClick={() => setLocation("/admin/dashboard")} />
+          <AdminTile featured title="Resumen" note="Indicadores y actividad real" icon={<LayoutDashboard className="h-8 w-8" />} onClick={() => setLocation("/admin/dashboard")} />
           <AdminTile title="Operaciones" note="Viajes y control en vivo" icon={<Activity className="h-8 w-8" />} onClick={() => setLocation("/admin/operations")} />
           <AdminTile title="Verificación" note="Conductores y documentación" icon={<UserCheck className="h-8 w-8" />} onClick={() => setLocation("/admin/verification")} />
           <AdminTile title="Seguridad" note="Auditoría e incidencias" icon={<ShieldCheck className="h-8 w-8" />} onClick={() => setLocation("/admin/safety")} />
@@ -47,7 +47,7 @@ export function AdminCommandGrid() {
           <AdminTile title="Alertas" note="Avisos que requieren atención" icon={<BellRing className="h-8 w-8" />} onClick={() => setLocation("/admin/alerts")} />
         </div>
 
-        <p className="mt-4 rounded-2xl bg-zinc-100 p-3 text-xs font-bold text-zinc-600">El panel general todavía contiene algunos gráficos y viajes de demostración; las áreas operativas mantienen sus conexiones reales cuando están disponibles.</p>
+        <p className="mt-4 rounded-2xl bg-zinc-100 p-3 text-xs font-bold text-zinc-600">Este centro de mando muestra únicamente información operativa conectada. Los accesos abren sus módulos reales de administración.</p>
       </div>
     </section>
   );
