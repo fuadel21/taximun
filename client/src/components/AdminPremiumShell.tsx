@@ -1,10 +1,12 @@
 import type { ReactNode } from "react";
-import { Activity, BellRing, ShieldCheck, Stethoscope, UserCheck } from "lucide-react";
+import { Activity, BellRing, CarFront, ShieldCheck, Stethoscope, UserCheck } from "lucide-react";
 import { useLocation } from "wouter";
 import { PremiumInternalHeader } from "./PremiumInternalHeader";
 
 const metadata = {
   "/admin/operations": { title: "Operaciones", description: "Viajes, conductores y control en tiempo real.", icon: <Activity className="h-8 w-8" /> },
+  "/admin/users": { title: "Conductores y flota", description: "Altas, vehículos y estados operativos conectados a Supabase.", icon: <CarFront className="h-8 w-8" /> },
+  "/admin/resources": { title: "Conductores y flota", description: "Altas, vehículos y estados operativos conectados a Supabase.", icon: <CarFront className="h-8 w-8" /> },
   "/admin/verification": { title: "Verificación", description: "Documentación, conductores y validaciones pendientes.", icon: <UserCheck className="h-8 w-8" /> },
   "/admin/safety": { title: "Seguridad", description: "Auditoría, incidencias y protección de usuarios.", icon: <ShieldCheck className="h-8 w-8" /> },
   "/admin/health": { title: "Salud del sistema", description: "Estado de servicios, conexiones y componentes críticos.", icon: <Stethoscope className="h-8 w-8" /> },
