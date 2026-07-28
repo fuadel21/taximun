@@ -1,13 +1,11 @@
 import { AdminCommandGrid } from "@/components/AdminCommandGrid";
 import { AdminLiveSummary } from "@/components/AdminLiveSummary";
-import AdminPanel from "./AdminPanel";
 
 export default function AdminDashboardPage() {
   return (
-    <div className="min-h-screen bg-[#eef6ff]">
+    <div className="min-h-screen bg-white">
       <AdminCommandGrid />
       <AdminLiveSummary />
-      <AdminPanel />
     </div>
   );
 }
