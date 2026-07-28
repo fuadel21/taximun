@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Car, Loader2, Plus, RefreshCw, UserRound } from "lucide-react";
+import { AlertTriangle, Car, CheckCircle2, History, Loader2, Plus, RefreshCw, UserRound } from "lucide-react";
 
 type DriverStatus = "available" | "busy" | "pause" | "offline";
 type TaxiStatus = "available" | "busy" | "maintenance" | "offline";
@@ -18,6 +18,13 @@ function statusLabel(status: string) {
   if (status === "pause") return "Pausa";
   if (status === "maintenance") return "Mantenimiento";
   return "Desconectado";
+}
+
+function formatDate(value: unknown) {
+  if (typeof value !== "string") return "Fecha no disponible";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Fecha no disponible";
+  return date.toLocaleString("es-ES", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
 export default function AdminResourcesPage() {
@@ -61,10 +68,13 @@ export default function AdminResourcesPage() {
 
   const updateDriver = trpc.system.adminControl.updateDriverStatus.useMutation({ onSuccess: refresh });
   const updateTaxi = trpc.system.adminControl.updateTaxiStatus.useMutation({ onSuccess: refresh });
+  const resolveIncident = trpc.system.adminControl.resolveIncident.useMutation({ onSuccess: refresh });
 
   const drivers = snapshot.data?.drivers ?? [];
   const taxis = snapshot.data?.taxis ?? [];
-  const error = snapshot.error?.message || createDriver.error?.message || createTaxi.error?.message || updateDriver.error?.message || updateTaxi.error?.message;
+  const incidents = snapshot.data?.incidents ?? [];
+  const logs = snapshot.data?.logs ?? [];
+  const error = snapshot.error?.message || createDriver.error?.message || createTaxi.error?.message || updateDriver.error?.message || updateTaxi.error?.message || resolveIncident.error?.message;
 
   return (
     <main className="min-h-screen bg-[#f3f3f3] px-4 pb-12 pt-4">
@@ -136,6 +146,37 @@ export default function AdminResourcesPage() {
                 <div key={taxi.id} className="rounded-3xl border border-zinc-200 p-4">
                   <div className="flex items-start justify-between gap-3"><div><p className="text-lg font-black">{taxi.taxi_code} · {taxi.plate}</p><p className="text-sm font-semibold text-zinc-500">{taxi.model} · {taxi.driver_name}</p></div><Badge variant="outline">{statusLabel(taxi.status)}</Badge></div>
                   <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">{taxiStatuses.map((status) => <Button key={status} variant={taxi.status === status ? "default" : "outline"} onClick={() => updateTaxi.mutate({ id: taxi.id, status })} disabled={updateTaxi.isPending} className="h-12 rounded-xl text-xs font-black">{statusLabel(status)}</Button>)}</div>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        </section>
+
+        <section className="grid gap-5 lg:grid-cols-2">
+          <Card className="rounded-[2rem] border-black/5 shadow-sm">
+            <CardHeader><CardTitle className="flex items-center gap-2 text-2xl font-black"><AlertTriangle className="h-6 w-6" />Incidencias abiertas ({incidents.length})</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              {!snapshot.isLoading && incidents.length === 0 && <p className="rounded-2xl bg-zinc-100 p-4 font-bold text-zinc-500">No hay incidencias abiertas.</p>}
+              {incidents.map((incident: any) => (
+                <div key={incident.id} className="rounded-3xl border border-zinc-200 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div><p className="font-black">{incident.code || "Incidencia"} · {incident.type}</p><p className="mt-1 text-sm font-semibold text-zinc-600">{incident.body}</p><p className="mt-2 text-xs font-bold text-zinc-400">{formatDate(incident.created_at)}</p></div>
+                    <Badge variant="outline">{incident.level || "medium"}</Badge>
+                  </div>
+                  <Button onClick={() => resolveIncident.mutate({ id: incident.id })} disabled={resolveIncident.isPending} className="mt-4 h-12 w-full rounded-2xl bg-black font-black text-white"><CheckCircle2 className="mr-2 h-5 w-5" />Marcar como resuelta</Button>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+
+          <Card className="rounded-[2rem] border-black/5 shadow-sm">
+            <CardHeader><CardTitle className="flex items-center gap-2 text-2xl font-black"><History className="h-6 w-6" />Actividad reciente</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              {!snapshot.isLoading && logs.length === 0 && <p className="rounded-2xl bg-zinc-100 p-4 font-bold text-zinc-500">Todavía no hay actividad registrada.</p>}
+              {logs.map((log: any) => (
+                <div key={log.id} className="rounded-2xl border border-zinc-200 p-4">
+                  <p className="font-bold text-black">{log.message}</p>
+                  <p className="mt-1 text-xs font-bold text-zinc-400">{formatDate(log.created_at)}</p>
                 </div>
               ))}
             </CardContent>
