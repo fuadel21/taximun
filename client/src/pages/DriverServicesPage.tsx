@@ -11,8 +11,10 @@ import {
   Clock3,
   CreditCard,
   Euro,
+  Loader2,
   MapPin,
   Navigation,
+  RefreshCw,
   Route,
   ShieldCheck,
   Sparkles,
@@ -70,11 +72,11 @@ function paymentLabel(value?: string | null) {
 
 function statusBadge(status: RideStatus) {
   if (status === "pending") return <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">Nueva</Badge>;
-  if (status === "assigned") return <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">Aceptada</Badge>;
+  if (status === "assigned") return <Badge className="bg-zinc-900 text-white hover:bg-zinc-900">Aceptada</Badge>;
   if (status === "in_progress") return <Badge className="bg-cyan-100 text-cyan-800 hover:bg-cyan-100">En curso</Badge>;
   if (status === "completed") return <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100">Finalizada</Badge>;
   if (status === "cancelled") return <Badge className="bg-red-100 text-red-800 hover:bg-red-100">Cancelada</Badge>;
-  return <Badge className="bg-slate-100 text-slate-700 hover:bg-slate-100">Rechazada</Badge>;
+  return <Badge className="bg-zinc-100 text-zinc-700 hover:bg-zinc-100">Rechazada</Badge>;
 }
 
 function openMaps(destination: string) {
@@ -101,8 +103,20 @@ export default function DriverServicesPage() {
     ]);
   };
 
-  const acceptRide = trpc.system.taxiOps.driver.acceptRide.useMutation({ onSuccess: invalidate, onError: (err) => setError(err.message) });
-  const rejectRide = trpc.system.taxiOps.driver.rejectRide.useMutation({ onSuccess: invalidate, onError: (err) => setError(err.message) });
+  const acceptRide = trpc.system.taxiOps.driver.acceptRide.useMutation({
+    onSuccess: async () => {
+      setError("");
+      await invalidate();
+    },
+    onError: (err) => setError(err.message),
+  });
+  const rejectRide = trpc.system.taxiOps.driver.rejectRide.useMutation({
+    onSuccess: async () => {
+      setError("");
+      await invalidate();
+    },
+    onError: (err) => setError(err.message),
+  });
 
   const operation = (operationQuery.data ?? null) as DriverOperationState | null;
   const live = (statusQuery.data ?? null) as DriverStatus | null;
@@ -110,89 +124,99 @@ export default function DriverServicesPage() {
   const active = (activeQuery.data ?? null) as Ride | null;
   const filteredPending = useMemo(() => filter === "all" ? pending : pending.filter((ride) => (ride.service_type || "taxi") === filter), [pending, filter]);
   const saving = acceptRide.isPending || rejectRide.isPending;
+  const loading = operationQuery.isLoading || statusQuery.isLoading || pendingQuery.isLoading || activeQuery.isLoading;
   const canOperate = Boolean(operation?.canOperate);
   const isOnline = live?.status === "available" || live?.status === "busy";
+  const hasRealTaxiIdentity = Boolean(live?.taxi_code?.trim() && live?.plate?.trim());
+  const canAccept = canOperate && isOnline && hasRealTaxiIdentity && !active;
+
+  const accept = (rideId: string) => {
+    const taxiCode = live?.taxi_code?.trim();
+    const plate = live?.plate?.trim();
+    if (!taxiCode || !plate) {
+      setError("Completa el taxi y la matrícula reales en tu perfil antes de aceptar un servicio.");
+      return;
+    }
+    acceptRide.mutate({ rideId, taxiCode, plate });
+  };
+
+  const refresh = async () => {
+    setError("");
+    await Promise.all([operationQuery.refetch(), statusQuery.refetch(), pendingQuery.refetch(), activeQuery.refetch()]);
+  };
+
+  const queryError = operationQuery.error?.message || statusQuery.error?.message || pendingQuery.error?.message || activeQuery.error?.message || "";
 
   return (
-    <main className="min-h-screen bg-[#f7f8fb] px-4 py-6">
-      <div className="mx-auto max-w-6xl space-y-4">
-        <section className="rounded-[1.75rem] bg-slate-950 p-5 text-white shadow-xl">
-          <div className="flex items-start justify-between gap-3">
+    <main className="min-h-screen bg-[#f3f3f3] px-4 py-6 text-black">
+      <div className="mx-auto max-w-6xl space-y-5">
+        <section className="rounded-[2rem] bg-black p-5 text-white shadow-sm sm:p-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <p className="text-xs font-black uppercase tracking-[0.25em] text-cyan-200">Taximun Driver</p>
-              <h1 className="mt-1 text-3xl font-black">Servicios</h1>
-              <p className="mt-2 text-sm font-semibold text-slate-300">Gestiona solicitudes y entra siempre por el flujo seguro del viaje.</p>
+              <p className="text-sm font-black text-white/55">Operación del conductor</p>
+              <h2 className="mt-1 text-3xl font-black tracking-tight">Servicios</h2>
+              <p className="mt-2 max-w-2xl text-sm font-semibold text-white/60">Solicitudes reales, asignación segura y acceso directo al flujo de llegada, PIN y cierre.</p>
             </div>
-            <Car className="h-8 w-8 text-cyan-200" />
+            <Button onClick={refresh} disabled={loading || saving} variant="outline" className="h-14 rounded-2xl border-white/20 bg-white text-black font-black hover:bg-zinc-100">
+              {loading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <RefreshCw className="mr-2 h-5 w-5" />}
+              Actualizar
+            </Button>
           </div>
-          <div className="mt-4 grid grid-cols-3 gap-2">
-            <Metric icon={<ShieldCheck className="h-4 w-4" />} title="Verificación" value={canOperate ? "OK" : "Pendiente"} dark />
-            <Metric icon={<Sparkles className="h-4 w-4" />} title="Estado" value={isOnline ? "Online" : "Offline"} dark />
-            <Metric icon={<Route className="h-4 w-4" />} title="Solicitudes" value={String(filteredPending.length)} dark />
+          <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <Metric icon={<ShieldCheck className="h-5 w-5" />} title="Verificación" value={canOperate ? "Correcta" : "Pendiente"} dark />
+            <Metric icon={<Sparkles className="h-5 w-5" />} title="Estado" value={isOnline ? "Online" : "Offline"} dark />
+            <Metric icon={<Car className="h-5 w-5" />} title="Taxi" value={hasRealTaxiIdentity ? "Completo" : "Incompleto"} dark />
+            <Metric icon={<Route className="h-5 w-5" />} title="Solicitudes" value={String(filteredPending.length)} dark />
           </div>
         </section>
 
-        {error && <div className="rounded-3xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700"><AlertCircle className="mr-2 inline h-4 w-4" />{error}</div>}
-        {(operationQuery.error || statusQuery.error || pendingQuery.error || activeQuery.error) && <div className="rounded-3xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700">{operationQuery.error?.message || statusQuery.error?.message || pendingQuery.error?.message || activeQuery.error?.message}</div>}
+        {(error || queryError) && <div className="rounded-3xl border border-red-200 bg-red-50 p-5 text-sm font-bold text-red-700"><AlertCircle className="mr-2 inline h-5 w-5" />{error || queryError}</div>}
+        {loading && <div className="rounded-3xl bg-white p-6 text-center font-bold text-zinc-500 shadow-sm"><Loader2 className="mx-auto mb-2 h-6 w-6 animate-spin" />Cargando estado operativo...</div>}
 
-        {!canOperate && <div className="rounded-3xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-800"><ShieldCheck className="mr-2 inline h-4 w-4" />{operation?.message || "Completa la verificación para recibir servicios."}</div>}
-        {canOperate && !isOnline && <div className="rounded-3xl border border-slate-200 bg-white p-4 text-sm font-bold text-slate-700 shadow-sm">Ponte Online desde la pestaña Turno para recibir nuevas solicitudes.</div>}
+        {!canOperate && <ActionNotice tone="warning" icon={<ShieldCheck className="h-6 w-6" />} title="Verificación pendiente" text={operation?.message || "Completa la verificación para recibir servicios."} action="Abrir perfil" onClick={() => setLocation("/driver/profile")} />}
+        {canOperate && !hasRealTaxiIdentity && <ActionNotice tone="danger" icon={<Car className="h-6 w-6" />} title="Taxi o matrícula incompletos" text="No se aceptará ninguna solicitud con datos inventados. Añade el código de taxi y la matrícula reales." action="Completar perfil" onClick={() => setLocation("/driver/profile")} />}
+        {canOperate && hasRealTaxiIdentity && !isOnline && <ActionNotice tone="neutral" icon={<Sparkles className="h-6 w-6" />} title="Estás Offline" text="Ponte Online desde Turno para recibir y aceptar nuevas solicitudes." action="Ir a Turno" onClick={() => setLocation("/driver")} />}
 
         {active && (
-          <Card className="rounded-[1.75rem] border-white bg-white shadow-xl">
-            <CardContent className="space-y-4 p-4">
+          <Card className="rounded-[2rem] border-black/5 bg-white shadow-sm">
+            <CardContent className="space-y-4 p-5">
               <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-xs font-black uppercase tracking-[0.18em] text-cyan-700">Servicio activo</p>
-                  <h2 className="mt-1 text-2xl font-black">{active.status === "assigned" ? "Recogida protegida" : "Viaje en curso"}</h2>
-                </div>
+                <div><p className="text-sm font-black text-zinc-500">Servicio activo</p><h2 className="mt-1 text-2xl font-black">{active.status === "assigned" ? "Recogida protegida" : "Viaje en curso"}</h2></div>
                 {statusBadge(active.status)}
               </div>
               <RideSummary ride={active} />
-              <div className="grid gap-2 sm:grid-cols-2">
-                <Button onClick={() => openMaps(active.status === "assigned" ? active.pickup_address : active.dropoff_address)} variant="outline" className="h-12 rounded-2xl bg-white font-black"><Navigation className="mr-2 h-4 w-4" />Abrir ruta</Button>
-                <Button
-                  onClick={() => setLocation(active.status === "assigned" ? "/driver/navigation" : "/driver/queue")}
-                  className={active.status === "assigned" ? "h-12 rounded-2xl bg-blue-600 font-black text-white hover:bg-blue-500" : "h-12 rounded-2xl bg-emerald-600 font-black text-white hover:bg-emerald-500"}
-                >
-                  {active.status === "assigned" ? <Navigation className="mr-2 h-4 w-4" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Button onClick={() => openMaps(active.status === "assigned" ? active.pickup_address : active.dropoff_address)} variant="outline" className="h-14 rounded-2xl bg-white font-black"><Navigation className="mr-2 h-5 w-5" />Abrir ruta</Button>
+                <Button onClick={() => setLocation(active.status === "assigned" ? "/driver/navigation" : "/driver/queue")} className="h-14 rounded-2xl bg-black font-black text-white hover:bg-black/85">
+                  {active.status === "assigned" ? <Navigation className="mr-2 h-5 w-5" /> : <CheckCircle2 className="mr-2 h-5 w-5" />}
                   {active.status === "assigned" ? "Llegada y PIN" : "Cierre profesional"}
                 </Button>
               </div>
-              <p className="rounded-2xl bg-cyan-50 p-3 text-xs font-bold text-cyan-800">
-                El inicio solo se realiza desde Navegación tras marcar llegada y verificar el PIN. El cierre se realiza mediante la liquidación profesional.
-              </p>
+              <p className="rounded-2xl bg-zinc-100 p-4 text-xs font-bold text-zinc-700">El viaje solo se inicia desde Navegación después de marcar llegada y verificar el PIN. El cierre se realiza mediante la liquidación profesional.</p>
             </CardContent>
           </Card>
         )}
 
-        <Card className="rounded-[1.75rem] border-white bg-white shadow-xl">
-          <CardContent className="space-y-4 p-4">
+        <Card className="rounded-[2rem] border-black/5 bg-white shadow-sm">
+          <CardContent className="space-y-5 p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div><h2 className="text-xl font-black">Solicitudes disponibles</h2><p className="text-xs font-bold text-slate-500">Actualización automática cada 4 segundos.</p></div>
+              <div><h2 className="text-2xl font-black">Solicitudes disponibles</h2><p className="text-sm font-semibold text-zinc-500">Se actualizan automáticamente cada 4 segundos.</p></div>
               <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">{filteredPending.length} nuevas</Badge>
             </div>
 
-            <div className="flex gap-2 overflow-x-auto pb-1">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               {(["all", "taxi", "eco", "van"] as const).map((value) => (
-                <button key={value} onClick={() => setFilter(value)} className={`shrink-0 rounded-full px-4 py-2 text-xs font-black transition ${filter === value ? "bg-slate-950 text-white" : "bg-slate-100 text-slate-700"}`}>
-                  {value === "all" ? "Todos" : serviceLabel(value)}
-                </button>
+                <Button key={value} variant={filter === value ? "default" : "outline"} onClick={() => setFilter(value)} className="h-14 rounded-2xl font-black">{value === "all" ? "Todos" : serviceLabel(value)}</Button>
               ))}
             </div>
 
-            {!canOperate && <p className="rounded-3xl bg-slate-50 p-5 text-center text-sm font-bold text-slate-500">Las solicitudes aparecerán cuando tu cuenta esté verificada.</p>}
-            {canOperate && !active && filteredPending.length === 0 && <p className="rounded-3xl bg-slate-50 p-5 text-center text-sm font-bold text-slate-500">No hay servicios disponibles con este filtro.</p>}
+            {!canOperate && <EmptyState text="Las solicitudes se habilitarán cuando tu cuenta esté verificada." />}
+            {canOperate && active && <EmptyState text="Ya tienes un servicio activo. Complétalo antes de aceptar otro." />}
+            {canOperate && !active && filteredPending.length === 0 && <EmptyState text="No hay servicios disponibles con este filtro." />}
 
-            <div className="grid gap-3 lg:grid-cols-2">
+            <div className="grid gap-4 lg:grid-cols-2">
               {canOperate && !active && filteredPending.map((ride) => (
-                <RideRequestCard
-                  key={ride.id}
-                  ride={ride}
-                  saving={saving}
-                  onAccept={() => acceptRide.mutate({ rideId: ride.id, taxiCode: live?.taxi_code || "TX-000", plate: live?.plate || "SIN-MAT" })}
-                  onReject={() => rejectRide.mutate({ rideId: ride.id })}
-                />
+                <RideRequestCard key={ride.id} ride={ride} saving={saving} canAccept={canAccept} onAccept={() => accept(ride.id)} onReject={() => rejectRide.mutate({ rideId: ride.id })} />
               ))}
             </div>
           </CardContent>
@@ -202,18 +226,19 @@ export default function DriverServicesPage() {
   );
 }
 
-function RideRequestCard({ ride, saving, onAccept, onReject }: { ride: Ride; saving: boolean; onAccept: () => void; onReject: () => void }) {
+function RideRequestCard({ ride, saving, canAccept, onAccept, onReject }: { ride: Ride; saving: boolean; canAccept: boolean; onAccept: () => void; onReject: () => void }) {
   return (
-    <div className="rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
+    <div className="rounded-[2rem] border border-zinc-200 bg-white p-5 shadow-sm">
       <div className="flex items-start justify-between gap-3">
-        <div><p className="font-black"><UserRound className="mr-2 inline h-4 w-4 text-cyan-600" />{ride.passenger_name || "Pasajero"}</p><p className="mt-1 text-xs font-bold text-slate-500">{formatDate(ride.requested_at)}</p></div>
+        <div><p className="font-black"><UserRound className="mr-2 inline h-5 w-5" />{ride.passenger_name || "Pasajero"}</p><p className="mt-1 text-xs font-bold text-zinc-500">{formatDate(ride.requested_at)}</p></div>
         {statusBadge(ride.status)}
       </div>
       <RideSummary ride={ride} />
-      <div className="mt-3 grid grid-cols-3 gap-2">
-        <Button onClick={() => openMaps(ride.pickup_address)} variant="outline" className="h-12 rounded-2xl bg-white font-black"><Navigation className="mr-1 h-4 w-4" />Ruta</Button>
-        <Button onClick={onAccept} disabled={saving} className="h-12 rounded-2xl bg-emerald-600 font-black text-white hover:bg-emerald-500"><CheckCircle2 className="mr-1 h-4 w-4" />Aceptar</Button>
-        <Button onClick={onReject} disabled={saving} variant="outline" className="h-12 rounded-2xl border-red-200 bg-white font-black text-red-700"><XCircle className="mr-1 h-4 w-4" />Rechazar</Button>
+      {!canAccept && <p className="mt-4 rounded-2xl bg-amber-50 p-3 text-xs font-bold text-amber-800">Completa verificación, taxi, matrícula y estado Online para aceptar.</p>}
+      <div className="mt-4 grid gap-2 sm:grid-cols-3">
+        <Button onClick={() => openMaps(ride.pickup_address)} variant="outline" className="h-14 rounded-2xl bg-white font-black"><Navigation className="mr-2 h-5 w-5" />Ruta</Button>
+        <Button onClick={onAccept} disabled={saving || !canAccept} className="h-14 rounded-2xl bg-black font-black text-white hover:bg-black/85"><CheckCircle2 className="mr-2 h-5 w-5" />Aceptar</Button>
+        <Button onClick={onReject} disabled={saving} variant="outline" className="h-14 rounded-2xl border-red-200 bg-white font-black text-red-700"><XCircle className="mr-2 h-5 w-5" />Rechazar</Button>
       </div>
     </div>
   );
@@ -222,27 +247,26 @@ function RideRequestCard({ ride, saving, onAccept, onReject }: { ride: Ride; sav
 function RideSummary({ ride }: { ride: Ride }) {
   return (
     <div className="mt-4 space-y-3">
-      <div className="space-y-2 rounded-3xl bg-slate-50 p-4 text-sm font-bold text-slate-700">
-        <p><MapPin className="mr-2 inline h-4 w-4 text-cyan-600" />{ride.pickup_address}</p>
-        <p><Navigation className="mr-2 inline h-4 w-4 text-blue-600" />{ride.dropoff_address}</p>
-      </div>
-      <div className="grid grid-cols-3 gap-2">
-        <Metric icon={<Euro className="h-4 w-4" />} title="Estimado" value={money(ride.estimated_fare)} />
-        <Metric icon={<Clock3 className="h-4 w-4" />} title="Tiempo" value={`${ride.estimated_duration} min`} />
-        <Metric icon={<Route className="h-4 w-4" />} title="Ruta" value={`${ride.distance_km} km`} />
-      </div>
-      <div className="grid grid-cols-2 gap-2">
-        <Info icon={<Car className="h-4 w-4" />} label="Servicio" value={serviceLabel(ride.service_type)} />
-        <Info icon={<CreditCard className="h-4 w-4" />} label="Pago" value={paymentLabel(ride.payment_method)} />
-      </div>
+      <div className="space-y-2 rounded-3xl bg-zinc-100 p-4 text-sm font-bold text-zinc-700"><p><MapPin className="mr-2 inline h-4 w-4" />{ride.pickup_address}</p><p><Navigation className="mr-2 inline h-4 w-4" />{ride.dropoff_address}</p></div>
+      <div className="grid grid-cols-3 gap-2"><Metric icon={<Euro className="h-4 w-4" />} title="Estimado" value={money(ride.estimated_fare)} /><Metric icon={<Clock3 className="h-4 w-4" />} title="Tiempo" value={`${ride.estimated_duration} min`} /><Metric icon={<Route className="h-4 w-4" />} title="Ruta" value={`${ride.distance_km} km`} /></div>
+      <div className="grid grid-cols-2 gap-2"><Info icon={<Car className="h-4 w-4" />} label="Servicio" value={serviceLabel(ride.service_type)} /><Info icon={<CreditCard className="h-4 w-4" />} label="Pago" value={paymentLabel(ride.payment_method)} /></div>
     </div>
   );
 }
 
+function ActionNotice({ tone, icon, title, text, action, onClick }: { tone: "warning" | "danger" | "neutral"; icon: ReactNode; title: string; text: string; action: string; onClick: () => void }) {
+  const styles = tone === "danger" ? "border-red-200 bg-red-50 text-red-800" : tone === "warning" ? "border-amber-200 bg-amber-50 text-amber-800" : "border-zinc-200 bg-white text-zinc-800";
+  return <div className={`flex flex-col gap-4 rounded-[2rem] border p-5 sm:flex-row sm:items-center ${styles}`}><div className="flex flex-1 gap-3"><span className="shrink-0">{icon}</span><div><p className="font-black">{title}</p><p className="mt-1 text-sm font-semibold opacity-80">{text}</p></div></div><Button onClick={onClick} className="h-14 rounded-2xl bg-black px-6 font-black text-white">{action}</Button></div>;
+}
+
+function EmptyState({ text }: { text: string }) {
+  return <div className="rounded-3xl border border-dashed border-zinc-300 bg-zinc-50 p-6 text-center text-sm font-bold text-zinc-500">{text}</div>;
+}
+
 function Metric({ icon, title, value, dark }: { icon: ReactNode; title: string; value: string; dark?: boolean }) {
-  return <div className={`rounded-2xl p-3 text-center ${dark ? "bg-white/10 text-white" : "bg-slate-50"}`}><div className={`mx-auto mb-1 flex h-7 w-7 items-center justify-center rounded-full ${dark ? "bg-white/10 text-cyan-200" : "bg-white text-cyan-600"}`}>{icon}</div><p className="text-xs font-bold text-slate-400">{title}</p><p className="font-black">{value}</p></div>;
+  return <div className={`rounded-2xl p-3 text-center ${dark ? "bg-white/10 text-white" : "bg-zinc-100"}`}><div className={`mx-auto mb-1 flex h-8 w-8 items-center justify-center rounded-full ${dark ? "bg-white/10 text-white" : "bg-white text-black"}`}>{icon}</div><p className={`text-xs font-bold ${dark ? "text-white/50" : "text-zinc-500"}`}>{title}</p><p className="font-black">{value}</p></div>;
 }
 
 function Info({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
-  return <div className="rounded-2xl bg-slate-50 p-3"><div className="flex items-center gap-2 text-cyan-600">{icon}<span className="text-xs font-black uppercase tracking-[0.12em] text-slate-400">{label}</span></div><p className="mt-1 font-black text-slate-800">{value}</p></div>;
+  return <div className="rounded-2xl bg-zinc-100 p-3"><div className="flex items-center gap-2 text-black">{icon}<span className="text-xs font-black uppercase tracking-[0.12em] text-zinc-500">{label}</span></div><p className="mt-1 font-black text-zinc-800">{value}</p></div>;
 }
