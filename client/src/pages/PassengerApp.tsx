@@ -9,7 +9,7 @@ import { PremiumInternalHeader } from "@/components/PremiumInternalHeader";
 import { TaxiProfileSettings } from "@/components/TaxiProfileSettings";
 import { TaxiSupportActions } from "@/components/TaxiSupportActions";
 import "@/styles/passenger-safe-cancellation.css";
-import { Car, Clock3, Home, ReceiptText, ShieldCheck, UserRound } from "lucide-react";
+import { Car, Home, ReceiptText, ShieldCheck, UserRound } from "lucide-react";
 import { useLocation } from "wouter";
 import PassengerPanelModern from "./PassengerPanelModern";
 import PassengerRidesPage from "./PassengerRidesPage";
@@ -21,7 +21,7 @@ export default function PassengerApp() {
   const isRides = location.includes("/rides");
 
   return (
-    <div className="bg-[#f3f3f3] pb-36 md:pb-0">
+    <div className="min-h-screen bg-[#f3f3f3] pb-28 md:pb-0">
       {isProfile ? (
         <>
           <PremiumInternalHeader eyebrow="Taximun pasajero" title="Mi perfil" description="Gestiona tus datos, preferencias y configuración de cuenta." homePath="/passenger" icon={<UserRound className="h-8 w-8" />} />
@@ -58,7 +58,7 @@ export default function PassengerApp() {
           { label: "Inicio", active: !isProfile && !isSecurity && !isRides, icon: <Home className="h-6 w-6" />, onClick: () => setLocation("/passenger") },
           { label: "Viaje", active: isRides, icon: <Car className="h-6 w-6" />, onClick: () => setLocation("/passenger/rides") },
           { label: "Seguro", active: isSecurity, icon: <ShieldCheck className="h-6 w-6" />, onClick: () => setLocation("/passenger/security") },
-          { label: "Perfil", active: isProfile, icon: <Clock3 className="h-6 w-6" />, onClick: () => setLocation("/passenger/profile") },
+          { label: "Perfil", active: isProfile, icon: <UserRound className="h-6 w-6" />, onClick: () => setLocation("/passenger/profile") },
         ]}
       />
     </div>
