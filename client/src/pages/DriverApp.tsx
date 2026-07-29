@@ -1,6 +1,7 @@
 import { AppBottomNav } from "@/components/AppBottomNav";
 import { DriverCommandGrid } from "@/components/DriverCommandGrid";
 import { DriverGpsHeartbeat } from "@/components/DriverGpsHeartbeat";
+import { DriverOperationalIdentityCard } from "@/components/DriverOperationalIdentityCard";
 import { DriverRideOfferOverlay } from "@/components/DriverRideOfferOverlay";
 import { DriverSessionRecovery } from "@/components/DriverSessionRecovery";
 import { DriverTripSettlementSection } from "@/components/DriverTripSettlementSection";
@@ -28,7 +29,15 @@ export default function DriverApp() {
       {!isProfile && !isSecurity && <DriverSessionRecovery />}
       {isProfile ? (
         <>
-          <PremiumInternalHeader eyebrow="Taximun Driver" title="Mi perfil" description="Gestiona documentación, vehículo y datos profesionales." homePath="/driver" icon={<UserRound className="h-8 w-8" />} tone="dark" />
+          <PremiumInternalHeader eyebrow="Taximun Driver" title="Mi perfil" description="Gestiona por separado el taxi operativo y la documentación profesional." homePath="/driver" icon={<UserRound className="h-8 w-8" />} tone="dark" />
+          <DriverOperationalIdentityCard />
+          <div className="bg-[#f3f3f3] px-4 pt-6 text-black">
+            <div className="mx-auto max-w-5xl rounded-[2rem] bg-black p-5 text-white sm:p-6">
+              <p className="text-sm font-black text-white/55">Perfil profesional</p>
+              <h2 className="mt-1 text-2xl font-black">Documentación y datos sujetos a revisión</h2>
+              <p className="mt-2 text-sm font-semibold text-white/60">Los cambios de identidad, licencia o documentación pueden requerir una nueva aprobación administrativa. El taxi activo se guarda en el bloque anterior.</p>
+            </div>
+          </div>
           <TaxiProfileSettings role="driver" />
         </>
       ) : isSecurity ? (
