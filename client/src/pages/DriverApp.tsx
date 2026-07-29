@@ -23,7 +23,7 @@ export default function DriverApp() {
   const isNavigation = location.includes("/navigation");
 
   return (
-    <div className="min-h-screen bg-black pb-28 md:pb-0">
+    <div className="min-h-screen scroll-pb-[calc(8.5rem+env(safe-area-inset-bottom))] bg-black pb-[calc(8.5rem+env(safe-area-inset-bottom))] md:scroll-pb-0 md:pb-0">
       <DriverRideOfferOverlay />
       {!isProfile && !isSecurity && <DriverSessionRecovery />}
       {isProfile ? (
