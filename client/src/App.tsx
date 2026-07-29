@@ -56,7 +56,7 @@ function Router() {
       <Route path={"/admin/verification"}>{adminInternal(<AdminVerificationPage />)}</Route>
       <Route path={"/admin/safety"}>{adminInternal(<AdminSafetyPage />)}</Route>
       <Route path={"/admin/health"}>{adminInternal(<AdminSystemHealthPage />)}</Route>
-      <Route path={"/admin/journey-test"}>{admin(<AdminJourneyValidationPage />)}</Route>
+      <Route path={"/admin/journey-test"}>{adminInternal(<AdminJourneyValidationPage />)}</Route>
       <Route path={"/admin/alerts"}>{adminInternal(<AdminAlertsPanel />)}</Route>
       <Route path={"/admin/incidents"}>{adminInternal(<AdminAlertsPanel />)}</Route>
       <Route path={"/404"} component={NotFound} />
