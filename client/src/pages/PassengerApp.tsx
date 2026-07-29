@@ -21,7 +21,7 @@ export default function PassengerApp() {
   const isRides = location.includes("/rides");
 
   return (
-    <div className="min-h-screen bg-[#f3f3f3] pb-28 md:pb-0">
+    <div className="min-h-screen scroll-pb-[calc(8.5rem+env(safe-area-inset-bottom))] bg-[#f3f3f3] pb-[calc(8.5rem+env(safe-area-inset-bottom))] md:scroll-pb-0 md:pb-0">
       {isProfile ? (
         <>
           <PremiumInternalHeader eyebrow="Taximun pasajero" title="Mi perfil" description="Gestiona tus datos, preferencias y configuración de cuenta." homePath="/passenger" icon={<UserRound className="h-8 w-8" />} />
