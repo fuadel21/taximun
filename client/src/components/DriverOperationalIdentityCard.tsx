@@ -14,8 +14,6 @@ type DriverLiveStatus = {
   taxi_code?: string | null;
   plate?: string | null;
   current_zone?: string | null;
-  current_lat?: number | null;
-  current_lng?: number | null;
 };
 
 export function DriverOperationalIdentityCard() {
@@ -81,8 +79,6 @@ export function DriverOperationalIdentityCard() {
       taxiCode: normalizedTaxiCode,
       plate: normalizedPlate,
       currentZone: normalizedZone,
-      currentLat: live?.current_lat ?? undefined,
-      currentLng: live?.current_lng ?? undefined,
     });
   };
 
@@ -100,7 +96,7 @@ export function DriverOperationalIdentityCard() {
             <div>
               <p className="text-sm font-black text-zinc-500">Perfil operativo</p>
               <h2 className="mt-1 flex items-center gap-2 text-2xl font-black"><Car className="h-7 w-7" />Taxi que trabaja ahora</h2>
-              <p className="mt-2 max-w-2xl text-sm font-semibold text-zinc-500">Estos datos alimentan el turno y la asignación de servicios. Guardarlos aquí no cambia tu verificación profesional ni borra la última posición GPS.</p>
+              <p className="mt-2 max-w-2xl text-sm font-semibold text-zinc-500">Estos datos alimentan el turno y la asignación de servicios. Guardarlos no altera la posición ni marca como reciente una ubicación GPS antigua.</p>
             </div>
             <Button onClick={refresh} disabled={statusQuery.isFetching || saveIdentity.isPending} variant="outline" className="h-14 rounded-2xl bg-white px-5 font-black">
               {statusQuery.isFetching ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <RefreshCw className="mr-2 h-5 w-5" />}
@@ -127,7 +123,7 @@ export function DriverOperationalIdentityCard() {
           </div>
 
           <div className="rounded-3xl bg-zinc-100 p-4 text-sm font-semibold text-zinc-600">
-            Estado conservado al guardar: <strong className="text-black">{currentStatus === "available" ? "Online" : currentStatus === "busy" ? "En servicio" : "Offline"}</strong>. La documentación profesional se gestiona debajo y puede requerir una nueva revisión si se modifica.
+            Estado conservado al guardar: <strong className="text-black">{currentStatus === "available" ? "Online" : currentStatus === "busy" ? "En servicio" : "Offline"}</strong>. La frescura GPS solo se renueva cuando llega una ubicación nueva.
           </div>
 
           <Button onClick={save} disabled={saveIdentity.isPending || statusQuery.isLoading} className="h-14 w-full rounded-2xl bg-black text-base font-black text-white hover:bg-black/85">
