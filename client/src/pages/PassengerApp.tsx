@@ -9,8 +9,9 @@ import { PremiumInternalHeader } from "@/components/PremiumInternalHeader";
 import { TaxiProfileSettings } from "@/components/TaxiProfileSettings";
 import { TaxiSupportActions } from "@/components/TaxiSupportActions";
 import "@/styles/passenger-safe-cancellation.css";
-import { Car, Home, ReceiptText, ShieldCheck, UserRound } from "lucide-react";
+import { CalendarClock, Car, Home, ReceiptText, ShieldCheck, UserRound } from "lucide-react";
 import { useLocation } from "wouter";
+import PassengerAdvancedBookingPage from "./PassengerAdvancedBookingPage";
 import PassengerPanelModern from "./PassengerPanelModern";
 import PassengerRidesPage from "./PassengerRidesPage";
 
@@ -19,6 +20,7 @@ export default function PassengerApp() {
   const isProfile = location.includes("/profile");
   const isSecurity = location.includes("/security");
   const isRides = location.includes("/rides");
+  const isBook = location.includes("/book");
 
   return (
     <div className="min-h-screen scroll-pb-[calc(8.5rem+env(safe-area-inset-bottom))] bg-[#f3f3f3] pb-[calc(8.5rem+env(safe-area-inset-bottom))] md:scroll-pb-0 md:pb-0">
@@ -43,6 +45,11 @@ export default function PassengerApp() {
           <PassengerDriverPublicProfileSection />
           <PassengerRidesPage />
         </div>
+      ) : isBook ? (
+        <div className="min-h-screen bg-[#f3f3f3]">
+          <PremiumInternalHeader eyebrow="Taximun pasajero" title="Reservar viaje" description="Programa fecha y hora, elige vehículo, paradas y necesidades especiales." homePath="/passenger" icon={<CalendarClock className="h-8 w-8" />} />
+          <PassengerAdvancedBookingPage />
+        </div>
       ) : (
         <div>
           <PassengerDispatchStatus />
@@ -55,7 +62,8 @@ export default function PassengerApp() {
       )}
       <AppBottomNav
         items={[
-          { label: "Inicio", active: !isProfile && !isSecurity && !isRides, icon: <Home className="h-6 w-6" />, onClick: () => setLocation("/passenger") },
+          { label: "Inicio", active: !isProfile && !isSecurity && !isRides && !isBook, icon: <Home className="h-6 w-6" />, onClick: () => setLocation("/passenger") },
+          { label: "Reservar", active: isBook, icon: <CalendarClock className="h-6 w-6" />, onClick: () => setLocation("/passenger/book") },
           { label: "Viaje", active: isRides, icon: <Car className="h-6 w-6" />, onClick: () => setLocation("/passenger/rides") },
           { label: "Seguro", active: isSecurity, icon: <ShieldCheck className="h-6 w-6" />, onClick: () => setLocation("/passenger/security") },
           { label: "Perfil", active: isProfile, icon: <UserRound className="h-6 w-6" />, onClick: () => setLocation("/passenger/profile") },

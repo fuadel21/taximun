@@ -1,4 +1,4 @@
--- PR #128 · Enforce complete and current driver documentation before approval
+-- PR #128 corrected · Enforce complete and current driver documentation before approval
 
 create or replace function public.taximun_driver_document_requirements(
   p_driver_id text
@@ -9,7 +9,7 @@ returns table (
   requirement_status text,
   document_id uuid,
   document_status text,
-  expires_at date
+  expires_at timestamptz
 )
 language sql
 stable
@@ -42,7 +42,7 @@ as $$
       when l.id is null then 'missing'
       when l.status = 'rejected' then 'rejected'
       when l.status = 'expired' then 'expired'
-      when l.expires_at is not null and l.expires_at < current_date then 'expired'
+      when l.expires_at is not null and l.expires_at < now() then 'expired'
       when l.status = 'approved' then 'approved'
       else 'pending'
     end as requirement_status,
@@ -55,27 +55,25 @@ as $$
 $$;
 
 revoke all on function public.taximun_driver_document_requirements(text) from public;
-grant execute on function public.taximun_driver_document_requirements(text) to authenticated;
+revoke all on function public.taximun_driver_document_requirements(text) from anon;
+revoke all on function public.taximun_driver_document_requirements(text) from authenticated;
 grant execute on function public.taximun_driver_document_requirements(text) to service_role;
 
 create or replace function public.taximun_enforce_driver_documents_before_approval()
 returns trigger
 language plpgsql
+security definer
 set search_path = public, pg_catalog
 as $$
 declare
   v_missing_labels text;
 begin
-  if new.role <> 'driver' then
+  if new.role is distinct from 'driver' then
     return new;
   end if;
 
   if coalesce(new.is_verified, false) = true
-     and (
-       coalesce(old.is_verified, false) = false
-       or old.verification_status is distinct from 'approved'
-       or new.verification_status is distinct from old.verification_status
-     ) then
+     or new.verification_status = 'approved' then
     select string_agg(label || ' (' || requirement_status || ')', ', ' order by label)
     into v_missing_labels
     from public.taximun_driver_document_requirements(new.user_id)
@@ -97,7 +95,7 @@ drop trigger if exists taximun_enforce_driver_documents_before_approval
 on public.taxi_user_profiles;
 
 create trigger taximun_enforce_driver_documents_before_approval
-before update of is_verified, verification_status
+before insert or update of role, is_verified, verification_status
 on public.taxi_user_profiles
 for each row
 execute function public.taximun_enforce_driver_documents_before_approval();
