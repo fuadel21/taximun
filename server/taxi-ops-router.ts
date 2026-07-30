@@ -6,6 +6,15 @@ import { supabase } from "./supabase-client";
 const driverStatusSchema = z.enum(["available", "busy", "offline"]);
 const serviceTypeSchema = z.enum(["taxi", "eco", "van"]);
 const paymentMethodSchema = z.enum(["cash", "card", "bizum"]);
+const invalidOperationalMarkers = new Set(["TX-000", "SIN-MAT", "AMB-0001", "0000-TXM"]);
+const operationalIdentitySchema = z
+  .string()
+  .trim()
+  .min(2)
+  .transform((value) => value.toUpperCase())
+  .refine((value) => !invalidOperationalMarkers.has(value), {
+    message: "Introduce un código de taxi y una matrícula reales.",
+  });
 
 type DriverOperationState = {
   canOperate: boolean;
@@ -264,9 +273,9 @@ export const taxiOpsRouter = router({
           status: driverStatusSchema,
           currentLat: z.number().optional(),
           currentLng: z.number().optional(),
-          currentZone: z.string().min(2).default("Centro"),
-          taxiCode: z.string().min(2).default("TX-000"),
-          plate: z.string().min(2).default("SIN-MAT"),
+          currentZone: z.string().trim().min(2).default("Centro"),
+          taxiCode: operationalIdentitySchema,
+          plate: operationalIdentitySchema,
         })
       )
       .mutation(async ({ ctx, input }) => {
@@ -276,6 +285,13 @@ export const taxiOpsRouter = router({
           await assertDriverCanOperate(ctx.user.openId);
         }
 
+        const { data: existing, error: existingError } = await supabase
+          .from("driver_live_status")
+          .select("current_lat,current_lng")
+          .eq("driver_id", ctx.user.openId)
+          .maybeSingle();
+        throwIfSupabaseError(existingError);
+
         const { data, error } = await supabase
           .from("driver_live_status")
           .upsert({
@@ -284,8 +300,8 @@ export const taxiOpsRouter = router({
             taxi_code: input.taxiCode,
             plate: input.plate,
             status: input.status,
-            current_lat: input.currentLat ?? null,
-            current_lng: input.currentLng ?? null,
+            current_lat: input.currentLat ?? existing?.current_lat ?? null,
+            current_lng: input.currentLng ?? existing?.current_lng ?? null,
             current_zone: input.currentZone,
           })
           .select()
@@ -363,8 +379,8 @@ export const taxiOpsRouter = router({
       .input(
         z.object({
           rideId: z.string().uuid(),
-          taxiCode: z.string().min(2).default("TX-000"),
-          plate: z.string().min(2).default("SIN-MAT"),
+          taxiCode: operationalIdentitySchema,
+          plate: operationalIdentitySchema,
         })
       )
       .mutation(async ({ ctx, input }) => {
