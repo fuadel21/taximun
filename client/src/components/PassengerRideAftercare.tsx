@@ -11,6 +11,7 @@ type Props = { rideId: string; status: string };
 
 const money = (cents: number | null | undefined) => `${(Number(cents || 0) / 100).toFixed(2)} €`;
 const fare = (value: unknown) => `${Number(value || 0).toFixed(2)} €`;
+const escapeHtml = (value: unknown) => String(value ?? "").replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character] || character);
 
 function paymentLabel(value?: string | null) {
   if (value === "card") return "Tarjeta";
@@ -56,7 +57,7 @@ export function PassengerRideAftercare({ rideId, status }: Props) {
     if (params.get("tip") !== "success" || params.get("rideId") !== rideId) return;
     syncCard.mutate({ rideId }, {
       onSuccess: async (result) => {
-        setNotice(result?.status === "paid" ? "Propina confirmada por Stripe." : "El pago todavía se está verificando.");
+        setNotice(result?.status === "paid" ? "Propina pagada y registrada para liquidación." : "El pago todavía se está verificando.");
         await refresh();
       },
       onError: (err) => setError(err.message),
@@ -97,7 +98,8 @@ export function PassengerRideAftercare({ rideId, status }: Props) {
       return;
     }
     const finalFare = ride.final_fare ?? ride.estimated_fare ?? 0;
-    receipt.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Recibo Taximun ${ride.id}</title><style>body{font-family:Arial,sans-serif;color:#111;padding:40px;max-width:720px;margin:auto}h1{font-size:32px;margin:0}.muted{color:#666}.box{border:1px solid #ddd;border-radius:16px;padding:18px;margin-top:18px}.row{display:flex;justify-content:space-between;gap:20px;padding:8px 0;border-bottom:1px solid #eee}.row:last-child{border-bottom:0}.total{font-size:22px;font-weight:800}.small{font-size:12px}@media print{button{display:none}}</style></head><body><h1>Taximun</h1><p class="muted">Recibo del viaje ${ride.id.slice(0, 8).toUpperCase()}</p><div class="box"><div class="row"><span>Origen</span><strong>${ride.pickup_address}</strong></div><div class="row"><span>Destino</span><strong>${ride.dropoff_address}</strong></div><div class="row"><span>Conductor</span><strong>${ride.driver_name || "Conductor Taximun"}</strong></div><div class="row"><span>Fecha</span><strong>${new Date(ride.completed_at || ride.settled_at || ride.requested_at).toLocaleString("es-ES")}</strong></div></div><div class="box"><div class="row"><span>Tarifa final</span><strong>${fare(finalFare)}</strong></div><div class="row"><span>Método</span><strong>${paymentLabel(ride.payment_method)}</strong></div><div class="row"><span>Estado del pago</span><strong>${ride.payment_status || payment?.status || "registrado"}</strong></div><div class="row"><span>Reembolsado</span><strong>${money(payment?.amount_refunded)}</strong></div>${confirmedTip ? `<div class="row"><span>Propina</span><strong>${money(confirmedTip.amount_cents)}</strong></div>` : ""}<div class="row total"><span>Total documentado</span><strong>${(Number(finalFare) + Number(confirmedTip?.amount_cents || 0) / 100).toFixed(2)} €</strong></div></div><p class="small muted">Documento generado desde Taximun. La propina solo aparece cuando su pago o recepción está confirmado.</p><button onclick="window.print()">Guardar como PDF / imprimir</button></body></html>`);
+    const receiptDate = new Date(ride.completed_at || ride.settled_at || ride.requested_at).toLocaleString("es-ES");
+    receipt.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Recibo Taximun ${escapeHtml(ride.id)}</title><style>body{font-family:Arial,sans-serif;color:#111;padding:40px;max-width:720px;margin:auto}h1{font-size:32px;margin:0}.muted{color:#666}.box{border:1px solid #ddd;border-radius:16px;padding:18px;margin-top:18px}.row{display:flex;justify-content:space-between;gap:20px;padding:8px 0;border-bottom:1px solid #eee}.row:last-child{border-bottom:0}.total{font-size:22px;font-weight:800}.small{font-size:12px}@media print{button{display:none}}</style></head><body><h1>Taximun</h1><p class="muted">Recibo del viaje ${escapeHtml(ride.id.slice(0, 8).toUpperCase())}</p><div class="box"><div class="row"><span>Origen</span><strong>${escapeHtml(ride.pickup_address)}</strong></div><div class="row"><span>Destino</span><strong>${escapeHtml(ride.dropoff_address)}</strong></div><div class="row"><span>Conductor</span><strong>${escapeHtml(ride.driver_name || "Conductor Taximun")}</strong></div><div class="row"><span>Fecha</span><strong>${escapeHtml(receiptDate)}</strong></div></div><div class="box"><div class="row"><span>Tarifa final</span><strong>${escapeHtml(fare(finalFare))}</strong></div><div class="row"><span>Método</span><strong>${escapeHtml(paymentLabel(ride.payment_method))}</strong></div><div class="row"><span>Estado del pago</span><strong>${escapeHtml(ride.payment_status || payment?.status || "registrado")}</strong></div><div class="row"><span>Reembolsado</span><strong>${escapeHtml(money(payment?.amount_refunded))}</strong></div>${confirmedTip ? `<div class="row"><span>Propina</span><strong>${escapeHtml(money(confirmedTip.amount_cents))}</strong></div>` : ""}<div class="row total"><span>Total documentado</span><strong>${escapeHtml((Number(finalFare) + Number(confirmedTip?.amount_cents || 0) / 100).toFixed(2) + " €")}</strong></div></div><p class="small muted">Documento generado desde Taximun. La propina solo aparece cuando su pago o recepción está confirmado.</p><button onclick="window.print()">Guardar como PDF / imprimir</button></body></html>`);
     receipt.document.close();
     receipt.focus();
   };
@@ -121,7 +123,7 @@ export function PassengerRideAftercare({ rideId, status }: Props) {
         </div>
 
         <div className="rounded-3xl bg-zinc-100 p-4">
-          <div className="flex items-center justify-between gap-3"><div><p className="font-black">Propina al conductor</p><p className="text-xs font-bold text-zinc-500">Separada de la tarifa y sin modificar la comisión del viaje.</p></div>{tip && <Badge className={tip.status === "paid" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}>{tipStatusLabel(tip.status)}</Badge>}</div>
+          <div className="flex items-center justify-between gap-3"><div><p className="font-black">Propina al conductor</p><p className="text-xs font-bold text-zinc-500">Separada de la tarifa y registrada para su liquidación.</p></div>{tip && <Badge className={tip.status === "paid" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}>{tipStatusLabel(tip.status)}</Badge>}</div>
           {selectedTip && <p className="mt-3 rounded-2xl bg-white p-3 text-sm font-black">{selectedTip}</p>}
           {!tipLocked && <>
             <div className="mt-4 grid grid-cols-3 gap-2">{[2, 5, 10].map((value) => <button key={value} onClick={() => setAmount(String(value))} className={`h-12 rounded-2xl font-black ${Number(amount) === value ? "bg-black text-white" : "bg-white"}`}>{value} €</button>)}</div>
