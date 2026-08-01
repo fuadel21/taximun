@@ -22,6 +22,7 @@ import { taxiSystemHealthRouter } from "../taxi-system-health-router";
 import { taxiTripAudioRouter } from "../taxi-trip-audio-router";
 import { taxiTripCallRouter } from "../taxi-trip-call-router";
 import { taxiTripChatRouter } from "../taxi-trip-chat-router";
+import { taxiTripCommunicationRouter } from "../taxi-trip-communication-router";
 import { taxiTripLifecycleRouter } from "../taxi-trip-lifecycle-router";
 import { taxiTripSettlementRouter } from "../taxi-trip-settlement-router";
 import { notifyOwner } from "./notification";
@@ -51,6 +52,7 @@ export const systemRouter = router({
   taxiTripAudio: taxiTripAudioRouter,
   taxiTripCall: taxiTripCallRouter,
   taxiTripChat: taxiTripChatRouter,
+  taxiTripCommunication: taxiTripCommunicationRouter,
   taxiTripLifecycle: taxiTripLifecycleRouter,
   taxiTripSettlement: taxiTripSettlementRouter,
 
