@@ -36,15 +36,13 @@ async function stripePost(path: string, params: URLSearchParams, idempotencyKey?
 }
 
 async function stripeGet(path: string) {
-  const response = await fetch(`${STRIPE_API}${path}`, {
-    headers: { Authorization: `Bearer ${stripeKey()}` },
-  });
+  const response = await fetch(`${STRIPE_API}${path}`, { headers: { Authorization: `Bearer ${stripeKey()}` } });
   const json = await response.json().catch(() => ({})) as any;
   if (!response.ok) throw new TRPCError({ code: "BAD_REQUEST", message: json?.error?.message || "No se pudo verificar Stripe." });
   return json;
 }
 
-function fail(error: { message: string } | null) {
+function fail(error: { message: string; code?: string } | null) {
   if (error) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: error.message });
 }
 
@@ -91,48 +89,70 @@ export const taxiRideAftercareRouter = router({
       if (ride.passenger_id !== ctx.user.openId) throw new TRPCError({ code: "FORBIDDEN", message: "Solo el pasajero puede añadir una propina." });
       if (ride.status !== "completed" || !ride.driver_id) throw new TRPCError({ code: "CONFLICT", message: "La propina solo está disponible después de completar el viaje." });
       const existing = await getTipForRide(ride.id);
-      if (existing?.status === "paid" || existing?.status === "pending_confirmation") {
-        throw new TRPCError({ code: "CONFLICT", message: "Este viaje ya tiene una propina registrada." });
-      }
+      if (existing && !["failed", "cancelled"].includes(existing.status)) throw new TRPCError({ code: "CONFLICT", message: "Este viaje ya tiene una propina registrada o en proceso." });
 
       const amountCents = Math.round(input.amount * 100);
-      const base = appUrl();
-      const params = new URLSearchParams({
-        mode: "payment",
-        success_url: `${base}/passenger/rides?tip=success&rideId=${ride.id}`,
-        cancel_url: `${base}/passenger/rides?tip=cancelled&rideId=${ride.id}`,
-        "line_items[0][quantity]": "1",
-        "line_items[0][price_data][currency]": "eur",
-        "line_items[0][price_data][unit_amount]": String(amountCents),
-        "line_items[0][price_data][product_data][name]": "Propina Taximun",
-        "line_items[0][price_data][product_data][description]": `Viaje ${ride.id.slice(0, 8).toUpperCase()} · para ${ride.driver_name || "el conductor"}`,
-        "metadata[kind]": "ride_tip",
-        "metadata[ride_id]": ride.id,
-        "metadata[passenger_id]": ride.passenger_id,
-        "metadata[driver_id]": ride.driver_id,
-      });
-      params.append("payment_method_types[]", "card");
-      const session = await stripePost("/checkout/sessions", params, `taximun-tip-${ride.id}-${amountCents}`);
+      let tipId: string;
+      if (existing) {
+        const { data, error } = await supabase.from("taxi_ride_tips").update({
+          amount_cents: amountCents,
+          method: "card",
+          status: "checkout_pending",
+          stripe_checkout_session_id: null,
+          stripe_payment_intent_id: null,
+          confirmed_at: null,
+          confirmed_by: null,
+        }).eq("id", existing.id).in("status", ["failed", "cancelled"]).select("id").maybeSingle();
+        fail(error);
+        if (!data) throw new TRPCError({ code: "CONFLICT", message: "La propina cambió mientras se preparaba el pago." });
+        tipId = data.id;
+      } else {
+        const { data, error } = await supabase.from("taxi_ride_tips").insert({
+          ride_id: ride.id,
+          passenger_id: ride.passenger_id,
+          driver_id: ride.driver_id,
+          amount_cents: amountCents,
+          method: "card",
+          status: "checkout_pending",
+        }).select("id").maybeSingle();
+        if (error?.code === "23505") throw new TRPCError({ code: "CONFLICT", message: "Ya se está preparando otra propina para este viaje." });
+        fail(error);
+        if (!data) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "No se pudo reservar la propina." });
+        tipId = data.id;
+      }
 
-      const { data, error } = await supabase.from("taxi_ride_tips").upsert({
-        ride_id: ride.id,
-        passenger_id: ride.passenger_id,
-        driver_id: ride.driver_id,
-        amount_cents: amountCents,
-        method: "card",
-        status: "checkout_pending",
-        stripe_checkout_session_id: session.id,
-        stripe_payment_intent_id: null,
-        confirmed_at: null,
-        confirmed_by: null,
-      }, { onConflict: "ride_id" }).select("*").single();
-      fail(error);
-      return { tip: data, checkoutUrl: session.url as string };
+      try {
+        const base = appUrl();
+        const params = new URLSearchParams({
+          mode: "payment",
+          success_url: `${base}/passenger/rides?tip=success&rideId=${ride.id}`,
+          cancel_url: `${base}/passenger/rides?tip=cancelled&rideId=${ride.id}`,
+          "line_items[0][quantity]": "1",
+          "line_items[0][price_data][currency]": "eur",
+          "line_items[0][price_data][unit_amount]": String(amountCents),
+          "line_items[0][price_data][product_data][name]": "Propina Taximun",
+          "line_items[0][price_data][product_data][description]": `Viaje ${ride.id.slice(0, 8).toUpperCase()} · para ${ride.driver_name || "el conductor"}`,
+          "metadata[kind]": "ride_tip",
+          "metadata[ride_id]": ride.id,
+          "metadata[tip_id]": tipId,
+          "metadata[passenger_id]": ride.passenger_id,
+          "metadata[driver_id]": ride.driver_id,
+        });
+        params.append("payment_method_types[]", "card");
+        const session = await stripePost("/checkout/sessions", params, `taximun-tip-${tipId}-${amountCents}`);
+        const { data, error } = await supabase.from("taxi_ride_tips").update({ stripe_checkout_session_id: session.id }).eq("id", tipId).eq("status", "checkout_pending").select("*").single();
+        fail(error);
+        return { tip: data, checkoutUrl: session.url as string };
+      } catch (error) {
+        await supabase.from("taxi_ride_tips").update({ status: "failed" }).eq("id", tipId).is("stripe_checkout_session_id", null);
+        throw error;
+      }
     }),
 
   syncCardTip: protectedProcedure.input(z.object({ rideId: z.string().uuid() })).mutation(async ({ ctx, input }) => {
     const ride = await rideForParticipant(input.rideId, ctx.user);
     if (ride.passenger_id !== ctx.user.openId && ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
+    if (!ride.driver_id) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "El viaje no tiene conductor." });
     const tip = await getTipForRide(ride.id);
     if (!tip?.stripe_checkout_session_id || tip.method !== "card") return tip;
     const session = await stripeGet(`/checkout/sessions/${encodeURIComponent(tip.stripe_checkout_session_id)}`);
@@ -151,8 +171,8 @@ export const taxiRideAftercareRouter = router({
         actorId: ride.passenger_id,
         actorRole: "passenger",
         type: "success",
-        title: "Has recibido una propina",
-        body: `${(tip.amount_cents / 100).toFixed(2)} € por el viaje ${ride.id.slice(0, 8).toUpperCase()}.`,
+        title: "Propina pagada",
+        body: `${(tip.amount_cents / 100).toFixed(2)} € registrados para liquidación por el viaje ${ride.id.slice(0, 8).toUpperCase()}.`,
         actionUrl: "/driver/earnings",
         metadata: { rideId: ride.id, tipId: tip.id, amountCents: tip.amount_cents },
       });
@@ -168,7 +188,7 @@ export const taxiRideAftercareRouter = router({
       if (ride.status !== "completed" || !ride.driver_id) throw new TRPCError({ code: "CONFLICT", message: "El viaje todavía no admite propina." });
       const existing = await getTipForRide(ride.id);
       if (existing && !["cancelled", "failed"].includes(existing.status)) throw new TRPCError({ code: "CONFLICT", message: "Este viaje ya tiene una propina registrada." });
-      const { data, error } = await supabase.from("taxi_ride_tips").upsert({
+      const values = {
         ride_id: ride.id,
         passenger_id: ride.passenger_id,
         driver_id: ride.driver_id,
@@ -179,8 +199,13 @@ export const taxiRideAftercareRouter = router({
         stripe_payment_intent_id: null,
         confirmed_at: null,
         confirmed_by: null,
-      }, { onConflict: "ride_id" }).select("*").single();
+      };
+      const { data, error } = existing
+        ? await supabase.from("taxi_ride_tips").update(values).eq("id", existing.id).in("status", ["cancelled", "failed"]).select("*").maybeSingle()
+        : await supabase.from("taxi_ride_tips").insert(values).select("*").maybeSingle();
+      if (error?.code === "23505") throw new TRPCError({ code: "CONFLICT", message: "Ya existe una propina para este viaje." });
       fail(error);
+      if (!data) throw new TRPCError({ code: "CONFLICT", message: "La propina cambió mientras se registraba." });
       await createTaxiNotification({
         recipientId: ride.driver_id,
         recipientRole: "driver",
@@ -211,11 +236,7 @@ export const taxiRideAftercareRouter = router({
     if (!tip) throw new TRPCError({ code: "NOT_FOUND", message: "Propina no encontrada." });
     if (ctx.user.role === "driver" && tip.driver_id !== ctx.user.openId) throw new TRPCError({ code: "FORBIDDEN" });
     if (tip.status !== "pending_confirmation") throw new TRPCError({ code: "CONFLICT", message: "La propina ya no está pendiente." });
-    const { data, error: updateError } = await supabase.from("taxi_ride_tips").update({
-      status: "paid",
-      confirmed_at: new Date().toISOString(),
-      confirmed_by: ctx.user.openId,
-    }).eq("id", tip.id).eq("status", "pending_confirmation").select("*").maybeSingle();
+    const { data, error: updateError } = await supabase.from("taxi_ride_tips").update({ status: "paid", confirmed_at: new Date().toISOString(), confirmed_by: ctx.user.openId }).eq("id", tip.id).eq("status", "pending_confirmation").select("*").maybeSingle();
     fail(updateError);
     if (!data) throw new TRPCError({ code: "CONFLICT", message: "La propina cambió mientras la confirmabas." });
     await createTaxiNotification({
