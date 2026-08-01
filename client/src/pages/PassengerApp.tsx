@@ -1,4 +1,5 @@
 import { AppBottomNav } from "@/components/AppBottomNav";
+import { PassengerAftercareHub } from "@/components/PassengerAftercareHub";
 import { PassengerCommandGrid } from "@/components/PassengerCommandGrid";
 import { PassengerDispatchStatus } from "@/components/PassengerDispatchStatus";
 import { PassengerDriverPublicProfileSection } from "@/components/PassengerDriverPublicProfileSection";
@@ -21,6 +22,7 @@ export default function PassengerApp() {
   const isSecurity = location.includes("/security");
   const isRides = location.includes("/rides");
   const isBook = location.includes("/book");
+  const linkedRideId = new URLSearchParams(location.split("?")[1] || "").get("rideId");
 
   return (
     <div className="min-h-screen scroll-pb-[calc(8.5rem+env(safe-area-inset-bottom))] bg-[#f3f3f3] pb-[calc(8.5rem+env(safe-area-inset-bottom))] md:scroll-pb-0 md:pb-0">
@@ -33,7 +35,7 @@ export default function PassengerApp() {
         <main className="min-h-screen bg-[#f3f3f3]">
           <PremiumInternalHeader eyebrow="Taximun pasajero" title="Seguridad" description="Registra incidencias reales y accede rápidamente a la ayuda." homePath="/passenger" icon={<ShieldCheck className="h-8 w-8" />} />
           <div className="mx-auto max-w-3xl px-4 py-6">
-            <TaxiSupportActions role="passenger" />
+            <TaxiSupportActions role="passenger" rideId={linkedRideId} />
           </div>
         </main>
       ) : isRides ? (
@@ -44,6 +46,7 @@ export default function PassengerApp() {
           <PassengerPostTripRatingSection />
           <PassengerDriverPublicProfileSection />
           <PassengerRidesPage />
+          <PassengerAftercareHub />
         </div>
       ) : isBook ? (
         <div className="min-h-screen bg-[#f3f3f3]">
