@@ -8,7 +8,6 @@ import { PassengerSafeCancellationCard } from "@/components/PassengerSafeCancell
 import { PremiumInternalHeader } from "@/components/PremiumInternalHeader";
 import { TaxiProfileSettings } from "@/components/TaxiProfileSettings";
 import { TaxiSupportActions } from "@/components/TaxiSupportActions";
-import { TripCommunicationPanel } from "@/components/TripCommunicationPanel";
 import "@/styles/passenger-safe-cancellation.css";
 import { CalendarClock, Car, Home, ReceiptText, ShieldCheck, UserRound } from "lucide-react";
 import { useLocation } from "wouter";
@@ -42,7 +41,6 @@ export default function PassengerApp() {
           <PremiumInternalHeader eyebrow="Taximun pasajero" title="Mis viajes" description="Consulta el viaje activo, el historial, el conductor y los recibos." homePath="/passenger" icon={<ReceiptText className="h-8 w-8" />} />
           <PassengerDispatchStatus />
           <PassengerLiveTrackingSection />
-          <TripCommunicationPanel role="passenger" />
           <PassengerPostTripRatingSection />
           <PassengerDriverPublicProfileSection />
           <PassengerRidesPage />

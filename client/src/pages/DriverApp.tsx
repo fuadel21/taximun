@@ -8,7 +8,6 @@ import { DriverTripSettlementSection } from "@/components/DriverTripSettlementSe
 import { PremiumInternalHeader } from "@/components/PremiumInternalHeader";
 import { TaxiProfileSettings } from "@/components/TaxiProfileSettings";
 import { TaxiSupportActions } from "@/components/TaxiSupportActions";
-import { TripCommunicationPanel } from "@/components/TripCommunicationPanel";
 import { BarChart3, Car, Home, Navigation, ShieldCheck, UserRound } from "lucide-react";
 import { useLocation } from "wouter";
 import DriverEarningsPage from "./DriverEarningsPage";
@@ -52,7 +51,6 @@ export default function DriverApp() {
         <div className="min-h-screen bg-black">
           <PremiumInternalHeader eyebrow="Taximun Driver" title="Servicios" description="Revisa ofertas, viaje activo y cierre del servicio." homePath="/driver" icon={<Car className="h-8 w-8" />} tone="dark" />
           <DriverGpsHeartbeat />
-          <TripCommunicationPanel role="driver" tone="dark" />
           <DriverTripSettlementSection />
           <DriverServicesPage />
         </div>
@@ -60,7 +58,6 @@ export default function DriverApp() {
         <div className="min-h-screen bg-black">
           <PremiumInternalHeader eyebrow="Taximun Driver" title="Navegación" description="Ruta, llegada, PIN de recogida y seguimiento del viaje." homePath="/driver" icon={<Navigation className="h-8 w-8" />} tone="dark" />
           <DriverGpsHeartbeat />
-          <TripCommunicationPanel role="driver" tone="dark" />
           <DriverNavigationPage />
         </div>
       ) : isEarnings ? (
