@@ -4,6 +4,7 @@ import { DriverGpsHeartbeat } from "@/components/DriverGpsHeartbeat";
 import { DriverOperationalIdentityCard } from "@/components/DriverOperationalIdentityCard";
 import { DriverRideOfferOverlay } from "@/components/DriverRideOfferOverlay";
 import { DriverSessionRecovery } from "@/components/DriverSessionRecovery";
+import { DriverTipConfirmations } from "@/components/DriverTipConfirmations";
 import { DriverTripSettlementSection } from "@/components/DriverTripSettlementSection";
 import { PremiumInternalHeader } from "@/components/PremiumInternalHeader";
 import { TaxiProfileSettings } from "@/components/TaxiProfileSettings";
@@ -63,6 +64,7 @@ export default function DriverApp() {
       ) : isEarnings ? (
         <div className="min-h-screen bg-black">
           <PremiumInternalHeader eyebrow="Taximun Driver" title="Ingresos" description="Consulta cobros, liquidaciones e historial profesional." homePath="/driver" icon={<BarChart3 className="h-8 w-8" />} tone="dark" />
+          <DriverTipConfirmations />
           <DriverEarningsPage />
         </div>
       ) : (
