@@ -17,7 +17,7 @@ type CompletedRide = {
 export function PassengerAftercareHub() {
   const query = trpc.system.taxiOps.passenger.getRideHistory.useQuery(undefined, { retry: false, refetchInterval: 15000 });
   const rides = useMemo(() => ((query.data ?? []) as CompletedRide[]).filter((ride) => ride.status === "completed"), [query.data]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(() => new URLSearchParams(window.location.search).get("rideId"));
   const selected = rides.find((ride) => ride.id === selectedId) || rides[0] || null;
 
   if (!query.isLoading && rides.length === 0) return null;
