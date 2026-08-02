@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import type { Express, Request, Response } from "express";
+import { createTaxiNotification } from "./taxi-notifications-router";
 import { supabase } from "./supabase-client";
 
 const WEBHOOK_PATH = "/api/webhooks/stripe";
@@ -40,6 +41,7 @@ function connectStatusForAccount(account: any) {
 }
 
 async function syncPaymentIntent(intent: any) {
+  if (intent?.metadata?.kind === "ride_tip") return;
   const rideId = intent?.metadata?.ride_id;
   if (!rideId || !intent?.id) return;
   const amountCaptured = Number(intent.amount_received || 0);
@@ -56,6 +58,56 @@ async function syncPaymentIntent(intent: any) {
     updated_at: new Date().toISOString(),
   }).eq("provider_payment_intent_id", intent.id);
   if (error) throw error;
+}
+
+async function syncCheckoutTip(session: any, eventType: string, eventId: string) {
+  if (session?.metadata?.kind !== "ride_tip") return;
+  const tipId = session?.metadata?.tip_id;
+  const rideId = session?.metadata?.ride_id;
+  if (!tipId || !rideId || !session?.id) return;
+
+  const { data: current, error: currentError } = await supabase
+    .from("taxi_ride_tips")
+    .select("id,status,amount_cents,driver_id,passenger_id,ride_id")
+    .eq("id", tipId)
+    .eq("ride_id", rideId)
+    .maybeSingle();
+  if (currentError) throw currentError;
+  if (!current) return;
+
+  const paid = session.payment_status === "paid" || eventType === "checkout.session.async_payment_succeeded";
+  const failed = eventType === "checkout.session.expired" || eventType === "checkout.session.async_payment_failed";
+  const status = paid ? "paid" : failed ? "failed" : "checkout_pending";
+  const payoutStatus = paid ? "paid" : failed ? "failed" : "destination_configured";
+  const paymentIntentId = typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id || null;
+  const destination = session?.payment_intent?.transfer_data?.destination || null;
+  const now = new Date().toISOString();
+
+  const { error } = await supabase.from("taxi_ride_tips").update({
+    status,
+    payout_status: payoutStatus,
+    stripe_payment_intent_id: paymentIntentId,
+    stripe_destination_account_id: destination || undefined,
+    confirmed_at: paid ? now : null,
+    confirmed_by: paid ? "stripe_webhook" : null,
+    last_stripe_event_id: eventId,
+    last_stripe_event_at: now,
+  }).eq("id", current.id);
+  if (error) throw error;
+
+  if (paid && current.status !== "paid") {
+    await createTaxiNotification({
+      recipientId: current.driver_id,
+      recipientRole: "driver",
+      actorId: current.passenger_id,
+      actorRole: "passenger",
+      type: "success",
+      title: "Propina pagada",
+      body: `${(Number(current.amount_cents || 0) / 100).toFixed(2)} € enviados a tu saldo Stripe Connect por el viaje ${String(current.ride_id).slice(0, 8).toUpperCase()}.`,
+      actionUrl: "/driver/earnings",
+      metadata: { rideId: current.ride_id, tipId: current.id, amountCents: current.amount_cents },
+    });
+  }
 }
 
 async function syncRefund(refund: any) {
@@ -193,6 +245,12 @@ async function processEvent(event: any) {
     case "payment_intent.payment_failed":
     case "payment_intent.canceled":
       await syncPaymentIntent(event.data.object);
+      break;
+    case "checkout.session.completed":
+    case "checkout.session.async_payment_succeeded":
+    case "checkout.session.async_payment_failed":
+    case "checkout.session.expired":
+      await syncCheckoutTip(event.data.object, event.type, event.id);
       break;
     case "refund.created":
     case "refund.updated":
