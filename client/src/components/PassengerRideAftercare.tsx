@@ -24,6 +24,7 @@ function tipStatusLabel(status?: string | null) {
   if (status === "pending_confirmation") return "Esperando confirmación del conductor";
   if (status === "checkout_pending") return "Pago de tarjeta pendiente";
   if (status === "failed") return "Pago no completado";
+  if (status === "cancelled") return "Pago cancelado";
   return "Sin propina";
 }
 
@@ -40,12 +41,13 @@ export function PassengerRideAftercare({ rideId, status }: Props) {
   const createCheckout = trpc.system.taxiRideAftercare.createCardCheckout.useMutation();
   const declareOffline = trpc.system.taxiRideAftercare.declareOfflineTip.useMutation();
   const syncCard = trpc.system.taxiRideAftercare.syncCardTip.useMutation();
+  const cancelCard = trpc.system.taxiRideAftercare.cancelCardTip.useMutation();
   const data = query.data;
   const tip = data?.tip;
   const numericAmount = Number(amount.replace(",", "."));
   const validAmount = Number.isFinite(numericAmount) && numericAmount >= 0.5 && numericAmount <= 500;
   const tipLocked = Boolean(tip && !["failed", "cancelled"].includes(tip.status));
-  const busy = createCheckout.isPending || declareOffline.isPending || syncCard.isPending;
+  const busy = createCheckout.isPending || declareOffline.isPending || syncCard.isPending || cancelCard.isPending;
 
   const refresh = async () => {
     await utils.system.taxiRideAftercare.get.invalidate({ rideId });
@@ -54,14 +56,25 @@ export function PassengerRideAftercare({ rideId, status }: Props) {
   useEffect(() => {
     if (!enabled) return;
     const params = new URLSearchParams(window.location.search);
-    if (params.get("tip") !== "success" || params.get("rideId") !== rideId) return;
-    syncCard.mutate({ rideId }, {
-      onSuccess: async (result) => {
-        setNotice(result?.status === "paid" ? "Propina pagada y registrada para liquidación." : "El pago todavía se está verificando.");
-        await refresh();
-      },
-      onError: (err) => setError(err.message),
-    });
+    if (params.get("rideId") !== rideId) return;
+    const result = params.get("tip");
+    if (result === "success") {
+      syncCard.mutate({ rideId }, {
+        onSuccess: async (saved) => {
+          setNotice(saved?.status === "paid" ? "Propina pagada y enviada al saldo Stripe Connect del conductor." : "El pago todavía se está verificando por Stripe.");
+          await refresh();
+        },
+        onError: (err) => setError(err.message),
+      });
+    } else if (result === "cancelled") {
+      cancelCard.mutate({ rideId }, {
+        onSuccess: async (saved) => {
+          setNotice(saved?.status === "paid" ? "Stripe confirmó que la propina sí llegó a pagarse." : "Pago cancelado. Puedes volver a intentarlo o elegir efectivo/Bizum.");
+          await refresh();
+        },
+        onError: (err) => setError(err.message),
+      });
+    }
   }, [rideId, enabled]);
 
   const selectedTip = useMemo(() => {
@@ -123,7 +136,7 @@ export function PassengerRideAftercare({ rideId, status }: Props) {
         </div>
 
         <div className="rounded-3xl bg-zinc-100 p-4">
-          <div className="flex items-center justify-between gap-3"><div><p className="font-black">Propina al conductor</p><p className="text-xs font-bold text-zinc-500">Separada de la tarifa y registrada para su liquidación.</p></div>{tip && <Badge className={tip.status === "paid" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}>{tipStatusLabel(tip.status)}</Badge>}</div>
+          <div className="flex items-center justify-between gap-3"><div><p className="font-black">Propina al conductor</p><p className="text-xs font-bold text-zinc-500">Tarjeta va directamente a su Stripe Connect; efectivo/Bizum requieren confirmación.</p></div>{tip && <Badge className={tip.status === "paid" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}>{tipStatusLabel(tip.status)}</Badge>}</div>
           {selectedTip && <p className="mt-3 rounded-2xl bg-white p-3 text-sm font-black">{selectedTip}</p>}
           {!tipLocked && <>
             <div className="mt-4 grid grid-cols-3 gap-2">{[2, 5, 10].map((value) => <button key={value} onClick={() => setAmount(String(value))} className={`h-12 rounded-2xl font-black ${Number(amount) === value ? "bg-black text-white" : "bg-white"}`}>{value} €</button>)}</div>
