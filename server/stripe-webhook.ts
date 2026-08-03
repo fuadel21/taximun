@@ -64,16 +64,17 @@ async function syncCheckoutTip(session: any, eventType: string, eventId: string)
   if (session?.metadata?.kind !== "ride_tip") return;
   const tipId = session?.metadata?.tip_id;
   const rideId = session?.metadata?.ride_id;
-  if (!tipId || !rideId || !session?.id) return;
+  const sessionId = session?.id;
+  if (!tipId || !rideId || !sessionId) return;
 
   const { data: current, error: currentError } = await supabase
     .from("taxi_ride_tips")
-    .select("id,status,amount_cents,driver_id,passenger_id,ride_id")
+    .select("id,status,method,amount_cents,driver_id,passenger_id,ride_id,stripe_checkout_session_id")
     .eq("id", tipId)
     .eq("ride_id", rideId)
     .maybeSingle();
   if (currentError) throw currentError;
-  if (!current) return;
+  if (!current || current.method !== "card" || current.stripe_checkout_session_id !== sessionId) return;
 
   const paid = session.payment_status === "paid" || eventType === "checkout.session.async_payment_succeeded";
   const failed = eventType === "checkout.session.expired" || eventType === "checkout.session.async_payment_failed";
@@ -83,7 +84,7 @@ async function syncCheckoutTip(session: any, eventType: string, eventId: string)
   const destination = session?.payment_intent?.transfer_data?.destination || null;
   const now = new Date().toISOString();
 
-  const { error } = await supabase.from("taxi_ride_tips").update({
+  const { data: updated, error } = await supabase.from("taxi_ride_tips").update({
     status,
     payout_status: payoutStatus,
     stripe_payment_intent_id: paymentIntentId,
@@ -92,8 +93,9 @@ async function syncCheckoutTip(session: any, eventType: string, eventId: string)
     confirmed_by: paid ? "stripe_webhook" : null,
     last_stripe_event_id: eventId,
     last_stripe_event_at: now,
-  }).eq("id", current.id);
+  }).eq("id", current.id).eq("method", "card").eq("stripe_checkout_session_id", sessionId).select("id").maybeSingle();
   if (error) throw error;
+  if (!updated) return;
 
   if (paid && current.status !== "paid") {
     await createTaxiNotification({
