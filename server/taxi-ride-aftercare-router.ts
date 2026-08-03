@@ -140,6 +140,7 @@ export const taxiRideAftercareRouter = router({
 
       const amountCents = Math.round(input.amount * 100);
       let tipId: string;
+      let checkoutAttempt: string;
       if (existing) {
         const { data, error } = await supabase.from("taxi_ride_tips").update({
           amount_cents: amountCents,
@@ -153,10 +154,11 @@ export const taxiRideAftercareRouter = router({
           last_stripe_event_at: null,
           confirmed_at: null,
           confirmed_by: null,
-        }).eq("id", existing.id).in("status", ["failed", "cancelled"]).select("id").maybeSingle();
+        }).eq("id", existing.id).in("status", ["failed", "cancelled"]).select("id,updated_at").maybeSingle();
         fail(error);
         if (!data) throw new TRPCError({ code: "CONFLICT", message: "La propina cambió mientras se preparaba el pago." });
         tipId = data.id;
+        checkoutAttempt = data.updated_at;
       } else {
         const { data, error } = await supabase.from("taxi_ride_tips").insert({
           ride_id: ride.id,
@@ -167,11 +169,12 @@ export const taxiRideAftercareRouter = router({
           status: "checkout_pending",
           payout_status: "pending",
           stripe_destination_account_id: connect.stripe_account_id,
-        }).select("id").maybeSingle();
+        }).select("id,updated_at").maybeSingle();
         if (error?.code === "23505") throw new TRPCError({ code: "CONFLICT", message: "Ya se está preparando otra propina para este viaje." });
         fail(error);
         if (!data) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "No se pudo reservar la propina." });
         tipId = data.id;
+        checkoutAttempt = data.updated_at;
       }
 
       try {
@@ -198,7 +201,8 @@ export const taxiRideAftercareRouter = router({
           "payment_intent_data[metadata][driver_id]": ride.driver_id,
         });
         params.append("payment_method_types[]", "card");
-        const session = await stripePost("/checkout/sessions", params, `taximun-tip-${tipId}-${amountCents}`);
+        const attemptKey = String(new Date(checkoutAttempt).getTime());
+        const session = await stripePost("/checkout/sessions", params, `taximun-tip-${tipId}-${amountCents}-${attemptKey}`);
         const { data, error } = await supabase.from("taxi_ride_tips").update({
           stripe_checkout_session_id: session.id,
           payout_status: "destination_configured",
