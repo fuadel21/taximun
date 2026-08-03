@@ -44,6 +44,7 @@ export function PassengerRideAftercare({ rideId, status }: Props) {
   const cancelCard = trpc.system.taxiRideAftercare.cancelCardTip.useMutation();
   const data = query.data;
   const tip = data?.tip;
+  const cardTipAvailable = Boolean(data?.cardTipAvailable);
   const numericAmount = Number(amount.replace(",", "."));
   const validAmount = Number.isFinite(numericAmount) && numericAmount >= 0.5 && numericAmount <= 500;
   const tipLocked = Boolean(tip && !["failed", "cancelled"].includes(tip.status));
@@ -52,6 +53,11 @@ export function PassengerRideAftercare({ rideId, status }: Props) {
   const refresh = async () => {
     await utils.system.taxiRideAftercare.get.invalidate({ rideId });
   };
+
+  useEffect(() => {
+    if (query.isLoading || cardTipAvailable || method !== "card") return;
+    setMethod("cash");
+  }, [query.isLoading, cardTipAvailable, method]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -84,6 +90,10 @@ export function PassengerRideAftercare({ rideId, status }: Props) {
 
   const submitTip = async () => {
     if (!validAmount || tipLocked) return;
+    if (method === "card" && !cardTipAvailable) {
+      setError("La tarjeta no está disponible porque el conductor todavía no tiene Stripe Connect habilitado.");
+      return;
+    }
     try {
       setError("");
       setNotice("");
@@ -141,8 +151,12 @@ export function PassengerRideAftercare({ rideId, status }: Props) {
           {!tipLocked && <>
             <div className="mt-4 grid grid-cols-3 gap-2">{[2, 5, 10].map((value) => <button key={value} onClick={() => setAmount(String(value))} className={`h-12 rounded-2xl font-black ${Number(amount) === value ? "bg-black text-white" : "bg-white"}`}>{value} €</button>)}</div>
             <div className="mt-3 flex items-center gap-2"><Euro className="h-5 w-5" /><Input value={amount} onChange={(event) => setAmount(event.target.value)} inputMode="decimal" className="h-12 rounded-2xl bg-white" placeholder="Importe" /></div>
-            <div className="mt-3 grid grid-cols-3 gap-2">{(["card", "cash", "bizum"] as const).map((item) => <button key={item} onClick={() => setMethod(item)} className={`h-12 rounded-2xl text-sm font-black ${method === item ? "bg-cyan-600 text-white" : "bg-white"}`}>{paymentLabel(item)}</button>)}</div>
-            <Button onClick={submitTip} disabled={!validAmount || busy} className="mt-3 h-14 w-full rounded-2xl bg-black font-black text-white">{busy ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : method === "card" ? <CreditCard className="mr-2 h-5 w-5" /> : <Gift className="mr-2 h-5 w-5" />}Añadir {validAmount ? `${numericAmount.toFixed(2)} €` : "propina"}</Button>
+            {!query.isLoading && !cardTipAvailable && <p className="mt-3 rounded-2xl bg-amber-50 p-3 text-xs font-bold text-amber-900">La tarjeta no está disponible para este viaje porque el conductor todavía no tiene Stripe Connect operativo.</p>}
+            <div className="mt-3 grid grid-cols-3 gap-2">{(["card", "cash", "bizum"] as const).map((item) => {
+              const disabled = item === "card" && !cardTipAvailable;
+              return <button key={item} disabled={disabled} onClick={() => setMethod(item)} className={`h-12 rounded-2xl text-sm font-black ${disabled ? "cursor-not-allowed bg-zinc-200 text-zinc-400" : method === item ? "bg-cyan-600 text-white" : "bg-white"}`}>{paymentLabel(item)}</button>;
+            })}</div>
+            <Button onClick={submitTip} disabled={!validAmount || busy || method === "card" && !cardTipAvailable} className="mt-3 h-14 w-full rounded-2xl bg-black font-black text-white">{busy ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : method === "card" ? <CreditCard className="mr-2 h-5 w-5" /> : <Gift className="mr-2 h-5 w-5" />}Añadir {validAmount ? `${numericAmount.toFixed(2)} €` : "propina"}</Button>
           </>}
         </div>
       </CardContent>
