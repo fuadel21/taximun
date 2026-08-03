@@ -39,7 +39,11 @@ export default function PassengerAdvancedBookingPage() {
   const [error, setError] = useState("");
 
   const payload = useMemo(() => ({ pickupAddress, dropoffAddress, category, paymentMethod, intermediateStops: intermediateStops.filter((item) => item.address.trim()), requirements, promoCode: promoCode || undefined }), [pickupAddress, dropoffAddress, category, paymentMethod, intermediateStops, requirements, promoCode]);
-  const quoteInput = mode === "scheduled" && scheduledAt ? { ...payload, scheduledAt: new Date(scheduledAt).toISOString() } : payload;
+  const quoteInput = {
+    ...payload,
+    ...(mode === "scheduled" && scheduledAt ? { scheduledAt: new Date(scheduledAt).toISOString() } : {}),
+    ...(editingId ? { editingBookingId: editingId } : {}),
+  };
   const enabled = pickupAddress.trim().length > 1 && dropoffAddress.trim().length > 1 && (mode === "now" || Boolean(scheduledAt));
   const quote = trpc.system.taxiPassengerBooking.quote.useQuery(quoteInput, { enabled, retry: false, staleTime: 15000 });
   const bookingsQuery = trpc.system.taxiPassengerBooking.listScheduled.useQuery(undefined, { retry: false });

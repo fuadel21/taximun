@@ -26,10 +26,12 @@ export type TaxiQuoteInput = {
   requirements: TaxiRequirements;
   requestedAt: Date;
   promoCode?: string;
+  excludeScheduledBookingId?: string;
 };
 
+const MARKET_TIME_ZONE = "Europe/Madrid";
 const MODEL = {
-  version: "taximun_pricing_v1",
+  version: "taximun_pricing_v2_madrid",
   baseFare: 3.1,
   perKm: 1.32,
   perMinute: 0.28,
@@ -67,10 +69,27 @@ function airport(address: string) {
   return ["aeroport", "aeropuerto", "el prat", "bcn airport", "terminal t1", "terminal t2"].some((item) => value.includes(item));
 }
 
-function nightOrWeekend(date: Date) {
-  const hour = date.getHours();
-  const day = date.getDay();
-  return hour >= 20 || hour < 7 || day === 0 || day === 6;
+function madridTariffPeriod(date: Date) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: MARKET_TIME_ZONE,
+    hour: "2-digit",
+    hourCycle: "h23",
+    weekday: "short",
+  }).formatToParts(date);
+  const hour = Number(parts.find((part) => part.type === "hour")?.value ?? "0");
+  const weekday = parts.find((part) => part.type === "weekday")?.value ?? "Mon";
+  const weekend = weekday === "Sat" || weekday === "Sun";
+  return {
+    hour,
+    weekday,
+    weekend,
+    isNightOrWeekend: hour >= 20 || hour < 7 || weekend,
+  };
+}
+
+function excludeEditedBooking(query: any, bookingId?: string) {
+  if (!bookingId) return query;
+  return query.or(`scheduled_booking_id.is.null,scheduled_booking_id.neq.${bookingId}`);
 }
 
 async function promotionFor(input: TaxiQuoteInput, subtotal: number) {
@@ -95,10 +114,15 @@ async function promotionFor(input: TaxiQuoteInput, subtotal: number) {
     throw new TRPCError({ code: "BAD_REQUEST", message: `El código requiere un importe mínimo de ${Number(promotion.minimum_subtotal).toFixed(2)} €.` });
   }
 
-  const [{ count: totalUses, error: totalError }, { count: userUses, error: userError }] = await Promise.all([
+  const totalQuery = excludeEditedBooking(
     supabase.from("taxi_promotion_redemptions").select("id", { count: "exact", head: true }).eq("promotion_id", promotion.id),
+    input.excludeScheduledBookingId,
+  );
+  const userQuery = excludeEditedBooking(
     supabase.from("taxi_promotion_redemptions").select("id", { count: "exact", head: true }).eq("promotion_id", promotion.id).eq("passenger_id", input.passengerId),
-  ]);
+    input.excludeScheduledBookingId,
+  );
+  const [{ count: totalUses, error: totalError }, { count: userUses, error: userError }] = await Promise.all([totalQuery, userQuery]);
   if (totalError || userError) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: totalError?.message || userError?.message });
   if (promotion.max_total_uses !== null && Number(totalUses || 0) >= Number(promotion.max_total_uses)) {
     throw new TRPCError({ code: "BAD_REQUEST", message: "El código promocional ha agotado sus usos." });
@@ -130,7 +154,8 @@ export async function calculateTaxiQuote(input: TaxiQuoteInput) {
   const petSupplement = input.requirements.pet ? MODEL.petSupplement : 0;
   const childSeatSupplement = input.requirements.childSeat ? MODEL.childSeatSupplement : 0;
   const categoryMultiplier = MODEL.categoryMultipliers[input.category];
-  const nightMultiplier = nightOrWeekend(input.requestedAt) ? MODEL.nightMultiplier : 1;
+  const tariffPeriod = madridTariffPeriod(input.requestedAt);
+  const nightMultiplier = tariffPeriod.isNightOrWeekend ? MODEL.nightMultiplier : 1;
   const beforeMultipliers = baseFare + distanceFare + timeFare + MODEL.bookingFee + airportSupplement + stopSupplement + luggageSupplement + petSupplement + childSeatSupplement;
   const subtotal = round(Math.max(MODEL.minimumFare, beforeMultipliers * categoryMultiplier * nightMultiplier));
   const promo = await promotionFor(input, subtotal);
@@ -161,6 +186,9 @@ export async function calculateTaxiQuote(input: TaxiQuoteInput) {
       childSeatSupplement,
       categoryMultiplier,
       nightMultiplier,
+      tariffTimeZone: MARKET_TIME_ZONE,
+      tariffLocalHour: tariffPeriod.hour,
+      tariffWeekday: tariffPeriod.weekday,
       accessibilitySupplement: 0,
       discount,
       category: input.category,

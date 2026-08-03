@@ -32,20 +32,34 @@ function serviceType(category: BookingInput["category"]) {
   if (category === "comfort") return "eco";
   return "taxi";
 }
-async function quoteFor(ctx: any, input: BookingInput, requestedAt: Date) {
+async function quoteFor(ctx: any, input: BookingInput, requestedAt: Date, excludeScheduledBookingId?: string) {
   return calculateTaxiQuote({
     passengerId: ctx.user.openId, pickupAddress: input.pickupAddress, dropoffAddress: input.dropoffAddress,
     pickupLat: input.pickupLat, pickupLng: input.pickupLng, dropoffLat: input.dropoffLat, dropoffLng: input.dropoffLng,
     category: input.category, intermediateStops: input.intermediateStops, requirements: input.requirements, requestedAt, promoCode: input.promoCode,
+    excludeScheduledBookingId,
   });
 }
-async function recordRedemption(quote: any, passengerId: string, target: { rideId?: string; scheduledBookingId?: string }) {
+function promotionError(message: string) {
+  if (message.includes("PROMOTION_TOTAL_LIMIT_REACHED")) return "El código promocional ha agotado sus usos.";
+  if (message.includes("PROMOTION_USER_LIMIT_REACHED")) return "Ya has utilizado este código el máximo de veces permitido.";
+  if (message.includes("PROMOTION_NOT_ACTIVE")) return "El código promocional ya no está activo.";
+  if (message.includes("PROMOTION_CATEGORY_NOT_ELIGIBLE")) return "El código no es válido para esta categoría.";
+  if (message.includes("PROMOTION_MINIMUM_NOT_MET")) return "El viaje no alcanza el importe mínimo de la promoción.";
+  if (message.includes("PROMOTION_TARGET_NOT_OWNED") || message.includes("PROMOTION_TARGET_INVALID")) return "No se pudo vincular la promoción con esta reserva.";
+  return "No se pudo reservar el uso del código promocional.";
+}
+async function recordRedemption(quote: any, passengerId: string, category: BookingInput["category"], target: { rideId?: string; scheduledBookingId?: string }) {
   if (!quote.promotionId || !quote.discount) return;
-  const { error } = await supabase.from("taxi_promotion_redemptions").insert({
-    promotion_id: quote.promotionId, passenger_id: passengerId, ride_id: target.rideId ?? null,
-    scheduled_booking_id: target.scheduledBookingId ?? null, subtotal: quote.subtotal, discount_amount: quote.discount,
+  const { error } = await supabase.rpc("taximun_reserve_promotion_redemption", {
+    p_promotion_id: quote.promotionId,
+    p_passenger_id: passengerId,
+    p_ride_id: target.rideId ?? null,
+    p_scheduled_booking_id: target.scheduledBookingId ?? null,
+    p_category: category,
+    p_subtotal: quote.subtotal,
   });
-  fail(error);
+  if (error) throw new TRPCError({ code: "CONFLICT", message: promotionError(error.message) });
 }
 function pricedFields(quote: any) {
   return {
@@ -56,11 +70,19 @@ function pricedFields(quote: any) {
 }
 
 export const taxiPassengerBookingRouter = router({
-  quote: protectedProcedure.input(bookingPayloadSchema.extend({ scheduledAt: z.string().datetime().optional() })).query(async ({ ctx, input }) => {
+  quote: protectedProcedure.input(bookingPayloadSchema.extend({
+    scheduledAt: z.string().datetime().optional(),
+    editingBookingId: z.string().uuid().optional(),
+  })).query(async ({ ctx, input }) => {
     assertPassenger(ctx);
     const requestedAt = input.scheduledAt ? new Date(input.scheduledAt) : new Date();
     if (input.scheduledAt && requestedAt.getTime() < Date.now() + 15 * 60 * 1000) throw new TRPCError({ code: "BAD_REQUEST", message: "Programa la reserva con al menos 15 minutos de antelación." });
-    return quoteFor(ctx, input, requestedAt);
+    if (input.editingBookingId) {
+      const { data: owned, error } = await supabase.from("taxi_scheduled_bookings").select("id").eq("id", input.editingBookingId).eq("passenger_id", ctx.user.openId).eq("status", "scheduled").maybeSingle();
+      fail(error);
+      if (!owned) throw new TRPCError({ code: "NOT_FOUND", message: "La reserva ya no se puede editar." });
+    }
+    return quoteFor(ctx, input, requestedAt, input.editingBookingId);
   }),
 
   listSavedPlaces: protectedProcedure.query(async ({ ctx }) => {
@@ -90,7 +112,7 @@ export const taxiPassengerBookingRouter = router({
       intermediate_stops: input.intermediateStops, passenger_requirements: input.requirements, status: "pending", ...pricedFields(quote),
     }).select().single();
     fail(error);
-    try { await recordRedemption(quote, ctx.user.openId, { rideId: data.id }); } catch (redemptionError) { await supabase.from("taxi_rides").delete().eq("id", data.id).eq("status", "pending"); throw redemptionError; }
+    try { await recordRedemption(quote, ctx.user.openId, input.category, { rideId: data.id }); } catch (redemptionError) { await supabase.from("taxi_rides").delete().eq("id", data.id).eq("status", "pending"); throw redemptionError; }
     return data;
   }),
 
@@ -105,7 +127,7 @@ export const taxiPassengerBookingRouter = router({
       intermediate_stops: input.intermediateStops, passenger_requirements: input.requirements, status: "scheduled", ...pricedFields(quote),
     }).select().single();
     fail(error);
-    try { await recordRedemption(quote, ctx.user.openId, { scheduledBookingId: data.id }); } catch (redemptionError) { await supabase.from("taxi_scheduled_bookings").delete().eq("id", data.id).eq("status", "scheduled"); throw redemptionError; }
+    try { await recordRedemption(quote, ctx.user.openId, input.category, { scheduledBookingId: data.id }); } catch (redemptionError) { await supabase.from("taxi_scheduled_bookings").delete().eq("id", data.id).eq("status", "scheduled"); throw redemptionError; }
     return data;
   }),
 
@@ -116,15 +138,19 @@ export const taxiPassengerBookingRouter = router({
   updateScheduled: protectedProcedure.input(bookingPayloadSchema.extend({ id: z.string().uuid(), scheduledAt: z.string().datetime() })).mutation(async ({ ctx, input }) => {
     assertPassenger(ctx); const scheduledAt = new Date(input.scheduledAt);
     if (scheduledAt.getTime() < Date.now() + 15 * 60 * 1000) throw new TRPCError({ code: "BAD_REQUEST", message: "Programa la reserva con al menos 15 minutos de antelación." });
-    const quote = await quoteFor(ctx, input, scheduledAt);
+    const quote = await quoteFor(ctx, input, scheduledAt, input.id);
     const { data, error } = await supabase.from("taxi_scheduled_bookings").update({
       pickup_address: input.pickupAddress, dropoff_address: input.dropoffAddress, pickup_lat: input.pickupLat ?? null, pickup_lng: input.pickupLng ?? null,
       dropoff_lat: input.dropoffLat ?? null, dropoff_lng: input.dropoffLng ?? null, scheduled_at: scheduledAt.toISOString(), service_category: input.category,
       payment_method: input.paymentMethod, intermediate_stops: input.intermediateStops, passenger_requirements: input.requirements, ...pricedFields(quote), updated_at: new Date().toISOString(),
     }).eq("id", input.id).eq("passenger_id", ctx.user.openId).eq("status", "scheduled").select().maybeSingle();
     fail(error); if (!data) throw new TRPCError({ code: "NOT_FOUND", message: "La reserva ya no se puede editar." });
-    await supabase.from("taxi_promotion_redemptions").delete().eq("scheduled_booking_id", data.id);
-    try { await recordRedemption(quote, ctx.user.openId, { scheduledBookingId: data.id }); } catch (redemptionError) { throw redemptionError; }
+    if (quote.promotionId && quote.discount) {
+      await recordRedemption(quote, ctx.user.openId, input.category, { scheduledBookingId: data.id });
+    } else {
+      const { error: deleteError } = await supabase.from("taxi_promotion_redemptions").delete().eq("scheduled_booking_id", data.id);
+      fail(deleteError);
+    }
     return data;
   }),
 
