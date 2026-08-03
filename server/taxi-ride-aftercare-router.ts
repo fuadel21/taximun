@@ -20,7 +20,7 @@ function appUrl() {
   throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Falta configurar PUBLIC_APP_URL para el retorno de Stripe." });
 }
 
-async function stripePost(path: string, params: URLSearchParams, idempotencyKey?: string) {
+async function stripePost(path: string, params = new URLSearchParams(), idempotencyKey?: string) {
   const response = await fetch(`${STRIPE_API}${path}`, {
     method: "POST",
     headers: {
@@ -75,23 +75,33 @@ async function getPaymentForRide(rideId: string) {
   return data ?? null;
 }
 
-async function getDriverConnectAccount(driverId: string) {
+async function getDriverConnectAvailability(driverId: string | null | undefined) {
+  if (!driverId) return { available: false, account: null };
   const { data, error } = await supabase
     .from("taxi_driver_connect_accounts")
     .select("stripe_account_id,payouts_enabled,status")
     .eq("driver_id", driverId)
     .maybeSingle();
   fail(error);
-  if (!data?.stripe_account_id || !data.payouts_enabled || data.status !== "enabled") {
+  const available = Boolean(data?.stripe_account_id && data.payouts_enabled && data.status === "enabled");
+  return { available, account: data ?? null };
+}
+
+async function getDriverConnectAccount(driverId: string) {
+  const result = await getDriverConnectAvailability(driverId);
+  if (!result.available || !result.account?.stripe_account_id) {
     throw new TRPCError({
       code: "PRECONDITION_FAILED",
       message: "El conductor todavía no tiene Stripe Connect habilitado. Usa efectivo o Bizum para la propina.",
     });
   }
-  return data;
+  return result.account;
 }
 
 async function persistCheckoutState(tip: any, session: any) {
+  if (!session?.id || session.id !== tip.stripe_checkout_session_id || tip.method !== "card") {
+    return { data: tip, paid: tip.status === "paid" };
+  }
   const paid = session.payment_status === "paid";
   const failed = session.status === "expired" || session.payment_status === "unpaid" && session.status === "complete";
   const nextStatus = paid ? "paid" : failed ? "failed" : "checkout_pending";
@@ -102,16 +112,20 @@ async function persistCheckoutState(tip: any, session: any) {
     stripe_payment_intent_id: typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id || null,
     confirmed_at: paid ? new Date().toISOString() : null,
     confirmed_by: paid ? "stripe" : null,
-  }).eq("id", tip.id).select("*").single();
+  }).eq("id", tip.id).eq("method", "card").eq("stripe_checkout_session_id", session.id).select("*").maybeSingle();
   fail(error);
-  return { data, paid };
+  return { data: data ?? tip, paid };
 }
 
 export const taxiRideAftercareRouter = router({
   get: protectedProcedure.input(z.object({ rideId: z.string().uuid() })).query(async ({ ctx, input }) => {
     const ride = await rideForParticipant(input.rideId, ctx.user);
-    const [payment, tip] = await Promise.all([getPaymentForRide(input.rideId), getTipForRide(input.rideId)]);
-    return { ride, payment, tip };
+    const [payment, tip, connect] = await Promise.all([
+      getPaymentForRide(input.rideId),
+      getTipForRide(input.rideId),
+      getDriverConnectAvailability(ride.driver_id),
+    ]);
+    return { ride, payment, tip, cardTipAvailable: connect.available };
   }),
 
   createCardCheckout: protectedProcedure
@@ -188,7 +202,7 @@ export const taxiRideAftercareRouter = router({
         const { data, error } = await supabase.from("taxi_ride_tips").update({
           stripe_checkout_session_id: session.id,
           payout_status: "destination_configured",
-        }).eq("id", tipId).eq("status", "checkout_pending").select("*").single();
+        }).eq("id", tipId).eq("status", "checkout_pending").is("stripe_checkout_session_id", null).select("*").single();
         fail(error);
         return { tip: data, checkoutUrl: session.url as string };
       } catch (error) {
@@ -226,16 +240,20 @@ export const taxiRideAftercareRouter = router({
     if (ride.passenger_id !== ctx.user.openId && ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
     const tip = await getTipForRide(ride.id);
     if (!tip || tip.method !== "card" || tip.status !== "checkout_pending") return tip;
-    if (tip.stripe_checkout_session_id) {
-      const session = await stripeGet(`/checkout/sessions/${encodeURIComponent(tip.stripe_checkout_session_id)}?expand[]=payment_intent`);
+    const sessionId = tip.stripe_checkout_session_id;
+    if (sessionId) {
+      const session = await stripeGet(`/checkout/sessions/${encodeURIComponent(sessionId)}?expand[]=payment_intent`);
       if (session.payment_status === "paid") return (await persistCheckoutState(tip, session)).data;
+      if (session.status === "open") {
+        await stripePost(`/checkout/sessions/${encodeURIComponent(sessionId)}/expire`, new URLSearchParams(), `taximun-expire-tip-${sessionId}`);
+      }
     }
     const { data, error } = await supabase.from("taxi_ride_tips").update({
       status: "cancelled",
       payout_status: "cancelled",
       confirmed_at: null,
       confirmed_by: null,
-    }).eq("id", tip.id).eq("status", "checkout_pending").select("*").maybeSingle();
+    }).eq("id", tip.id).eq("status", "checkout_pending").eq("method", "card").eq("stripe_checkout_session_id", sessionId).select("*").maybeSingle();
     fail(error);
     return data ?? tip;
   }),
