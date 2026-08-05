@@ -18,6 +18,16 @@ const clearGuest = () => {
   } catch {}
 };
 
+function readRedirectValue(name: string) {
+  const search = new URLSearchParams(window.location.search);
+  const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+  return search.get(name) || hash.get(name);
+}
+
+function cleanRecoveryUrl() {
+  window.history.replaceState({}, document.title, "/auth");
+}
+
 export default function AuthReal() {
   const [role, setRole] = useState<PublicAuthRole>("passenger");
   const [mode, setMode] = useState<AuthMode>("login");
@@ -32,8 +42,19 @@ export default function AuthReal() {
   useEffect(() => {
     if (!hasSupabaseBrowserConfig()) return;
 
-    const recoveryInUrl = `${window.location.search}${window.location.hash}`.includes("type=recovery");
-    if (recoveryInUrl) setMode("recovery");
+    const redirectError = readRedirectValue("error");
+    const redirectDescription = readRedirectValue("error_description");
+    if (redirectError) {
+      setMode("forgot");
+      setError(
+        redirectDescription
+          ? decodeURIComponent(redirectDescription.replace(/\+/g, " "))
+          : "El enlace de recuperación ha caducado, ya fue utilizado o no es válido. Solicita uno nuevo."
+      );
+      cleanRecoveryUrl();
+    } else if (`${window.location.search}${window.location.hash}`.includes("type=recovery")) {
+      setMode("recovery");
+    }
 
     const { data } = supabase.auth.onAuthStateChange((event) => {
       if (event === "PASSWORD_RECOVERY") {
@@ -116,10 +137,21 @@ export default function AuthReal() {
       if (!sessionData.session) {
         throw new Error("El enlace ha caducado o no es válido. Solicita uno nuevo.");
       }
+
       const { error: updateError } = await supabase.auth.updateUser({ password });
       if (updateError) throw updateError;
-      await supabase.auth.signOut();
-      window.history.replaceState({}, document.title, "/auth");
+
+      const { error: signOutError } = await supabase.auth.signOut({ scope: "local" });
+      if (signOutError) {
+        throw new Error("La contraseña se actualizó, pero no se pudo cerrar la sesión de recuperación. Vuelve a intentarlo antes de salir de esta pantalla.");
+      }
+
+      const { data: remainingSession } = await supabase.auth.getSession();
+      if (remainingSession.session) {
+        throw new Error("La contraseña se actualizó, pero la sesión sigue abierta. Cierra la sesión manualmente antes de continuar.");
+      }
+
+      cleanRecoveryUrl();
       setPassword("");
       setConfirmPassword("");
       setMode("login");
