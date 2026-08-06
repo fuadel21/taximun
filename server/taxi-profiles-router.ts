@@ -55,6 +55,10 @@ function assertAdmin(ctx: any) {
   }
 }
 
+function normalized(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
 export const taxiProfilesRouter = router({
   getMe: protectedProcedure.query(async ({ ctx }) => {
     const { data, error } = await supabase
@@ -69,6 +73,35 @@ export const taxiProfilesRouter = router({
 
   upsertMe: protectedProcedure.input(profileInputSchema).mutation(async ({ ctx, input }) => {
     assertCanManageRole(ctx, input.role);
+
+    const { data: existing, error: existingError } = await supabase
+      .from("taxi_user_profiles")
+      .select("role,verification_status,is_verified,driver_license_number,taxi_code,plate,vehicle_model,work_zone")
+      .eq("user_id", ctx.user.openId)
+      .maybeSingle();
+
+    throwIfSupabaseError(existingError);
+
+    const professionalFieldsChanged = input.role === "driver" && (
+      normalized(existing?.driver_license_number) !== normalized(input.driverLicenseNumber)
+      || normalized(existing?.taxi_code) !== normalized(input.taxiCode)
+      || normalized(existing?.plate) !== normalized(input.plate)
+      || normalized(existing?.vehicle_model) !== normalized(input.vehicleModel)
+      || normalized(existing?.work_zone) !== normalized(input.workZone)
+    );
+
+    const preserveDriverApproval = input.role === "driver"
+      && existing?.role === "driver"
+      && existing.verification_status === "approved"
+      && existing.is_verified === true
+      && !professionalFieldsChanged;
+
+    const verificationStatus = input.role !== "driver"
+      ? "approved"
+      : preserveDriverApproval
+        ? "approved"
+        : "in_review";
+    const isVerified = input.role !== "driver" || preserveDriverApproval;
 
     const { data, error } = await supabase
       .from("taxi_user_profiles")
@@ -87,8 +120,8 @@ export const taxiProfilesRouter = router({
         plate: input.plate || null,
         vehicle_model: input.vehicleModel || null,
         work_zone: input.workZone || null,
-        verification_status: input.role === "driver" ? "in_review" : "approved",
-        is_verified: input.role === "driver" ? false : true,
+        verification_status: verificationStatus,
+        is_verified: isVerified,
       })
       .select()
       .single();
