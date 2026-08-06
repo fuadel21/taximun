@@ -147,8 +147,16 @@ export const taxiPassengerBookingRouter = router({
   }),
 
   cancelScheduled: protectedProcedure.input(z.object({ id: z.string().uuid() })).mutation(async ({ ctx, input }) => {
-    assertPassenger(ctx); const { data, error } = await supabase.from("taxi_scheduled_bookings").update({ status: "cancelled", cancelled_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", input.id).eq("passenger_id", ctx.user.openId).eq("status", "scheduled").select("id").maybeSingle();
-    fail(error); if (!data) throw new TRPCError({ code: "NOT_FOUND", message: "La reserva ya no se puede cancelar." });
-    await supabase.from("taxi_promotion_redemptions").delete().eq("scheduled_booking_id", data.id); return { success: true };
+    assertPassenger(ctx);
+    const { data, error } = await supabase.rpc("taximun_cancel_scheduled_booking", {
+      p_booking_id: input.id,
+      p_passenger_id: ctx.user.openId,
+    });
+    if (error) {
+      if (error.message.includes("BOOKING_NOT_CANCELLABLE")) throw new TRPCError({ code: "NOT_FOUND", message: "La reserva ya no se puede cancelar." });
+      throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "No se pudo cancelar la reserva de forma segura." });
+    }
+    if (!data) throw new TRPCError({ code: "NOT_FOUND", message: "La reserva ya no se puede cancelar." });
+    return { success: true };
   }),
 });
