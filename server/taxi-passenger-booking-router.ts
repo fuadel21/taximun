@@ -20,6 +20,7 @@ const bookingPayloadSchema = z.object({
 });
 
 type BookingInput = z.infer<typeof bookingPayloadSchema>;
+type CommitOperation = "create_immediate" | "create_scheduled" | "update_scheduled";
 
 function assertPassenger(ctx: any) {
   if (ctx.user?.role !== "passenger" && ctx.user?.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
@@ -40,33 +41,52 @@ async function quoteFor(ctx: any, input: BookingInput, requestedAt: Date, exclud
     excludeScheduledBookingId,
   });
 }
-function promotionError(message: string) {
-  if (message.includes("PROMOTION_TOTAL_LIMIT_REACHED")) return "El código promocional ha agotado sus usos.";
-  if (message.includes("PROMOTION_USER_LIMIT_REACHED")) return "Ya has utilizado este código el máximo de veces permitido.";
-  if (message.includes("PROMOTION_NOT_ACTIVE")) return "El código promocional ya no está activo.";
-  if (message.includes("PROMOTION_CATEGORY_NOT_ELIGIBLE")) return "El código no es válido para esta categoría.";
-  if (message.includes("PROMOTION_MINIMUM_NOT_MET")) return "El viaje no alcanza el importe mínimo de la promoción.";
-  if (message.includes("PROMOTION_TARGET_NOT_OWNED") || message.includes("PROMOTION_TARGET_INVALID")) return "No se pudo vincular la promoción con esta reserva.";
-  return "No se pudo reservar el uso del código promocional.";
+function commitError(message: string): TRPCError {
+  if (message.includes("ACTIVE_RIDE_EXISTS")) return new TRPCError({ code: "CONFLICT", message: "Ya tienes un viaje activo." });
+  if (message.includes("SCHEDULED_TOO_SOON")) return new TRPCError({ code: "BAD_REQUEST", message: "Programa la reserva con al menos 15 minutos de antelación." });
+  if (message.includes("BOOKING_NOT_EDITABLE") || message.includes("BOOKING_TARGET_REQUIRED")) return new TRPCError({ code: "NOT_FOUND", message: "La reserva ya no se puede editar." });
+  if (message.includes("PROMOTION_TOTAL_LIMIT_REACHED")) return new TRPCError({ code: "CONFLICT", message: "El código promocional ha agotado sus usos." });
+  if (message.includes("PROMOTION_USER_LIMIT_REACHED")) return new TRPCError({ code: "CONFLICT", message: "Ya has utilizado este código el máximo de veces permitido." });
+  if (message.includes("PROMOTION_NOT_ACTIVE")) return new TRPCError({ code: "CONFLICT", message: "El código promocional ya no está activo." });
+  if (message.includes("PROMOTION_CATEGORY_NOT_ELIGIBLE")) return new TRPCError({ code: "BAD_REQUEST", message: "El código no es válido para esta categoría." });
+  if (message.includes("PROMOTION_MINIMUM_NOT_MET")) return new TRPCError({ code: "BAD_REQUEST", message: "El viaje no alcanza el importe mínimo de la promoción." });
+  if (message.includes("PROMOTION_TARGET_NOT_OWNED") || message.includes("PROMOTION_TARGET_INVALID")) return new TRPCError({ code: "CONFLICT", message: "No se pudo vincular la promoción con esta reserva." });
+  return new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "No se pudo guardar la reserva de forma segura." });
 }
-async function recordRedemption(quote: any, passengerId: string, category: BookingInput["category"], target: { rideId?: string; scheduledBookingId?: string }) {
-  if (!quote.promotionId || !quote.discount) return;
-  const { error } = await supabase.rpc("taximun_reserve_promotion_redemption", {
-    p_promotion_id: quote.promotionId,
-    p_passenger_id: passengerId,
-    p_ride_id: target.rideId ?? null,
-    p_scheduled_booking_id: target.scheduledBookingId ?? null,
-    p_category: category,
-    p_subtotal: quote.subtotal,
-  });
-  if (error) throw new TRPCError({ code: "CONFLICT", message: promotionError(error.message) });
-}
-function pricedFields(quote: any) {
+function atomicPayload(ctx: any, input: BookingInput, quote: any, scheduledAt?: Date) {
   return {
-    estimated_fare: quote.total, fare_subtotal: quote.subtotal, fare_range_min: quote.lowerFare, fare_range_max: quote.upperFare,
-    estimated_duration: quote.durationMinutes, distance_km: quote.distanceKm, fare_breakdown: quote.breakdown,
-    promo_code: quote.promoCode, promo_discount: quote.discount, quote_version: quote.version, quoted_at: quote.quotedAt,
+    passenger_id: ctx.user.openId,
+    passenger_name: ctx.user.name || "Pasajero",
+    pickup_address: input.pickupAddress,
+    dropoff_address: input.dropoffAddress,
+    pickup_lat: input.pickupLat ?? null,
+    pickup_lng: input.pickupLng ?? null,
+    dropoff_lat: input.dropoffLat ?? null,
+    dropoff_lng: input.dropoffLng ?? null,
+    scheduled_at: scheduledAt?.toISOString() ?? null,
+    payment_method: input.paymentMethod,
+    service_type: serviceType(input.category),
+    service_category: input.category,
+    intermediate_stops: input.intermediateStops,
+    passenger_requirements: input.requirements,
+    fare_breakdown: quote.breakdown,
+    fare_subtotal: quote.subtotal,
+    estimated_duration: quote.durationMinutes,
+    distance_km: quote.distanceKm,
+    quote_version: quote.version,
+    quoted_at: quote.quotedAt,
   };
+}
+async function commitBooking(operation: CommitOperation, ctx: any, input: BookingInput, quote: any, scheduledAt?: Date, targetId?: string) {
+  const { data, error } = await supabase.rpc("taximun_commit_priced_booking", {
+    p_operation: operation,
+    p_payload: atomicPayload(ctx, input, quote, scheduledAt),
+    p_promotion_id: quote.promotionId ?? null,
+    p_target_id: targetId ?? null,
+  });
+  if (error) throw commitError(error.message);
+  if (!data) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "No se recibió la reserva guardada." });
+  return data;
 }
 
 export const taxiPassengerBookingRouter = router({
@@ -102,33 +122,16 @@ export const taxiPassengerBookingRouter = router({
 
   createImmediate: protectedProcedure.input(bookingPayloadSchema).mutation(async ({ ctx, input }) => {
     assertPassenger(ctx);
-    const { data: active, error: activeError } = await supabase.from("taxi_rides").select("id").eq("passenger_id", ctx.user.openId).in("status", ["pending", "assigned", "in_progress"]).limit(1).maybeSingle();
-    fail(activeError); if (active) throw new TRPCError({ code: "CONFLICT", message: "Ya tienes un viaje activo." });
     const quote = await quoteFor(ctx, input, new Date());
-    const { data, error } = await supabase.from("taxi_rides").insert({
-      passenger_id: ctx.user.openId, passenger_name: ctx.user.name || "Pasajero", pickup_address: input.pickupAddress, dropoff_address: input.dropoffAddress,
-      pickup_lat: input.pickupLat ?? null, pickup_lng: input.pickupLng ?? null, dropoff_lat: input.dropoffLat ?? null, dropoff_lng: input.dropoffLng ?? null,
-      payment_method: input.paymentMethod, service_type: serviceType(input.category), service_category: input.category,
-      intermediate_stops: input.intermediateStops, passenger_requirements: input.requirements, status: "pending", ...pricedFields(quote),
-    }).select().single();
-    fail(error);
-    try { await recordRedemption(quote, ctx.user.openId, input.category, { rideId: data.id }); } catch (redemptionError) { await supabase.from("taxi_rides").delete().eq("id", data.id).eq("status", "pending"); throw redemptionError; }
-    return data;
+    return commitBooking("create_immediate", ctx, input, quote);
   }),
 
   createScheduled: protectedProcedure.input(bookingPayloadSchema.extend({ scheduledAt: z.string().datetime() })).mutation(async ({ ctx, input }) => {
-    assertPassenger(ctx); const scheduledAt = new Date(input.scheduledAt);
+    assertPassenger(ctx);
+    const scheduledAt = new Date(input.scheduledAt);
     if (scheduledAt.getTime() < Date.now() + 15 * 60 * 1000) throw new TRPCError({ code: "BAD_REQUEST", message: "Programa la reserva con al menos 15 minutos de antelación." });
     const quote = await quoteFor(ctx, input, scheduledAt);
-    const { data, error } = await supabase.from("taxi_scheduled_bookings").insert({
-      passenger_id: ctx.user.openId, passenger_name: ctx.user.name || "Pasajero", pickup_address: input.pickupAddress, dropoff_address: input.dropoffAddress,
-      pickup_lat: input.pickupLat ?? null, pickup_lng: input.pickupLng ?? null, dropoff_lat: input.dropoffLat ?? null, dropoff_lng: input.dropoffLng ?? null,
-      scheduled_at: scheduledAt.toISOString(), service_category: input.category, payment_method: input.paymentMethod,
-      intermediate_stops: input.intermediateStops, passenger_requirements: input.requirements, status: "scheduled", ...pricedFields(quote),
-    }).select().single();
-    fail(error);
-    try { await recordRedemption(quote, ctx.user.openId, input.category, { scheduledBookingId: data.id }); } catch (redemptionError) { await supabase.from("taxi_scheduled_bookings").delete().eq("id", data.id).eq("status", "scheduled"); throw redemptionError; }
-    return data;
+    return commitBooking("create_scheduled", ctx, input, quote, scheduledAt);
   }),
 
   listScheduled: protectedProcedure.query(async ({ ctx }) => {
@@ -136,27 +139,24 @@ export const taxiPassengerBookingRouter = router({
   }),
 
   updateScheduled: protectedProcedure.input(bookingPayloadSchema.extend({ id: z.string().uuid(), scheduledAt: z.string().datetime() })).mutation(async ({ ctx, input }) => {
-    assertPassenger(ctx); const scheduledAt = new Date(input.scheduledAt);
+    assertPassenger(ctx);
+    const scheduledAt = new Date(input.scheduledAt);
     if (scheduledAt.getTime() < Date.now() + 15 * 60 * 1000) throw new TRPCError({ code: "BAD_REQUEST", message: "Programa la reserva con al menos 15 minutos de antelación." });
     const quote = await quoteFor(ctx, input, scheduledAt, input.id);
-    const { data, error } = await supabase.from("taxi_scheduled_bookings").update({
-      pickup_address: input.pickupAddress, dropoff_address: input.dropoffAddress, pickup_lat: input.pickupLat ?? null, pickup_lng: input.pickupLng ?? null,
-      dropoff_lat: input.dropoffLat ?? null, dropoff_lng: input.dropoffLng ?? null, scheduled_at: scheduledAt.toISOString(), service_category: input.category,
-      payment_method: input.paymentMethod, intermediate_stops: input.intermediateStops, passenger_requirements: input.requirements, ...pricedFields(quote), updated_at: new Date().toISOString(),
-    }).eq("id", input.id).eq("passenger_id", ctx.user.openId).eq("status", "scheduled").select().maybeSingle();
-    fail(error); if (!data) throw new TRPCError({ code: "NOT_FOUND", message: "La reserva ya no se puede editar." });
-    if (quote.promotionId && quote.discount) {
-      await recordRedemption(quote, ctx.user.openId, input.category, { scheduledBookingId: data.id });
-    } else {
-      const { error: deleteError } = await supabase.from("taxi_promotion_redemptions").delete().eq("scheduled_booking_id", data.id);
-      fail(deleteError);
-    }
-    return data;
+    return commitBooking("update_scheduled", ctx, input, quote, scheduledAt, input.id);
   }),
 
   cancelScheduled: protectedProcedure.input(z.object({ id: z.string().uuid() })).mutation(async ({ ctx, input }) => {
-    assertPassenger(ctx); const { data, error } = await supabase.from("taxi_scheduled_bookings").update({ status: "cancelled", cancelled_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", input.id).eq("passenger_id", ctx.user.openId).eq("status", "scheduled").select("id").maybeSingle();
-    fail(error); if (!data) throw new TRPCError({ code: "NOT_FOUND", message: "La reserva ya no se puede cancelar." });
-    await supabase.from("taxi_promotion_redemptions").delete().eq("scheduled_booking_id", data.id); return { success: true };
+    assertPassenger(ctx);
+    const { data, error } = await supabase.rpc("taximun_cancel_scheduled_booking", {
+      p_booking_id: input.id,
+      p_passenger_id: ctx.user.openId,
+    });
+    if (error) {
+      if (error.message.includes("BOOKING_NOT_CANCELLABLE")) throw new TRPCError({ code: "NOT_FOUND", message: "La reserva ya no se puede cancelar." });
+      throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "No se pudo cancelar la reserva de forma segura." });
+    }
+    if (!data) throw new TRPCError({ code: "NOT_FOUND", message: "La reserva ya no se puede cancelar." });
+    return { success: true };
   }),
 });
