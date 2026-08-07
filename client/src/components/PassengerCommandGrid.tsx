@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { BellRing, Car, ShieldCheck, UserRound } from "lucide-react";
+import { BellRing, CalendarClock, Car, ShieldCheck, UserRound } from "lucide-react";
 import { useLocation } from "wouter";
 
 type CommandTileProps = {
@@ -35,11 +35,12 @@ export function PassengerCommandGrid() {
         <div className="mb-5">
           <p className="text-sm font-black text-zinc-500">Taximun Pasajero</p>
           <h2 className="mt-1 text-3xl font-black tracking-[-0.04em] text-black">¿A dónde vamos?</h2>
-          <p className="mt-2 text-sm font-semibold text-zinc-500">Accesos grandes y directos para gestionar tu viaje.</p>
+          <p className="mt-2 text-sm font-semibold text-zinc-500">Precio calculado por el servidor y accesos grandes para gestionar el servicio.</p>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
-          <CommandTile featured title="Mi viaje" note="Estado, conductor y recorrido" icon={<Car className="h-8 w-8" />} onClick={() => setLocation("/passenger/rides")} />
+          <CommandTile featured title="Reservar" note="Pedir ahora o programar" icon={<CalendarClock className="h-8 w-8" />} onClick={() => setLocation("/passenger/book")} />
+          <CommandTile title="Mi viaje" note="Estado, conductor y recorrido" icon={<Car className="h-8 w-8" />} onClick={() => setLocation("/passenger/rides")} />
           <CommandTile title="Avisos" note="Mensajes y novedades" icon={<BellRing className="h-8 w-8" />} onClick={() => setLocation("/notifications")} />
           <CommandTile title="Seguridad" note="Ayuda e incidencias" icon={<ShieldCheck className="h-8 w-8" />} onClick={() => setLocation("/passenger/security")} />
           <CommandTile title="Mi perfil" note="Datos y preferencias" icon={<UserRound className="h-8 w-8" />} onClick={() => setLocation("/passenger/profile")} />
