@@ -21,6 +21,7 @@ type PaymentMethod = "cash" | "card" | "bizum";
 type RidePayment = { status?: string | null; amount_captured?: number | null };
 
 const money = (value: unknown) => `${Number(value ?? 0).toFixed(2)} €`;
+const paymentLabel = (method: PaymentMethod) => method === "card" ? "Tarjeta" : method === "bizum" ? "Bizum" : "Efectivo";
 
 export function DriverTripSettlementSection() {
   const utils = trpc.useUtils();
@@ -30,17 +31,17 @@ export function DriverTripSettlementSection() {
   });
   const active = (activeQuery.data ?? null) as ActiveRide | null;
   const [finalFare, setFinalFare] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
   const [notes, setNotes] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
     if (!active) return;
     setFinalFare(String(Number(active.estimated_fare ?? 0).toFixed(2)));
-    if (["cash", "card", "bizum"].includes(String(active.payment_method))) {
-      setPaymentMethod(active.payment_method as PaymentMethod);
-    }
   }, [active?.id]);
+
+  const rawMethod = String(active?.payment_method || "cash");
+  const paymentMethod: PaymentMethod = rawMethod === "card" || rawMethod === "bizum" ? rawMethod : "cash";
+  const paymentMethodValid = ["cash", "card", "bizum"].includes(rawMethod);
 
   const paymentQuery = trpc.system.taxiPayments.getForRide.useQuery(
     { rideId: active?.id || "00000000-0000-0000-0000-000000000000" },
@@ -69,6 +70,10 @@ export function DriverTripSettlementSection() {
       setError("Introduce un importe final válido.");
       return;
     }
+    if (!paymentMethodValid) {
+      setError("El viaje no tiene un método de pago válido. Contacta con administración.");
+      return;
+    }
 
     setError("");
     try {
@@ -86,7 +91,6 @@ export function DriverTripSettlementSection() {
       await settleMutation.mutateAsync({
         rideId: active.id,
         finalFare: amount,
-        paymentMethod,
         paymentStatus: "paid",
         notes: notes.trim() || undefined,
       });
@@ -124,25 +128,22 @@ export function DriverTripSettlementSection() {
             </div>
 
             <div>
-              <label className="mb-2 block text-xs font-black uppercase tracking-[0.12em] text-slate-500">Método cobrado</label>
-              <div className="grid grid-cols-3 gap-2">
-                {(["cash", "card", "bizum"] as PaymentMethod[]).map((method) => (
-                  <button key={method} onClick={() => setPaymentMethod(method)} disabled={busy} className={`rounded-2xl p-3 text-xs font-black ${paymentMethod === method ? "bg-slate-950 text-white" : "bg-slate-100 text-slate-700"}`}>
-                    <CreditCard className="mx-auto mb-1 h-4 w-4" />{method === "cash" ? "Efectivo" : method === "card" ? "Tarjeta" : "Bizum"}
-                  </button>
-                ))}
+              <label className="mb-2 block text-xs font-black uppercase tracking-[0.12em] text-slate-500">Método reservado por el pasajero</label>
+              <div className="flex min-h-14 items-center rounded-2xl bg-slate-950 px-4 font-black text-white">
+                <CreditCard className="mr-3 h-5 w-5" />{paymentMethodValid ? paymentLabel(paymentMethod) : "Método no válido"}
               </div>
-              {paymentMethod === "card" && <p className="mt-2 rounded-2xl bg-blue-50 p-2 text-xs font-bold text-blue-800">La tarjeta se capturará en Stripe antes de cerrar el viaje.</p>}
+              {paymentMethod === "card" && <p className="mt-2 rounded-2xl bg-blue-50 p-2 text-xs font-bold text-blue-800">La tarjeta se capturará en Stripe antes de cerrar el viaje. El método no puede cambiarse desde el cierre.</p>}
+              {paymentMethod !== "card" && <p className="mt-2 rounded-2xl bg-zinc-100 p-2 text-xs font-bold text-zinc-700">Confirma el cobro por el método elegido al reservar. El cierre no permite sustituirlo por otro.</p>}
             </div>
           </div>
 
           <Textarea value={notes} onChange={(event) => setNotes(event.target.value)} maxLength={800} className="min-h-20 rounded-2xl" placeholder="Observaciones opcionales del cierre" />
 
-          <Button onClick={submit} disabled={busy || (paymentMethod === "card" && paymentQuery.isLoading)} className="h-14 w-full rounded-2xl bg-emerald-600 text-base font-black text-white hover:bg-emerald-500">
+          <Button onClick={submit} disabled={busy || !paymentMethodValid || (paymentMethod === "card" && paymentQuery.isLoading)} className="h-14 w-full rounded-2xl bg-emerald-600 text-base font-black text-white hover:bg-emerald-500">
             {busy ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <CheckCircle2 className="mr-2 h-5 w-5" />}
             {captureMutation.isPending ? "Capturando tarjeta…" : settleMutation.isPending ? "Cerrando viaje…" : "Confirmar cobro y finalizar"}
           </Button>
-          <p className="text-center text-xs font-bold text-slate-500">La base de datos valida el pago y contabiliza el viaje de forma atómica.</p>
+          <p className="text-center text-xs font-bold text-slate-500">El importe de tarjeta y el método de pago se verifican contra los datos reales del viaje.</p>
         </CardContent>
       </Card>
     </section>

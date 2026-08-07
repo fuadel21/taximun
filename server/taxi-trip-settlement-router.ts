@@ -4,7 +4,6 @@ import { protectedProcedure, router } from "./_core/trpc";
 import { createTaxiNotification } from "./taxi-notifications-router";
 import { supabase } from "./supabase-client";
 
-const paymentMethodSchema = z.enum(["cash", "card", "bizum"]);
 const paymentStatusSchema = z.enum(["paid", "waived"]);
 
 function assertDriver(ctx: any) {
@@ -23,8 +22,7 @@ export const taxiTripSettlementRouter = router({
       z.object({
         rideId: z.string().uuid(),
         finalFare: z.number().min(0).max(9999),
-        paymentMethod: paymentMethodSchema,
-        paymentStatus: paymentStatusSchema,
+        paymentStatus: paymentStatusSchema.default("paid"),
         notes: z.string().trim().max(800).optional(),
       })
     )
@@ -33,7 +31,7 @@ export const taxiTripSettlementRouter = router({
 
       const { data: currentRide, error: rideError } = await supabase
         .from("taxi_rides")
-        .select("id,driver_id,passenger_id,status")
+        .select("id,driver_id,passenger_id,status,payment_method")
         .eq("id", input.rideId)
         .maybeSingle();
 
@@ -49,13 +47,21 @@ export const taxiTripSettlementRouter = router({
       const driverId = currentRide.driver_id;
       if (!driverId) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "El viaje no tiene conductor asignado." });
 
+      const paymentMethod = String(currentRide.payment_method || "");
+      if (!["cash", "card", "bizum"].includes(paymentMethod)) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "El viaje no tiene un método de pago válido." });
+      }
+      if (ctx.user.role !== "admin" && input.paymentStatus !== "paid") {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Solo administración puede cerrar un viaje sin cobro." });
+      }
+
       const { data, error } = await supabase.rpc("taximun_settle_trip_atomic", {
         p_ride_id: input.rideId,
         p_driver_id: driverId,
         p_settled_by: ctx.user.openId,
         p_driver_name: ctx.user.role === "driver" ? ctx.user.name || "Conductor" : "Conductor",
         p_final_fare: input.finalFare,
-        p_payment_method: input.paymentMethod,
+        p_payment_method: paymentMethod,
         p_payment_status: input.paymentStatus,
         p_notes: input.notes || null,
       });
@@ -67,7 +73,7 @@ export const taxiTripSettlementRouter = router({
       await supabase.from("taxi_activity_logs").insert({
         actor_id: ctx.user.openId,
         actor_role: ctx.user?.role === "admin" ? "admin" : "driver",
-        message: `Viaje cerrado · ${input.finalFare.toFixed(2)} € · ${input.paymentMethod}`,
+        message: `Viaje cerrado · ${input.finalFare.toFixed(2)} € · ${paymentMethod}`,
         ride_id: input.rideId,
       });
 
@@ -83,7 +89,7 @@ export const taxiTripSettlementRouter = router({
         metadata: {
           rideId: ride.id,
           finalFare: input.finalFare,
-          paymentMethod: input.paymentMethod,
+          paymentMethod,
           paymentStatus: input.paymentStatus,
         },
       });

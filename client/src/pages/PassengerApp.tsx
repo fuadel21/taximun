@@ -13,7 +13,6 @@ import "@/styles/passenger-safe-cancellation.css";
 import { CalendarClock, Car, Home, ReceiptText, ShieldCheck, UserRound } from "lucide-react";
 import { useLocation } from "wouter";
 import PassengerAdvancedBookingPage from "./PassengerAdvancedBookingPage";
-import PassengerPanelModern from "./PassengerPanelModern";
 import PassengerRidesPage from "./PassengerRidesPage";
 
 export default function PassengerApp() {
@@ -50,7 +49,7 @@ export default function PassengerApp() {
         </div>
       ) : isBook ? (
         <div className="min-h-screen bg-[#f3f3f3]">
-          <PremiumInternalHeader eyebrow="Taximun pasajero" title="Reservar viaje" description="Programa fecha y hora, elige vehículo, paradas y necesidades especiales." homePath="/passenger" icon={<CalendarClock className="h-8 w-8" />} />
+          <PremiumInternalHeader eyebrow="Taximun pasajero" title="Reservar viaje" description="Pide ahora o programa fecha y hora con precio validado por el servidor." homePath="/passenger" icon={<CalendarClock className="h-8 w-8" />} />
           <PassengerAdvancedBookingPage />
         </div>
       ) : (
@@ -58,9 +57,6 @@ export default function PassengerApp() {
           <PassengerDispatchStatus />
           <PassengerCommandGrid />
           <PassengerSafeCancellationCard />
-          <div className="passenger-panel-modern-shell">
-            <PassengerPanelModern />
-          </div>
         </div>
       )}
       <AppBottomNav
