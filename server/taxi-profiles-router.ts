@@ -10,7 +10,7 @@ const documentStatusSchema = z.enum(["pending", "approved", "rejected", "expired
 
 const profileInputSchema = z.object({
   role: profileRoleSchema,
-  fullName: z.string().min(1).max(120),
+  fullName: z.string().trim().min(1).max(120),
   phone: z.string().max(40).optional(),
   avatarUrl: z.string().url().optional().or(z.literal("")),
   preferredPaymentMethod: z.string().min(2).max(40).default("cash"),

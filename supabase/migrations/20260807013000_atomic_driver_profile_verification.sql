@@ -13,10 +13,15 @@ declare
   v_existing public.taxi_user_profiles%rowtype;
   v_saved public.taxi_user_profiles%rowtype;
   v_role text := coalesce(nullif(trim(p_payload->>'role'), ''), 'passenger');
+  v_full_name text := nullif(trim(p_payload->>'full_name'), '');
   v_professional_changed boolean := false;
   v_next_status text;
   v_next_verified boolean;
 begin
+  if v_full_name is null then
+    raise exception 'PROFILE_FULL_NAME_REQUIRED';
+  end if;
+
   select *
   into v_existing
   from public.taxi_user_profiles
@@ -42,8 +47,6 @@ begin
     v_next_status := 'in_review';
     v_next_verified := false;
   else
-    -- Preserve the latest locked state. A personal save cannot undo an admin
-    -- rejection, a document-review transition, or a concurrent approval.
     v_next_status := v_existing.verification_status;
     v_next_verified := v_existing.is_verified;
   end if;
@@ -69,7 +72,7 @@ begin
   values (
     p_user_id,
     v_role,
-    nullif(trim(p_payload->>'full_name'), ''),
+    v_full_name,
     nullif(trim(p_payload->>'phone'), ''),
     nullif(trim(p_payload->>'avatar_url'), ''),
     coalesce(nullif(trim(p_payload->>'preferred_payment_method'), ''), 'cash'),
