@@ -43,10 +43,34 @@ function authorizationAmountCents(ride: any) {
   const quotedTotal = Number(ride.estimated_fare ?? 0);
   const amount = Math.max(quotedMax, quotedTotal);
   const cents = Math.ceil(amount * 100);
-  if (!Number.isFinite(cents) || cents <= 0 || cents > 999900) {
+  if (!Number.isFinite(cents) || cents < 0 || cents > 999900) {
     throw new TRPCError({ code: "PRECONDITION_FAILED", message: "El viaje no tiene un importe válido para autorizar." });
   }
   return cents;
+}
+
+async function recordZeroCardPayment(ride: any) {
+  const now = new Date().toISOString();
+  const { data, error } = await supabase.from("taxi_payments").upsert({
+    ride_id: ride.id,
+    passenger_id: ride.passenger_id,
+    driver_id: ride.driver_id ?? null,
+    provider: "internal_zero_fare",
+    provider_payment_intent_id: null,
+    provider_charge_id: null,
+    amount_authorized: 0,
+    amount_captured: 0,
+    amount_refunded: 0,
+    platform_fee: 0,
+    driver_net: 0,
+    currency: "eur",
+    status: "captured",
+    client_secret: null,
+    captured_at: now,
+    updated_at: now,
+  }, { onConflict: "ride_id" }).select("id,ride_id,status,amount_authorized,amount_captured,currency,client_secret,provider_payment_intent_id,driver_id,captured_at").single();
+  if (error) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: error.message });
+  return data;
 }
 
 export const taxiPaymentsRouter = router({
@@ -60,6 +84,8 @@ export const taxiPaymentsRouter = router({
       if (!ride.quote_version) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "El viaje no tiene una cotización validada por el servidor." });
 
       const amountCents = authorizationAmountCents(ride);
+      if (amountCents === 0) return recordZeroCardPayment(ride);
+
       const params = new URLSearchParams({
         amount: String(amountCents),
         currency: "eur",
@@ -89,7 +115,7 @@ export const taxiPaymentsRouter = router({
     }),
 
   capture: protectedProcedure
-    .input(z.object({ rideId: z.string().uuid(), finalAmount: z.number().positive().max(9999) }))
+    .input(z.object({ rideId: z.string().uuid(), finalAmount: z.number().min(0).max(9999) }))
     .mutation(async ({ ctx, input }) => {
       const ride = await rideForUser(input.rideId, ctx.user);
       if (ctx.user.role !== "driver" && ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
@@ -98,12 +124,14 @@ export const taxiPaymentsRouter = router({
       if (ride.payment_method !== "card") throw new TRPCError({ code: "CONFLICT", message: "Este viaje no está configurado para pago por tarjeta." });
       if (!ride.driver_id) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "El viaje no tiene conductor asignado." });
 
+      const amountCents = Math.round(input.finalAmount * 100);
+      if (amountCents === 0) return recordZeroCardPayment(ride);
+
       const { data: payment, error } = await supabase.from("taxi_payments").select("*").eq("ride_id", ride.id).maybeSingle();
       if (error) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: error.message });
       if (!payment?.provider_payment_intent_id) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "No existe una autorización de tarjeta." });
-
-      const amountCents = Math.round(input.finalAmount * 100);
       if (amountCents > payment.amount_authorized) throw new TRPCError({ code: "BAD_REQUEST", message: "El importe final supera el importe autorizado." });
+
       const intent = await stripeRequest(
         `/payment_intents/${payment.provider_payment_intent_id}/capture`,
         new URLSearchParams({ amount_to_capture: String(amountCents) }),
