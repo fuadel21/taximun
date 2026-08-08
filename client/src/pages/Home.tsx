@@ -25,12 +25,30 @@ const readPendingRedirectPath = () => {
   return null;
 };
 
+const moveRecoveryCallbackToAuth = () => {
+  const raw = `${window.location.search}${window.location.hash}`;
+  const search = new URLSearchParams(window.location.search);
+  const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+  const isRecovery =
+    raw.includes("type=recovery") ||
+    search.get("recovery") === "1" ||
+    hash.get("type") === "recovery" ||
+    (Boolean(search.get("error")) && Boolean(search.get("error_description"))) ||
+    (Boolean(hash.get("error")) && Boolean(hash.get("error_description")));
+
+  if (!isRecovery) return false;
+
+  window.location.replace(`/auth${window.location.search}${window.location.hash}`);
+  return true;
+};
+
 export default function Home() {
   const { user, loading, isAuthenticated } = useAuth();
   const { t } = useI18n();
   const [, setLocation] = useLocation();
 
   useEffect(() => {
+    if (moveRecoveryCallbackToAuth()) return;
     if (loading) return;
 
     const pendingRedirectPath = readPendingRedirectPath();
