@@ -2,7 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { protectedProcedure, router } from "./_core/trpc";
 import { createTaxiNotification } from "./taxi-notifications-router";
-import { ensureCardAuthorizationForStart } from "./taxi-card-payments-router";
+import { ensureCardAuthorizationForStart, releaseCardAuthorizationForCancelledRide } from "./taxi-card-payments-router";
 import { supabase } from "./supabase-client";
 
 function assertDriver(ctx: any) {
@@ -46,7 +46,7 @@ export const taxiTripLifecycleRouter = router({
     .mutation(async ({ ctx, input }) => {
       assertDriver(ctx);
 
-      await ensureCardAuthorizationForStart(input.rideId);
+      await ensureCardAuthorizationForStart(input.rideId, ctx.user.role === "admin" ? null : ctx.user.openId);
 
       const { data, error } = await supabase.rpc("taximun_start_ride_with_pin", {
         p_ride_id: input.rideId,
@@ -102,7 +102,8 @@ export const taxiTripLifecycleRouter = router({
         });
       }
 
-      return data;
+      const paymentRelease = await releaseCardAuthorizationForCancelledRide(input.rideId);
+      return { ...data, payment_release: paymentRelease };
     }),
 
   cancelByDriver: protectedProcedure
@@ -131,6 +132,7 @@ export const taxiTripLifecycleRouter = router({
         });
       }
 
-      return data;
+      const paymentRelease = await releaseCardAuthorizationForCancelledRide(input.rideId);
+      return { ...data, payment_release: paymentRelease };
     }),
 });
