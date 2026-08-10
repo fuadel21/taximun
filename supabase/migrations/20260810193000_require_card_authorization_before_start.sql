@@ -37,6 +37,8 @@ begin
   for update;
 
   if not found
+     or v_payment.provider <> 'stripe'
+     or nullif(trim(v_payment.provider_payment_intent_id), '') is null
      or v_payment.status <> 'authorized'
      or coalesce(v_payment.amount_authorized, 0) < v_expected_cents then
     raise exception 'CARD_AUTHORIZATION_REQUIRED';
