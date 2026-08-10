@@ -84,7 +84,7 @@ export async function syncCardAuthorizationForRide(rideId: string) {
   if (!payment) return null;
   if (payment.provider === "internal_zero_fare") return payment;
   if (!payment.provider_payment_intent_id) return payment;
-  if (["authorized", "captured", "partially_refunded", "refunded", "cancelled", "failed"].includes(String(payment.status))) {
+  if (["captured", "partially_refunded", "refunded", "cancelled", "failed"].includes(String(payment.status))) {
     return payment;
   }
 
@@ -107,25 +107,21 @@ export async function syncCardAuthorizationForRide(rideId: string) {
   return updatePaymentState(payment.id, { status: "pending" });
 }
 
-export async function ensureCardAuthorizationForStart(rideId: string) {
+export async function ensureCardAuthorizationForStart(rideId: string, driverId?: string | null) {
   const { data: ride, error } = await supabase
     .from("taxi_rides")
-    .select("id,payment_method,estimated_fare,fare_range_max")
+    .select("id,driver_id,payment_method,estimated_fare,fare_range_max")
     .eq("id", rideId)
     .maybeSingle();
   if (error) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: error.message });
-  if (!ride || ride.payment_method !== "card") return;
+  if (!ride) throw new TRPCError({ code: "NOT_FOUND", message: "Viaje no encontrado." });
+  if (driverId && ride.driver_id !== driverId) throw new TRPCError({ code: "FORBIDDEN", message: "Este viaje no está asignado a tu cuenta." });
+  if (ride.payment_method !== "card") return;
+
+  const expectedCents = Math.ceil(Math.max(Number(ride.fare_range_max || 0), Number(ride.estimated_fare || 0)) * 100);
+  if (expectedCents === 0) return;
 
   const payment = await syncCardAuthorizationForRide(rideId);
-  const expectedCents = Math.ceil(Math.max(Number(ride.fare_range_max || 0), Number(ride.estimated_fare || 0)) * 100);
-
-  if (expectedCents === 0) {
-    if (!payment || Number(payment.amount_captured || 0) !== 0 || !["captured", "cancelled", "refunded"].includes(String(payment.status))) {
-      throw new TRPCError({ code: "PRECONDITION_FAILED", message: "El viaje gratuito todavía no tiene el asiento de pago validado." });
-    }
-    return;
-  }
-
   if (!payment || payment.status !== "authorized" || Number(payment.amount_authorized || 0) < expectedCents) {
     throw new TRPCError({ code: "PRECONDITION_FAILED", message: "El pasajero debe autorizar la tarjeta antes de iniciar el viaje." });
   }
