@@ -10,12 +10,28 @@ type PublicAuthRole = "passenger" | "driver";
 type AuthMode = "login" | "signup" | "forgot" | "recovery";
 
 const GUEST_ROLE_KEY = "taximun_guest_role";
+const RECOVERY_PENDING_KEY = "taximun_password_recovery_pending";
 
 const clearGuest = () => {
   try {
     localStorage.removeItem(GUEST_ROLE_KEY);
     localStorage.removeItem("manus-runtime-user-info");
   } catch {}
+};
+
+const setRecoveryPending = (pending: boolean) => {
+  try {
+    if (pending) localStorage.setItem(RECOVERY_PENDING_KEY, "1");
+    else localStorage.removeItem(RECOVERY_PENDING_KEY);
+  } catch {}
+};
+
+const hasRecoveryPending = () => {
+  try {
+    return localStorage.getItem(RECOVERY_PENDING_KEY) === "1";
+  } catch {
+    return false;
+  }
 };
 
 function readRedirectValue(name: string) {
@@ -42,9 +58,13 @@ export default function AuthReal() {
   useEffect(() => {
     if (!hasSupabaseBrowserConfig()) return;
 
+    let cancelled = false;
     const redirectError = readRedirectValue("error");
     const redirectDescription = readRedirectValue("error_description");
+    const explicitRecovery = readRedirectValue("recovery") === "1" || readRedirectValue("type") === "recovery";
+
     if (redirectError) {
+      setRecoveryPending(false);
       setMode("forgot");
       setError(
         redirectDescription
@@ -52,19 +72,34 @@ export default function AuthReal() {
           : "El enlace de recuperación ha caducado, ya fue utilizado o no es válido. Solicita uno nuevo."
       );
       cleanRecoveryUrl();
-    } else if (`${window.location.search}${window.location.hash}`.includes("type=recovery")) {
+    } else if (explicitRecovery) {
+      setRecoveryPending(true);
       setMode("recovery");
+      setSuccess("Enlace de recuperación abierto. Verificando sesión segura...");
+    } else if (hasRecoveryPending()) {
+      void supabase.auth.getSession().then(({ data }) => {
+        if (!cancelled && data.session) {
+          setMode("recovery");
+          setError("");
+          setSuccess("Enlace verificado. Escribe tu nueva contraseña.");
+        }
+      });
     }
 
-    const { data } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "PASSWORD_RECOVERY") {
+    const { data } = supabase.auth.onAuthStateChange((event, session) => {
+      const recoveryRequested = explicitRecovery || hasRecoveryPending();
+      if (event === "PASSWORD_RECOVERY" || (recoveryRequested && session && (event === "SIGNED_IN" || event === "INITIAL_SESSION"))) {
+        setRecoveryPending(true);
         setMode("recovery");
         setError("");
         setSuccess("Enlace verificado. Escribe tu nueva contraseña.");
       }
     });
 
-    return () => data.subscription.unsubscribe();
+    return () => {
+      cancelled = true;
+      data.subscription.unsubscribe();
+    };
   }, []);
 
   const resetMessages = () => {
@@ -76,6 +111,7 @@ export default function AuthReal() {
     resetMessages();
     setPassword("");
     setConfirmPassword("");
+    if (next !== "recovery") setRecoveryPending(false);
     setMode(next);
   };
 
@@ -104,11 +140,13 @@ export default function AuthReal() {
     setLoading(true);
     try {
       const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-        redirectTo: `${window.location.origin}/auth`,
+        redirectTo: `${window.location.origin}/auth?recovery=1`,
       });
       if (resetError) throw resetError;
+      setRecoveryPending(true);
       setSuccess("Te hemos enviado un enlace para cambiar la contraseña. Revisa también la carpeta de spam.");
     } catch (err) {
+      setRecoveryPending(false);
       setError(err instanceof Error ? err.message : "No se pudo enviar el correo de recuperación.");
     } finally {
       setLoading(false);
@@ -151,6 +189,7 @@ export default function AuthReal() {
         throw new Error("La contraseña se actualizó, pero la sesión sigue abierta. Cierra la sesión manualmente antes de continuar.");
       }
 
+      setRecoveryPending(false);
       cleanRecoveryUrl();
       setPassword("");
       setConfirmPassword("");
@@ -186,6 +225,7 @@ export default function AuthReal() {
     setLoading(true);
     try {
       clearGuest();
+      setRecoveryPending(false);
       if (mode === "login") {
         const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
         if (signInError) throw signInError;
