@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { AlertTriangle, ChevronDown, Loader2, XCircle } from "lucide-react";
+import { AlertTriangle, ChevronDown, Loader2, RefreshCw, XCircle } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 
@@ -11,6 +11,7 @@ type CancellationReason =
   | "duplicate_request"
   | "other";
 
+const PENDING_RELEASE_KEY = "taximun_pending_card_release_ride";
 const reasons: Array<{ id: CancellationReason; label: string }> = [
   { id: "changed_mind", label: "He cambiado de opinión" },
   { id: "wait_too_long", label: "La espera es demasiado larga" },
@@ -20,28 +21,56 @@ const reasons: Array<{ id: CancellationReason; label: string }> = [
   { id: "other", label: "Otro motivo" },
 ];
 
+function savedPendingRelease() {
+  try { return localStorage.getItem(PENDING_RELEASE_KEY); } catch { return null; }
+}
+
+function savePendingRelease(rideId: string | null) {
+  try {
+    if (rideId) localStorage.setItem(PENDING_RELEASE_KEY, rideId);
+    else localStorage.removeItem(PENDING_RELEASE_KEY);
+  } catch {}
+}
+
 export function PassengerSafeCancellationCard() {
   const utils = trpc.useUtils();
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState<CancellationReason>("changed_mind");
   const [note, setNote] = useState("");
   const [message, setMessage] = useState("");
+  const [pendingReleaseRideId, setPendingReleaseRideId] = useState<string | null>(() => savedPendingRelease());
 
   const rideQuery = trpc.system.taxiOps.passenger.getCurrentRide.useQuery(undefined, {
     retry: false,
     refetchInterval: 4000,
   });
 
+  const releaseMutation = trpc.system.taxiCardPayments.releaseAuthorization.useMutation({
+    onSuccess: () => {
+      savePendingRelease(null);
+      setPendingReleaseRideId(null);
+      setMessage("La retención de tarjeta se ha liberado correctamente.");
+    },
+    onError: (error) => setMessage(`El viaje sigue cancelado, pero no se pudo liberar la retención: ${error.message}`),
+  });
+
   const cancelMutation = trpc.system.taxiPassengerCancellation.cancel.useMutation({
     onSuccess: async (result) => {
       const release = (result as any)?.payment_release;
-      if (release?.released === false) {
-        setMessage(`Viaje cancelado. La retención de tarjeta sigue pendiente de liberar: ${release.message || "vuelve a comprobarlo más tarde."}`);
+      const cancelledRideId = String((result as any)?.id || "");
+      if (release?.released === false && cancelledRideId) {
+        savePendingRelease(cancelledRideId);
+        setPendingReleaseRideId(cancelledRideId);
+        setMessage(`Viaje cancelado. La retención de tarjeta sigue pendiente de liberar: ${release.message || "puedes reintentarlo ahora."}`);
         setOpen(true);
       } else if (release?.status === "cancelled") {
+        savePendingRelease(null);
+        setPendingReleaseRideId(null);
         setMessage("Viaje cancelado y retención de tarjeta liberada correctamente.");
         setOpen(true);
       } else {
+        savePendingRelease(null);
+        setPendingReleaseRideId(null);
         setMessage("Viaje cancelado correctamente.");
         setOpen(true);
       }
@@ -57,7 +86,7 @@ export function PassengerSafeCancellationCard() {
   const ride = rideQuery.data;
   const canCancel = ride?.status === "pending" || ride?.status === "assigned";
 
-  if (!canCancel && !message) return null;
+  if (!canCancel && !message && !pendingReleaseRideId) return null;
 
   return (
     <section className="bg-[#f7f8fb] px-4 pt-4">
@@ -84,7 +113,7 @@ export function PassengerSafeCancellationCard() {
           </button>
         )}
 
-        {(open || message) && (
+        {(open || message || pendingReleaseRideId) && (
           <div className="space-y-4 p-5">
             {canCancel && (
               <>
@@ -102,9 +131,7 @@ export function PassengerSafeCancellationCard() {
                         type="button"
                         onClick={() => setReason(item.id)}
                         className={`min-h-14 rounded-2xl border-2 px-4 py-3 text-left text-sm font-black transition active:scale-[0.98] ${
-                          active
-                            ? "border-red-600 bg-red-50 text-red-800"
-                            : "border-slate-100 bg-white text-slate-700 hover:border-slate-200"
+                          active ? "border-red-600 bg-red-50 text-red-800" : "border-slate-100 bg-white text-slate-700 hover:border-slate-200"
                         }`}
                       >
                         {item.label}
@@ -127,6 +154,20 @@ export function PassengerSafeCancellationCard() {
             )}
 
             {message && <p className="rounded-2xl bg-slate-100 p-3 text-sm font-bold text-slate-700">{message}</p>}
+            {!message && pendingReleaseRideId && <p className="rounded-2xl bg-amber-50 p-3 text-sm font-bold text-amber-900">Hay una retención de tarjeta pendiente de liberar de un viaje cancelado.</p>}
+
+            {pendingReleaseRideId && (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={releaseMutation.isPending}
+                onClick={() => releaseMutation.mutate({ rideId: pendingReleaseRideId })}
+                className="h-14 w-full rounded-2xl bg-white font-black"
+              >
+                {releaseMutation.isPending ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <RefreshCw className="mr-2 h-5 w-5" />}
+                Reintentar liberar retención
+              </Button>
+            )}
 
             {canCancel && (
               <Button
