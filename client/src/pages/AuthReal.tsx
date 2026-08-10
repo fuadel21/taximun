@@ -3,13 +3,19 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { hasSupabaseBrowserConfig, supabase, takeRecoveryCallbackProof } from "@/lib/supabase";
+import {
+  clearRecoveryCallbackVerification,
+  hasSupabaseBrowserConfig,
+  supabase,
+  verifyRecoveryCallback,
+} from "@/lib/supabase";
 import { AlertCircle, ArrowLeft, ArrowRight, Car, CheckCircle2, KeyRound, Lock, Mail, ShieldCheck, UserRound, Users } from "lucide-react";
 
 type PublicAuthRole = "passenger" | "driver";
 type AuthMode = "login" | "signup" | "forgot" | "recovery";
 
 const GUEST_ROLE_KEY = "taximun_guest_role";
+const RECOVERY_RETRY_SECONDS = 60;
 
 const clearGuest = () => {
   try {
@@ -28,6 +34,29 @@ function cleanRecoveryUrl() {
   window.history.replaceState({}, document.title, "/auth");
 }
 
+function rawErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === "object" && "message" in error) {
+    return String((error as { message?: unknown }).message || "");
+  }
+  return "";
+}
+
+function friendlyRecoverySendError(error: unknown) {
+  const raw = rawErrorMessage(error);
+  const normalized = raw.toLowerCase();
+
+  if (
+    normalized.includes("rate limit") ||
+    normalized.includes("too many requests") ||
+    normalized.includes("over_email_send_rate_limit")
+  ) {
+    return "Has solicitado demasiados correos de recuperación en poco tiempo. Espera antes de volver a intentarlo; el servicio de correo ha alcanzado temporalmente su límite.";
+  }
+
+  return raw || "No se pudo enviar el correo de recuperación.";
+}
+
 export default function AuthReal() {
   const [role, setRole] = useState<PublicAuthRole>("passenger");
   const [mode, setMode] = useState<AuthMode>("login");
@@ -39,6 +68,15 @@ export default function AuthReal() {
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
   const [recoveryVerified, setRecoveryVerified] = useState(false);
+  const [recoveryCooldown, setRecoveryCooldown] = useState(0);
+
+  useEffect(() => {
+    if (recoveryCooldown <= 0) return;
+    const timer = window.setTimeout(() => {
+      setRecoveryCooldown((current) => Math.max(0, current - 1));
+    }, 1000);
+    return () => window.clearTimeout(timer);
+  }, [recoveryCooldown]);
 
   useEffect(() => {
     if (!hasSupabaseBrowserConfig()) return;
@@ -47,7 +85,6 @@ export default function AuthReal() {
     const redirectError = readRedirectValue("error");
     const redirectDescription = readRedirectValue("error_description");
     const recoveryMarker = readRedirectValue("recovery") === "1" || readRedirectValue("type") === "recovery";
-    const proof = takeRecoveryCallbackProof();
 
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === "PASSWORD_RECOVERY" && session && !cancelled) {
@@ -59,6 +96,7 @@ export default function AuthReal() {
     });
 
     if (redirectError) {
+      clearRecoveryCallbackVerification();
       setRecoveryVerified(false);
       setMode("forgot");
       setError(
@@ -67,46 +105,32 @@ export default function AuthReal() {
           : "El enlace de recuperación ha caducado, ya fue utilizado o no es válido. Solicita uno nuevo."
       );
       cleanRecoveryUrl();
-    } else if (proof) {
+    } else if (recoveryMarker) {
       setMode("recovery");
       setLoading(true);
       setSuccess("Verificando de forma segura el enlace de recuperación...");
 
-      void (async () => {
-        try {
-          const result = proof.kind === "pkce"
-            ? await supabase.auth.exchangeCodeForSession(proof.code)
-            : await supabase.auth.setSession({
-                access_token: proof.accessToken,
-                refresh_token: proof.refreshToken,
-              });
+      void verifyRecoveryCallback().then((result) => {
+        if (cancelled) return;
 
-          if (result.error || !result.data.session) {
-            throw result.error || new Error("No se pudo validar la sesión de recuperación.");
-          }
-
-          if (cancelled) return;
-          setRecoveryVerified(true);
-          setMode("recovery");
-          setError("");
-          setSuccess("Enlace verificado. Escribe tu nueva contraseña.");
-          cleanRecoveryUrl();
-        } catch {
-          if (cancelled) return;
+        clearRecoveryCallbackVerification();
+        if (!result.ok) {
           setRecoveryVerified(false);
           setMode("forgot");
           setSuccess("");
           setError("El enlace de recuperación ha caducado, ya fue utilizado o no es válido. Solicita uno nuevo.");
           cleanRecoveryUrl();
-        } finally {
-          if (!cancelled) setLoading(false);
+          setLoading(false);
+          return;
         }
-      })();
-    } else if (recoveryMarker) {
-      setRecoveryVerified(false);
-      setMode("forgot");
-      setError("No se pudo verificar el enlace de recuperación. Solicita uno nuevo.");
-      cleanRecoveryUrl();
+
+        setRecoveryVerified(true);
+        setMode("recovery");
+        setError("");
+        setSuccess("Enlace verificado. Escribe tu nueva contraseña.");
+        cleanRecoveryUrl();
+        setLoading(false);
+      });
     }
 
     return () => {
@@ -125,6 +149,7 @@ export default function AuthReal() {
     setPassword("");
     setConfirmPassword("");
     if (mode === "recovery" && next !== "recovery") {
+      clearRecoveryCallbackVerification();
       setRecoveryVerified(false);
       void supabase.auth.signOut({ scope: "local" });
       cleanRecoveryUrl();
@@ -149,6 +174,10 @@ export default function AuthReal() {
   const handleForgotPassword = async () => {
     resetMessages();
     if (!validateConfig()) return;
+    if (recoveryCooldown > 0) {
+      setError(`Espera ${recoveryCooldown} segundos antes de solicitar otro enlace.`);
+      return;
+    }
     if (!email.trim()) {
       setError("Introduce el correo de tu cuenta.");
       return;
@@ -160,9 +189,14 @@ export default function AuthReal() {
         redirectTo: `${window.location.origin}/auth?recovery=1`,
       });
       if (resetError) throw resetError;
+      setRecoveryCooldown(RECOVERY_RETRY_SECONDS);
       setSuccess("Te hemos enviado un enlace para cambiar la contraseña. Revisa también la carpeta de spam.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo enviar el correo de recuperación.");
+      const message = friendlyRecoverySendError(err);
+      if (message.includes("demasiados correos")) {
+        setRecoveryCooldown(RECOVERY_RETRY_SECONDS);
+      }
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -209,6 +243,7 @@ export default function AuthReal() {
         throw new Error("La contraseña se actualizó, pero la sesión sigue abierta. Cierra la sesión manualmente antes de continuar.");
       }
 
+      clearRecoveryCallbackVerification();
       setRecoveryVerified(false);
       cleanRecoveryUrl();
       setPassword("");
@@ -245,6 +280,7 @@ export default function AuthReal() {
     setLoading(true);
     try {
       clearGuest();
+      clearRecoveryCallbackVerification();
       setRecoveryVerified(false);
       if (mode === "login") {
         const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
@@ -282,6 +318,10 @@ export default function AuthReal() {
       : mode === "forgot"
         ? "Te enviaremos un enlace seguro a tu correo."
         : "Crea una contraseña nueva para volver a entrar.";
+
+  const forgotButtonLabel = recoveryCooldown > 0
+    ? `Reintentar en ${recoveryCooldown}s`
+    : "Enviar enlace";
 
   return (
     <main className="min-h-screen bg-white text-black lg:grid lg:grid-cols-[1.05fr_0.95fr]">
@@ -345,10 +385,10 @@ export default function AuthReal() {
 
             <Button
               onClick={mode === "forgot" ? handleForgotPassword : mode === "recovery" ? handleUpdatePassword : handleSubmit}
-              disabled={loading || (mode === "recovery" && !recoveryVerified)}
+              disabled={loading || (mode === "recovery" && !recoveryVerified) || (mode === "forgot" && recoveryCooldown > 0)}
               className="min-h-14 w-full rounded-xl bg-black text-base font-black text-white hover:bg-zinc-800"
             >
-              {loading ? "Procesando..." : mode === "login" ? "Continuar" : mode === "signup" ? "Crear cuenta" : mode === "forgot" ? "Enviar enlace" : recoveryVerified ? "Guardar nueva contraseña" : "Verificando enlace..."}
+              {loading ? "Procesando..." : mode === "login" ? "Continuar" : mode === "signup" ? "Crear cuenta" : mode === "forgot" ? forgotButtonLabel : recoveryVerified ? "Guardar nueva contraseña" : "Verificando enlace..."}
               <ArrowRight className="ml-2 h-5 w-5" />
             </Button>
           </div>

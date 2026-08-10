@@ -7,6 +7,10 @@ export type RecoveryCallbackProof =
   | { kind: "pkce"; code: string }
   | { kind: "implicit"; accessToken: string; refreshToken: string };
 
+type RecoveryVerificationResult =
+  | { ok: true }
+  | { ok: false; message: string };
+
 function captureRecoveryCallback(): RecoveryCallbackProof | null {
   if (typeof window === "undefined") return null;
 
@@ -23,27 +27,13 @@ function captureRecoveryCallback(): RecoveryCallbackProof | null {
   const accessToken = search.get("access_token") || hash.get("access_token");
   const refreshToken = search.get("refresh_token") || hash.get("refresh_token");
 
-  let proof: RecoveryCallbackProof | null = null;
-  if (code) {
-    proof = { kind: "pkce", code };
-  } else if (accessToken && refreshToken) {
-    proof = { kind: "implicit", accessToken, refreshToken };
-  }
-
-  if (!proof) return null;
-
-  if (window.location.pathname !== "/auth") {
-    window.history.replaceState(
-      {},
-      document.title,
-      `/auth${window.location.search}${window.location.hash}`
-    );
-  }
-
-  return proof;
+  if (code) return { kind: "pkce", code };
+  if (accessToken && refreshToken) return { kind: "implicit", accessToken, refreshToken };
+  return null;
 }
 
 let capturedRecoveryProof = captureRecoveryCallback();
+let recoveryVerificationPromise: Promise<RecoveryVerificationResult> | null = null;
 
 if (!supabaseUrl || !supabaseAnonKey) {
   console.warn(
@@ -59,10 +49,48 @@ export const supabase = createClient(supabaseUrl || "", supabaseAnonKey || "", {
   },
 });
 
-export function takeRecoveryCallbackProof(): RecoveryCallbackProof | null {
+export function verifyRecoveryCallback(): Promise<RecoveryVerificationResult> {
+  if (recoveryVerificationPromise) return recoveryVerificationPromise;
+
   const proof = capturedRecoveryProof;
+  if (!proof) {
+    return Promise.resolve({
+      ok: false,
+      message: "No se encontró una prueba válida de recuperación.",
+    });
+  }
+
+  recoveryVerificationPromise = (async () => {
+    try {
+      const result = proof.kind === "pkce"
+        ? await supabase.auth.exchangeCodeForSession(proof.code)
+        : await supabase.auth.setSession({
+            access_token: proof.accessToken,
+            refresh_token: proof.refreshToken,
+          });
+
+      if (result.error || !result.data.session) {
+        return {
+          ok: false,
+          message: result.error?.message || "No se pudo validar la sesión de recuperación.",
+        };
+      }
+
+      return { ok: true };
+    } catch (error) {
+      return {
+        ok: false,
+        message: error instanceof Error ? error.message : "No se pudo validar la sesión de recuperación.",
+      };
+    }
+  })();
+
+  return recoveryVerificationPromise;
+}
+
+export function clearRecoveryCallbackVerification() {
   capturedRecoveryProof = null;
-  return proof;
+  recoveryVerificationPromise = null;
 }
 
 export const hasSupabaseBrowserConfig = () => Boolean(supabaseUrl && supabaseAnonKey);
