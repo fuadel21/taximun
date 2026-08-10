@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { protectedProcedure, router } from "./_core/trpc";
+import { releaseCardAuthorizationForCancelledRide } from "./taxi-card-payments-router";
 import { supabase } from "./supabase-client";
 
 const passengerCancellationReason = z.enum([
@@ -62,6 +63,7 @@ export const taxiPassengerCancellationRouter = router({
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "No se pudo cancelar el viaje." });
       }
 
-      return data;
+      const paymentRelease = await releaseCardAuthorizationForCancelledRide(input.rideId);
+      return { ...data, payment_release: paymentRelease };
     }),
 });
