@@ -16,6 +16,32 @@ function throwIfSupabaseError(error: { message: string } | null) {
   if (error) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: error.message });
 }
 
+function throwIfSettlementError(error: { message: string } | null) {
+  if (!error) return;
+  const message = String(error.message || "");
+
+  if (message.includes("CARD_PAYMENT_LEDGER_MISSING")) {
+    throw new TRPCError({ code: "PRECONDITION_FAILED", message: "No existe un registro de pago por tarjeta para este viaje." });
+  }
+  if (message.includes("CARD_PAYMENT_NOT_CAPTURED")) {
+    throw new TRPCError({ code: "PRECONDITION_FAILED", message: "El pago por tarjeta todavía no está capturado." });
+  }
+  if (message.includes("CARD_ZERO_BALANCE_NOT_READY")) {
+    throw new TRPCError({ code: "CONFLICT", message: "El viaje queda en 0 €, pero la autorización o el reembolso de tarjeta todavía no está resuelto." });
+  }
+  if (message.includes("CARD_NET_AMOUNT_MISMATCH")) {
+    throw new TRPCError({ code: "CONFLICT", message: "El saldo neto de tarjeta no coincide con el importe final del viaje." });
+  }
+  if (message.includes("CARD_PAYMENT_LEDGER_INVALID")) {
+    throw new TRPCError({ code: "CONFLICT", message: "El libro contable del pago contiene un saldo inválido y debe revisarse antes de cerrar el viaje." });
+  }
+  if (message.includes("CARD_PAYMENT_MUST_BE_PAID")) {
+    throw new TRPCError({ code: "CONFLICT", message: "Los viajes con tarjeta solo pueden cerrarse cuando el pago está resuelto." });
+  }
+
+  throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message });
+}
+
 export const taxiTripSettlementRouter = router({
   settleAndComplete: protectedProcedure
     .input(
@@ -66,7 +92,7 @@ export const taxiTripSettlementRouter = router({
         p_notes: input.notes || null,
       });
 
-      throwIfSupabaseError(error);
+      throwIfSettlementError(error);
       const ride = Array.isArray(data) ? data[0] : data;
       if (!ride) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "No se pudo cerrar el viaje." });
 

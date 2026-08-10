@@ -4,6 +4,7 @@ import { protectedProcedure, router } from "./_core/trpc";
 import { supabase } from "./supabase-client";
 
 const STRIPE_API = "https://api.stripe.com/v1";
+const PAYMENT_SUMMARY_SELECT = "id,ride_id,passenger_id,driver_id,provider,status,currency,amount_authorized,amount_captured,amount_refunded,platform_fee,driver_net,client_secret,provider_payment_intent_id,provider_charge_id,captured_at,created_at,updated_at";
 
 function stripeKey() {
   const key = process.env.STRIPE_SECRET_KEY;
@@ -49,28 +50,144 @@ function authorizationAmountCents(ride: any) {
   return cents;
 }
 
-async function recordZeroCardPayment(ride: any) {
-  const now = new Date().toISOString();
-  const { data, error } = await supabase.from("taxi_payments").upsert({
-    ride_id: ride.id,
-    passenger_id: ride.passenger_id,
-    driver_id: ride.driver_id ?? null,
-    provider: "internal_zero_fare",
-    provider_payment_intent_id: null,
-    provider_charge_id: null,
-    amount_authorized: 0,
-    amount_captured: 0,
-    amount_refunded: 0,
-    platform_fee: 0,
-    driver_net: 0,
-    currency: "eur",
-    status: "captured",
+async function paymentForRide(rideId: string) {
+  const { data, error } = await supabase
+    .from("taxi_payments")
+    .select(PAYMENT_SUMMARY_SELECT)
+    .eq("ride_id", rideId)
+    .maybeSingle();
+  if (error) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: error.message });
+  return data ?? null;
+}
+
+function authorizationResponse(payment: any) {
+  return {
+    id: payment.id,
+    ride_id: payment.ride_id,
+    status: payment.status,
+    amount_authorized: payment.amount_authorized,
+    currency: payment.currency,
+    client_secret: payment.client_secret,
+    provider_payment_intent_id: payment.provider_payment_intent_id,
+  };
+}
+
+async function updateExistingZeroBalancePayment(payment: any, ride: any, status?: string) {
+  const patch: Record<string, unknown> = {
+    driver_id: ride.driver_id ?? payment.driver_id ?? null,
     client_secret: null,
-    captured_at: now,
-    updated_at: now,
-  }, { onConflict: "ride_id" }).select("id,ride_id,status,amount_authorized,amount_captured,currency,client_secret,provider_payment_intent_id,driver_id,captured_at").single();
+    updated_at: new Date().toISOString(),
+  };
+  if (status) patch.status = status;
+
+  const { data, error } = await supabase
+    .from("taxi_payments")
+    .update(patch)
+    .eq("id", payment.id)
+    .select(PAYMENT_SUMMARY_SELECT)
+    .single();
   if (error) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: error.message });
   return data;
+}
+
+async function recordZeroCardPayment(ride: any): Promise<any> {
+  const existing = await paymentForRide(ride.id);
+
+  if (!existing) {
+    const now = new Date().toISOString();
+    const { data, error } = await supabase.from("taxi_payments").insert({
+      ride_id: ride.id,
+      passenger_id: ride.passenger_id,
+      driver_id: ride.driver_id ?? null,
+      provider: "internal_zero_fare",
+      provider_payment_intent_id: null,
+      provider_charge_id: null,
+      amount_authorized: 0,
+      amount_captured: 0,
+      amount_refunded: 0,
+      platform_fee: 0,
+      driver_net: 0,
+      currency: "eur",
+      status: "captured",
+      client_secret: null,
+      captured_at: now,
+      updated_at: now,
+    }).select(PAYMENT_SUMMARY_SELECT).single();
+
+    if (error?.code === "23505") {
+      return recordZeroCardPayment(ride);
+    }
+    if (error) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: error.message });
+    return data;
+  }
+
+  const captured = Number(existing.amount_captured || 0);
+  const refunded = Number(existing.amount_refunded || 0);
+  const netPaid = captured - refunded;
+
+  if (!Number.isFinite(netPaid) || netPaid < 0) {
+    throw new TRPCError({ code: "CONFLICT", message: "El libro contable del pago no es válido para cerrar el viaje a 0 €." });
+  }
+
+  if (netPaid > 0) {
+    throw new TRPCError({
+      code: "CONFLICT",
+      message: "Ya existe un cobro de tarjeta no reembolsado. Reembolsa primero el importe pendiente antes de cerrar el viaje a 0 €.",
+    });
+  }
+
+  if (existing.provider === "internal_zero_fare") {
+    if (captured !== 0 || refunded !== 0) {
+      throw new TRPCError({ code: "CONFLICT", message: "El asiento interno de 0 € contiene importes incompatibles." });
+    }
+    return updateExistingZeroBalancePayment(existing, ride, "captured");
+  }
+
+  if (["pending", "authorized"].includes(String(existing.status))) {
+    if (!existing.provider_payment_intent_id) {
+      throw new TRPCError({
+        code: "CONFLICT",
+        message: "Existe una autorización de tarjeta incompleta sin identificador Stripe. Revisa el pago antes de cerrar el viaje a 0 €.",
+      });
+    }
+
+    try {
+      await stripeRequest(
+        `/payment_intents/${existing.provider_payment_intent_id}/cancel`,
+        new URLSearchParams(),
+        `taximun-zero-cancel-${existing.id}`
+      );
+    } catch (error) {
+      const message = error instanceof TRPCError ? error.message : "No se pudo cancelar la autorización Stripe.";
+      throw new TRPCError({
+        code: "CONFLICT",
+        message: `La autorización Stripe no se pudo cancelar. No se modificó el libro contable. ${message}`,
+      });
+    }
+
+    return updateExistingZeroBalancePayment(existing, ride, "cancelled");
+  }
+
+  if (String(existing.status) === "partially_refunded" && captured === refunded) {
+    return updateExistingZeroBalancePayment(existing, ride, "refunded");
+  }
+
+  if (String(existing.status) === "captured" && captured > 0 && captured === refunded) {
+    return updateExistingZeroBalancePayment(existing, ride, "refunded");
+  }
+
+  if (["cancelled", "failed", "refunded"].includes(String(existing.status))) {
+    return updateExistingZeroBalancePayment(existing, ride);
+  }
+
+  if (String(existing.status) === "captured" && captured === 0) {
+    return updateExistingZeroBalancePayment(existing, ride);
+  }
+
+  throw new TRPCError({
+    code: "CONFLICT",
+    message: "El pago existente no puede convertirse en un cierre de 0 € sin una cancelación o reembolso explícitos.",
+  });
 }
 
 export const taxiPaymentsRouter = router({
@@ -86,6 +203,22 @@ export const taxiPaymentsRouter = router({
       const amountCents = authorizationAmountCents(ride);
       if (amountCents === 0) return recordZeroCardPayment(ride);
 
+      const existing = await paymentForRide(ride.id);
+      if (existing) {
+        const reusable =
+          existing.provider === "stripe" &&
+          ["pending", "authorized"].includes(String(existing.status)) &&
+          Boolean(existing.provider_payment_intent_id) &&
+          Number(existing.amount_authorized || 0) === amountCents;
+
+        if (reusable) return authorizationResponse(existing);
+
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "Este viaje ya tiene un intento de pago registrado. No se sobrescribirá la trazabilidad Stripe; revisa o resuelve el pago existente antes de crear otra autorización.",
+        });
+      }
+
       const params = new URLSearchParams({
         amount: String(amountCents),
         currency: "eur",
@@ -98,7 +231,7 @@ export const taxiPaymentsRouter = router({
       params.append("payment_method_types[]", "card");
 
       const intent = await stripeRequest("/payment_intents", params, `taximun-auth-${ride.id}-${amountCents}`);
-      const { data, error } = await supabase.from("taxi_payments").upsert({
+      const { data, error } = await supabase.from("taxi_payments").insert({
         ride_id: ride.id,
         passenger_id: ride.passenger_id,
         driver_id: ride.driver_id ?? null,
@@ -109,7 +242,15 @@ export const taxiPaymentsRouter = router({
         status: intent.status === "requires_capture" ? "authorized" : "pending",
         client_secret: intent.client_secret,
         updated_at: new Date().toISOString(),
-      }, { onConflict: "ride_id" }).select("id,ride_id,status,amount_authorized,currency,client_secret,provider_payment_intent_id").single();
+      }).select("id,ride_id,status,amount_authorized,currency,client_secret,provider_payment_intent_id").single();
+
+      if (error?.code === "23505") {
+        const raced = await paymentForRide(ride.id);
+        if (raced && raced.provider === "stripe" && Number(raced.amount_authorized || 0) === amountCents) {
+          return authorizationResponse(raced);
+        }
+        throw new TRPCError({ code: "CONFLICT", message: "Otro intento de pago se registró al mismo tiempo. Recarga el estado del viaje." });
+      }
       if (error) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: error.message });
       return data;
     }),
@@ -160,14 +301,38 @@ export const taxiPaymentsRouter = router({
       if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
       const { data: payment, error } = await supabase.from("taxi_payments").select("*").eq("ride_id", input.rideId).maybeSingle();
       if (error) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: error.message });
-      if (!payment?.provider_payment_intent_id || payment.status !== "captured") throw new TRPCError({ code: "PRECONDITION_FAILED", message: "El pago no se puede reembolsar." });
+      if (!payment?.provider_payment_intent_id || !["captured", "partially_refunded"].includes(String(payment.status))) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "El pago no se puede reembolsar." });
+      }
+
       const params = new URLSearchParams({ payment_intent: payment.provider_payment_intent_id, reason: input.reason });
       if (input.amount) params.set("amount", String(Math.round(input.amount * 100)));
-      const refund = await stripeRequest("/refunds", params, `taximun-refund-${payment.id}-${input.amount ?? "full"}`);
+      const refundAttemptBase = Number(payment.amount_refunded || 0);
+      const refund = await stripeRequest(
+        "/refunds",
+        params,
+        `taximun-refund-${payment.id}-${input.amount ?? "full"}-${refundAttemptBase}`
+      );
       const refunded = Number(refund.amount || 0);
-      await supabase.from("taxi_payment_refunds").insert({ payment_id: payment.id, provider_refund_id: refund.id, amount: refunded, reason: input.reason, status: refund.status || "pending", requested_by: ctx.user.openId });
-      await supabase.from("taxi_payments").update({ status: refunded >= payment.amount_captured ? "refunded" : "partially_refunded", amount_refunded: Number(payment.amount_refunded || 0) + refunded, updated_at: new Date().toISOString() }).eq("id", payment.id);
-      return { id: refund.id, amount: refunded, status: refund.status };
+
+      const { data: updatedPayment, error: ledgerError } = await supabase.rpc("taximun_record_payment_refund_atomic", {
+        p_payment_id: payment.id,
+        p_provider_refund_id: refund.id,
+        p_amount: refunded,
+        p_reason: input.reason,
+        p_status: refund.status || "pending",
+        p_requested_by: ctx.user.openId,
+      });
+      if (ledgerError) {
+        const message = String(ledgerError.message || "");
+        if (message.includes("REFUND_EXCEEDS_CAPTURE")) {
+          throw new TRPCError({ code: "CONFLICT", message: "El reembolso supera el importe capturado registrado." });
+        }
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message });
+      }
+
+      const ledger = Array.isArray(updatedPayment) ? updatedPayment[0] : updatedPayment;
+      return { id: refund.id, amount: refunded, status: refund.status, payment: ledger ?? null };
     }),
 
   getForRide: protectedProcedure.input(z.object({ rideId: z.string().uuid() })).query(async ({ ctx, input }) => {
