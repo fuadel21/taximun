@@ -1,5 +1,6 @@
 import { AppBottomNav } from "@/components/AppBottomNav";
 import { PassengerAftercareHub } from "@/components/PassengerAftercareHub";
+import { PassengerCardAuthorization } from "@/components/PassengerCardAuthorization";
 import { PassengerCommandGrid } from "@/components/PassengerCommandGrid";
 import { PassengerDispatchStatus } from "@/components/PassengerDispatchStatus";
 import { PassengerDriverPublicProfileSection } from "@/components/PassengerDriverPublicProfileSection";
@@ -59,6 +60,7 @@ export default function PassengerApp() {
           <PassengerSafeCancellationCard />
         </div>
       )}
+      {!isProfile && !isSecurity && <PassengerCardAuthorization />}
       <AppBottomNav
         items={[
           { label: "Inicio", active: !isProfile && !isSecurity && !isRides && !isBook, icon: <Home className="h-6 w-6" />, onClick: () => setLocation("/passenger") },
