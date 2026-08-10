@@ -8,7 +8,8 @@ function moneyFromCents(value: unknown) {
   return `${(Number(value || 0) / 100).toFixed(2)} €`;
 }
 
-function statusText(status?: string | null) {
+function statusText(status?: string | null, zeroFare = false) {
+  if (zeroFare) return "Viaje sin retención";
   if (status === "authorized") return "Tarjeta autorizada";
   if (status === "captured") return "Pago capturado";
   if (status === "cancelled") return "Autorización liberada";
@@ -26,15 +27,16 @@ export function PassengerCardAuthorization() {
   });
   const ride = rideQuery.data as any;
   const isCardRide = Boolean(ride?.id && ride?.payment_method === "card" && ["pending", "assigned", "in_progress"].includes(String(ride?.status)));
+  const zeroFare = isCardRide && Math.max(Number(ride?.fare_range_max || 0), Number(ride?.estimated_fare || 0)) <= 0;
 
   const configQuery = trpc.system.taxiCardPayments.getClientConfig.useQuery(undefined, {
-    enabled: isCardRide,
+    enabled: isCardRide && !zeroFare,
     retry: false,
     staleTime: 60_000,
   });
   const paymentQuery = trpc.system.taxiPayments.getForRide.useQuery(
     { rideId: ride?.id || "00000000-0000-0000-0000-000000000000" },
-    { enabled: isCardRide, retry: false, refetchInterval: 5000 }
+    { enabled: isCardRide && !zeroFare, retry: false, refetchInterval: 5000 }
   );
 
   const createAuthorization = trpc.system.taxiPayments.createAuthorization.useMutation();
@@ -49,12 +51,11 @@ export function PassengerCardAuthorization() {
 
   const payment = paymentQuery.data as any;
   const authorized = payment?.status === "authorized";
-  const zeroValidated = payment?.status === "captured" && Number(payment?.amount_authorized || 0) === 0;
-  const ready = authorized || zeroValidated;
+  const ready = zeroFare || authorized;
   const busy = createAuthorization.isPending || syncAuthorization.isPending;
 
   useEffect(() => {
-    if (!isCardRide || payment?.status !== "pending" || syncingRideRef.current === ride.id) return;
+    if (!isCardRide || zeroFare || payment?.status !== "pending" || syncingRideRef.current === ride.id) return;
     syncingRideRef.current = ride.id;
     void syncAuthorization.mutateAsync({ rideId: ride.id })
       .then(async () => {
@@ -66,10 +67,10 @@ export function PassengerCardAuthorization() {
           if (syncingRideRef.current === ride.id) syncingRideRef.current = null;
         }, 4000);
       });
-  }, [isCardRide, payment?.status, ride?.id]);
+  }, [isCardRide, zeroFare, payment?.status, ride?.id]);
 
   useEffect(() => {
-    if (!open || !configQuery.data?.publishableKey || !cardHostRef.current || cardElementRef.current) return;
+    if (!open || zeroFare || !configQuery.data?.publishableKey || !cardHostRef.current || cardElementRef.current) return;
     let cancelled = false;
 
     void loadStripeBrowser(configQuery.data.publishableKey)
@@ -99,14 +100,14 @@ export function PassengerCardAuthorization() {
       cardElementRef.current = null;
       setStripe(null);
     };
-  }, [open, configQuery.data?.publishableKey]);
+  }, [open, zeroFare, configQuery.data?.publishableKey]);
 
   if (!isCardRide) return null;
 
   const authorize = async () => {
     setError("");
     setMessage("");
-    if (!ride?.id) return;
+    if (!ride?.id || zeroFare) return;
     if (!configQuery.data?.configured || !configQuery.data.publishableKey) {
       setError("El pago con tarjeta todavía no está configurado en el servidor.");
       return;
@@ -118,13 +119,6 @@ export function PassengerCardAuthorization() {
 
     try {
       const authorization = await createAuthorization.mutateAsync({ rideId: ride.id });
-      if (Number((authorization as any)?.amount_authorized || 0) === 0 && (authorization as any)?.status === "captured") {
-        setMessage("El viaje queda en 0 €. No hace falta retener ningún importe en la tarjeta.");
-        await paymentQuery.refetch();
-        setOpen(false);
-        return;
-      }
-
       const clientSecret = (authorization as any)?.client_secret;
       if (!clientSecret) throw new Error("Stripe no devolvió una autorización utilizable.");
 
@@ -159,11 +153,13 @@ export function PassengerCardAuthorization() {
             </span>
             <div>
               <p className="text-sm font-black text-zinc-500">Pago del viaje</p>
-              <h2 className="text-xl font-black">{statusText(payment?.status)}</h2>
+              <h2 className="text-xl font-black">{statusText(payment?.status, zeroFare)}</h2>
               <p className="mt-1 text-sm font-semibold text-zinc-500">
-                {ready
-                  ? `Autorizado: ${moneyFromCents(payment?.amount_authorized)}. La captura se hace al cerrar el servicio.`
-                  : "Autoriza la tarjeta antes de que el conductor pueda iniciar el viaje."}
+                {zeroFare
+                  ? "El total es 0 €. No hace falta bloquear ningún importe en la tarjeta."
+                  : authorized
+                    ? `Autorizado: ${moneyFromCents(payment?.amount_authorized)}. La captura se hace al cerrar el servicio.`
+                    : "Autoriza la tarjeta antes de que el conductor pueda iniciar el viaje."}
               </p>
             </div>
           </div>
@@ -171,7 +167,7 @@ export function PassengerCardAuthorization() {
         </div>
 
         {message && <div className="mt-4 rounded-2xl bg-emerald-50 p-3 text-sm font-bold text-emerald-800">{message}</div>}
-        {(error || configQuery.error || paymentQuery.error) && (
+        {(error || configQuery.error || paymentQuery.error) && !zeroFare && (
           <div className="mt-4 rounded-2xl bg-red-50 p-3 text-sm font-bold text-red-700">
             <AlertCircle className="mr-2 inline h-5 w-5" />
             {error || configQuery.error?.message || paymentQuery.error?.message}
@@ -203,7 +199,7 @@ export function PassengerCardAuthorization() {
           </div>
         )}
 
-        {payment?.status === "pending" && (
+        {!zeroFare && payment?.status === "pending" && (
           <Button
             type="button"
             variant="outline"
