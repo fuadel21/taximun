@@ -3,35 +3,19 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { hasSupabaseBrowserConfig, supabase } from "@/lib/supabase";
+import { hasSupabaseBrowserConfig, supabase, takeRecoveryCallbackProof } from "@/lib/supabase";
 import { AlertCircle, ArrowLeft, ArrowRight, Car, CheckCircle2, KeyRound, Lock, Mail, ShieldCheck, UserRound, Users } from "lucide-react";
 
 type PublicAuthRole = "passenger" | "driver";
 type AuthMode = "login" | "signup" | "forgot" | "recovery";
 
 const GUEST_ROLE_KEY = "taximun_guest_role";
-const RECOVERY_PENDING_KEY = "taximun_password_recovery_pending";
 
 const clearGuest = () => {
   try {
     localStorage.removeItem(GUEST_ROLE_KEY);
     localStorage.removeItem("manus-runtime-user-info");
   } catch {}
-};
-
-const setRecoveryPending = (pending: boolean) => {
-  try {
-    if (pending) localStorage.setItem(RECOVERY_PENDING_KEY, "1");
-    else localStorage.removeItem(RECOVERY_PENDING_KEY);
-  } catch {}
-};
-
-const hasRecoveryPending = () => {
-  try {
-    return localStorage.getItem(RECOVERY_PENDING_KEY) === "1";
-  } catch {
-    return false;
-  }
 };
 
 function readRedirectValue(name: string) {
@@ -54,6 +38,7 @@ export default function AuthReal() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
+  const [recoveryVerified, setRecoveryVerified] = useState(false);
 
   useEffect(() => {
     if (!hasSupabaseBrowserConfig()) return;
@@ -61,10 +46,20 @@ export default function AuthReal() {
     let cancelled = false;
     const redirectError = readRedirectValue("error");
     const redirectDescription = readRedirectValue("error_description");
-    const explicitRecovery = readRedirectValue("recovery") === "1" || readRedirectValue("type") === "recovery";
+    const recoveryMarker = readRedirectValue("recovery") === "1" || readRedirectValue("type") === "recovery";
+    const proof = takeRecoveryCallbackProof();
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "PASSWORD_RECOVERY" && session && !cancelled) {
+        setRecoveryVerified(true);
+        setMode("recovery");
+        setError("");
+        setSuccess("Enlace verificado. Escribe tu nueva contraseña.");
+      }
+    });
 
     if (redirectError) {
-      setRecoveryPending(false);
+      setRecoveryVerified(false);
       setMode("forgot");
       setError(
         redirectDescription
@@ -72,33 +67,51 @@ export default function AuthReal() {
           : "El enlace de recuperación ha caducado, ya fue utilizado o no es válido. Solicita uno nuevo."
       );
       cleanRecoveryUrl();
-    } else if (explicitRecovery) {
-      setRecoveryPending(true);
+    } else if (proof) {
       setMode("recovery");
-      setSuccess("Enlace de recuperación abierto. Verificando sesión segura...");
-    } else if (hasRecoveryPending()) {
-      void supabase.auth.getSession().then(({ data }) => {
-        if (!cancelled && data.session) {
+      setLoading(true);
+      setSuccess("Verificando de forma segura el enlace de recuperación...");
+
+      void (async () => {
+        try {
+          const result = proof.kind === "pkce"
+            ? await supabase.auth.exchangeCodeForSession(proof.code)
+            : await supabase.auth.setSession({
+                access_token: proof.accessToken,
+                refresh_token: proof.refreshToken,
+              });
+
+          if (result.error || !result.data.session) {
+            throw result.error || new Error("No se pudo validar la sesión de recuperación.");
+          }
+
+          if (cancelled) return;
+          setRecoveryVerified(true);
           setMode("recovery");
           setError("");
           setSuccess("Enlace verificado. Escribe tu nueva contraseña.");
+          cleanRecoveryUrl();
+        } catch {
+          if (cancelled) return;
+          setRecoveryVerified(false);
+          setMode("forgot");
+          setSuccess("");
+          setError("El enlace de recuperación ha caducado, ya fue utilizado o no es válido. Solicita uno nuevo.");
+          cleanRecoveryUrl();
+        } finally {
+          if (!cancelled) setLoading(false);
         }
-      });
+      })();
+    } else if (recoveryMarker) {
+      setRecoveryVerified(false);
+      setMode("forgot");
+      setError("No se pudo verificar el enlace de recuperación. Solicita uno nuevo.");
+      cleanRecoveryUrl();
     }
-
-    const { data } = supabase.auth.onAuthStateChange((event, session) => {
-      const recoveryRequested = explicitRecovery || hasRecoveryPending();
-      if (event === "PASSWORD_RECOVERY" || (recoveryRequested && session && (event === "SIGNED_IN" || event === "INITIAL_SESSION"))) {
-        setRecoveryPending(true);
-        setMode("recovery");
-        setError("");
-        setSuccess("Enlace verificado. Escribe tu nueva contraseña.");
-      }
-    });
 
     return () => {
       cancelled = true;
-      data.subscription.unsubscribe();
+      authListener.subscription.unsubscribe();
     };
   }, []);
 
@@ -111,7 +124,11 @@ export default function AuthReal() {
     resetMessages();
     setPassword("");
     setConfirmPassword("");
-    if (next !== "recovery") setRecoveryPending(false);
+    if (mode === "recovery" && next !== "recovery") {
+      setRecoveryVerified(false);
+      void supabase.auth.signOut({ scope: "local" });
+      cleanRecoveryUrl();
+    }
     setMode(next);
   };
 
@@ -143,10 +160,8 @@ export default function AuthReal() {
         redirectTo: `${window.location.origin}/auth?recovery=1`,
       });
       if (resetError) throw resetError;
-      setRecoveryPending(true);
       setSuccess("Te hemos enviado un enlace para cambiar la contraseña. Revisa también la carpeta de spam.");
     } catch (err) {
-      setRecoveryPending(false);
       setError(err instanceof Error ? err.message : "No se pudo enviar el correo de recuperación.");
     } finally {
       setLoading(false);
@@ -156,6 +171,10 @@ export default function AuthReal() {
   const handleUpdatePassword = async () => {
     resetMessages();
     if (!validateConfig()) return;
+    if (!recoveryVerified) {
+      setError("Este enlace de recuperación no está verificado. Solicita uno nuevo.");
+      return;
+    }
     if (!password || !confirmPassword) {
       setError("Escribe y confirma la nueva contraseña.");
       return;
@@ -173,6 +192,7 @@ export default function AuthReal() {
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       if (!sessionData.session) {
+        setRecoveryVerified(false);
         throw new Error("El enlace ha caducado o no es válido. Solicita uno nuevo.");
       }
 
@@ -189,7 +209,7 @@ export default function AuthReal() {
         throw new Error("La contraseña se actualizó, pero la sesión sigue abierta. Cierra la sesión manualmente antes de continuar.");
       }
 
-      setRecoveryPending(false);
+      setRecoveryVerified(false);
       cleanRecoveryUrl();
       setPassword("");
       setConfirmPassword("");
@@ -225,7 +245,7 @@ export default function AuthReal() {
     setLoading(true);
     try {
       clearGuest();
-      setRecoveryPending(false);
+      setRecoveryVerified(false);
       if (mode === "login") {
         const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
         if (signInError) throw signInError;
@@ -325,10 +345,10 @@ export default function AuthReal() {
 
             <Button
               onClick={mode === "forgot" ? handleForgotPassword : mode === "recovery" ? handleUpdatePassword : handleSubmit}
-              disabled={loading}
+              disabled={loading || (mode === "recovery" && !recoveryVerified)}
               className="min-h-14 w-full rounded-xl bg-black text-base font-black text-white hover:bg-zinc-800"
             >
-              {loading ? "Procesando..." : mode === "login" ? "Continuar" : mode === "signup" ? "Crear cuenta" : mode === "forgot" ? "Enviar enlace" : "Guardar nueva contraseña"}
+              {loading ? "Procesando..." : mode === "login" ? "Continuar" : mode === "signup" ? "Crear cuenta" : mode === "forgot" ? "Enviar enlace" : recoveryVerified ? "Guardar nueva contraseña" : "Verificando enlace..."}
               <ArrowRight className="ml-2 h-5 w-5" />
             </Button>
           </div>
