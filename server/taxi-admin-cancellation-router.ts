@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { protectedProcedure, router } from "./_core/trpc";
+import { releaseCardAuthorizationForCancelledRide } from "./taxi-card-payments-router";
 import { supabase } from "./supabase-client";
 
 const adminCancellationReason = z.enum([
@@ -83,6 +84,7 @@ export const taxiAdminCancellationRouter = router({
         }
       }
 
-      return data;
+      const paymentRelease = await releaseCardAuthorizationForCancelledRide(input.rideId);
+      return { ...data, payment_release: paymentRelease };
     }),
 });
