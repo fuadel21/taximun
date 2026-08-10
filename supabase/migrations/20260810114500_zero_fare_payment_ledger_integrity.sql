@@ -32,6 +32,10 @@ begin
     raise exception 'REFUND_REASON_INVALID';
   end if;
 
+  if v_refund_status = 'canceled' then
+    v_refund_status := 'cancelled';
+  end if;
+
   if v_refund_status not in ('pending', 'succeeded', 'failed', 'cancelled') then
     v_refund_status := 'pending';
   end if;
@@ -60,7 +64,10 @@ begin
       raise exception 'REFUND_AMOUNT_MISMATCH';
     end if;
 
-    if v_existing_refund.status <> 'succeeded' and v_refund_status = 'succeeded' then
+    -- Stripe refund terminal states must never move backwards on a stale retry.
+    if v_existing_refund.status in ('succeeded', 'failed', 'cancelled') then
+      v_refund_status := v_existing_refund.status;
+    elsif v_refund_status = 'succeeded' then
       v_should_apply_amount := true;
     end if;
 
