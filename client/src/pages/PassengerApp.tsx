@@ -26,6 +26,7 @@ export default function PassengerApp() {
 
   return (
     <div className="min-h-screen scroll-pb-[calc(8.5rem+env(safe-area-inset-bottom))] bg-[#f3f3f3] pb-[calc(8.5rem+env(safe-area-inset-bottom))] md:scroll-pb-0 md:pb-0">
+      {!isProfile && !isSecurity && <PassengerCardAuthorization />}
       {isProfile ? (
         <>
           <PremiumInternalHeader eyebrow="Taximun pasajero" title="Mi perfil" description="Gestiona tus datos, preferencias y configuración de cuenta." homePath="/passenger" icon={<UserRound className="h-8 w-8" />} />
@@ -60,7 +61,6 @@ export default function PassengerApp() {
           <PassengerSafeCancellationCard />
         </div>
       )}
-      {!isProfile && !isSecurity && <PassengerCardAuthorization />}
       <AppBottomNav
         items={[
           { label: "Inicio", active: !isProfile && !isSecurity && !isRides && !isBook, icon: <Home className="h-6 w-6" />, onClick: () => setLocation("/passenger") },
