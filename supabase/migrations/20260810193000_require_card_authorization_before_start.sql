@@ -24,20 +24,17 @@ begin
     ) * 100
   )::integer;
 
+  -- A 0 € ride does not need a Stripe hold. The existing capture(0) path
+  -- records the internal zero-fare ledger before final settlement.
+  if v_expected_cents = 0 then
+    return new;
+  end if;
+
   select *
   into v_payment
   from public.taxi_payments
   where ride_id = new.id
   for update;
-
-  if v_expected_cents = 0 then
-    if not found
-       or coalesce(v_payment.amount_captured, 0) <> 0
-       or v_payment.status not in ('captured', 'cancelled', 'refunded') then
-      raise exception 'CARD_AUTHORIZATION_REQUIRED';
-    end if;
-    return new;
-  end if;
 
   if not found
      or v_payment.status <> 'authorized'
