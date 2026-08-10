@@ -60,6 +60,18 @@ async function paymentForRide(rideId: string) {
   return data ?? null;
 }
 
+function authorizationResponse(payment: any) {
+  return {
+    id: payment.id,
+    ride_id: payment.ride_id,
+    status: payment.status,
+    amount_authorized: payment.amount_authorized,
+    currency: payment.currency,
+    client_secret: payment.client_secret,
+    provider_payment_intent_id: payment.provider_payment_intent_id,
+  };
+}
+
 async function updateExistingZeroBalancePayment(payment: any, ride: any, status?: string) {
   const patch: Record<string, unknown> = {
     driver_id: ride.driver_id ?? payment.driver_id ?? null,
@@ -78,7 +90,7 @@ async function updateExistingZeroBalancePayment(payment: any, ride: any, status?
   return data;
 }
 
-async function recordZeroCardPayment(ride: any) {
+async function recordZeroCardPayment(ride: any): Promise<any> {
   const existing = await paymentForRide(ride.id);
 
   if (!existing) {
@@ -101,6 +113,10 @@ async function recordZeroCardPayment(ride: any) {
       captured_at: now,
       updated_at: now,
     }).select(PAYMENT_SUMMARY_SELECT).single();
+
+    if (error?.code === "23505") {
+      return recordZeroCardPayment(ride);
+    }
     if (error) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: error.message });
     return data;
   }
@@ -187,6 +203,22 @@ export const taxiPaymentsRouter = router({
       const amountCents = authorizationAmountCents(ride);
       if (amountCents === 0) return recordZeroCardPayment(ride);
 
+      const existing = await paymentForRide(ride.id);
+      if (existing) {
+        const reusable =
+          existing.provider === "stripe" &&
+          ["pending", "authorized"].includes(String(existing.status)) &&
+          Boolean(existing.provider_payment_intent_id) &&
+          Number(existing.amount_authorized || 0) === amountCents;
+
+        if (reusable) return authorizationResponse(existing);
+
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "Este viaje ya tiene un intento de pago registrado. No se sobrescribirá la trazabilidad Stripe; revisa o resuelve el pago existente antes de crear otra autorización.",
+        });
+      }
+
       const params = new URLSearchParams({
         amount: String(amountCents),
         currency: "eur",
@@ -199,7 +231,7 @@ export const taxiPaymentsRouter = router({
       params.append("payment_method_types[]", "card");
 
       const intent = await stripeRequest("/payment_intents", params, `taximun-auth-${ride.id}-${amountCents}`);
-      const { data, error } = await supabase.from("taxi_payments").upsert({
+      const { data, error } = await supabase.from("taxi_payments").insert({
         ride_id: ride.id,
         passenger_id: ride.passenger_id,
         driver_id: ride.driver_id ?? null,
@@ -210,7 +242,15 @@ export const taxiPaymentsRouter = router({
         status: intent.status === "requires_capture" ? "authorized" : "pending",
         client_secret: intent.client_secret,
         updated_at: new Date().toISOString(),
-      }, { onConflict: "ride_id" }).select("id,ride_id,status,amount_authorized,currency,client_secret,provider_payment_intent_id").single();
+      }).select("id,ride_id,status,amount_authorized,currency,client_secret,provider_payment_intent_id").single();
+
+      if (error?.code === "23505") {
+        const raced = await paymentForRide(ride.id);
+        if (raced && raced.provider === "stripe" && Number(raced.amount_authorized || 0) === amountCents) {
+          return authorizationResponse(raced);
+        }
+        throw new TRPCError({ code: "CONFLICT", message: "Otro intento de pago se registró al mismo tiempo. Recarga el estado del viaje." });
+      }
       if (error) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: error.message });
       return data;
     }),
@@ -267,7 +307,12 @@ export const taxiPaymentsRouter = router({
 
       const params = new URLSearchParams({ payment_intent: payment.provider_payment_intent_id, reason: input.reason });
       if (input.amount) params.set("amount", String(Math.round(input.amount * 100)));
-      const refund = await stripeRequest("/refunds", params, `taximun-refund-${payment.id}-${input.amount ?? "full"}`);
+      const refundAttemptBase = Number(payment.amount_refunded || 0);
+      const refund = await stripeRequest(
+        "/refunds",
+        params,
+        `taximun-refund-${payment.id}-${input.amount ?? "full"}-${refundAttemptBase}`
+      );
       const refunded = Number(refund.amount || 0);
 
       const { data: updatedPayment, error: ledgerError } = await supabase.rpc("taximun_record_payment_refund_atomic", {
