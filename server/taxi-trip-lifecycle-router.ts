@@ -2,6 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { protectedProcedure, router } from "./_core/trpc";
 import { createTaxiNotification } from "./taxi-notifications-router";
+import { ensureCardAuthorizationForStart, releaseCardAuthorizationForCancelledRide } from "./taxi-card-payments-router";
 import { supabase } from "./supabase-client";
 
 function assertDriver(ctx: any) {
@@ -15,6 +16,7 @@ function fail(error: { message: string } | null) {
   const message = String(error.message || "");
   if (message.includes("INVALID_PICKUP_PIN")) throw new TRPCError({ code: "UNAUTHORIZED", message: "El PIN de recogida no es correcto." });
   if (message.includes("DRIVER_NOT_ARRIVED")) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Primero debes marcar que has llegado al punto de recogida." });
+  if (message.includes("CARD_AUTHORIZATION_REQUIRED")) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "El pasajero debe autorizar la tarjeta antes de iniciar el viaje." });
   if (message.includes("RIDE_NOT_ASSIGNED")) throw new TRPCError({ code: "CONFLICT", message: "El viaje ya no está pendiente de inicio." });
   if (message.includes("RIDE_NOT_FOUND")) throw new TRPCError({ code: "NOT_FOUND", message: "El viaje ya no existe." });
   if (message.includes("DRIVER_MISMATCH")) throw new TRPCError({ code: "FORBIDDEN", message: "Este viaje no está asignado a tu cuenta." });
@@ -43,6 +45,9 @@ export const taxiTripLifecycleRouter = router({
     .input(z.object({ rideId: z.string().uuid(), pickupPin: z.string().trim().length(4).regex(/^[A-F0-9]{4}$/i) }))
     .mutation(async ({ ctx, input }) => {
       assertDriver(ctx);
+
+      await ensureCardAuthorizationForStart(input.rideId, ctx.user.role === "admin" ? null : ctx.user.openId);
+
       const { data, error } = await supabase.rpc("taximun_start_ride_with_pin", {
         p_ride_id: input.rideId,
         p_driver_id: ctx.user.openId,
@@ -97,7 +102,8 @@ export const taxiTripLifecycleRouter = router({
         });
       }
 
-      return data;
+      const paymentRelease = await releaseCardAuthorizationForCancelledRide(input.rideId);
+      return { ...data, payment_release: paymentRelease };
     }),
 
   cancelByDriver: protectedProcedure
@@ -126,6 +132,7 @@ export const taxiTripLifecycleRouter = router({
         });
       }
 
-      return data;
+      const paymentRelease = await releaseCardAuthorizationForCancelledRide(input.rideId);
+      return { ...data, payment_release: paymentRelease };
     }),
 });

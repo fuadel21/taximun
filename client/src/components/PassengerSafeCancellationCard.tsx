@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { AlertTriangle, ChevronDown, Loader2, XCircle } from "lucide-react";
+import { AlertTriangle, ChevronDown, Loader2, RefreshCw, XCircle } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 
@@ -11,6 +11,7 @@ type CancellationReason =
   | "duplicate_request"
   | "other";
 
+const PENDING_RELEASE_KEY = "taximun_pending_card_release_ride";
 const reasons: Array<{ id: CancellationReason; label: string }> = [
   { id: "changed_mind", label: "He cambiado de opinión" },
   { id: "wait_too_long", label: "La espera es demasiado larga" },
@@ -20,22 +21,59 @@ const reasons: Array<{ id: CancellationReason; label: string }> = [
   { id: "other", label: "Otro motivo" },
 ];
 
+function savedPendingRelease() {
+  try { return localStorage.getItem(PENDING_RELEASE_KEY); } catch { return null; }
+}
+
+function savePendingRelease(rideId: string | null) {
+  try {
+    if (rideId) localStorage.setItem(PENDING_RELEASE_KEY, rideId);
+    else localStorage.removeItem(PENDING_RELEASE_KEY);
+  } catch {}
+}
+
 export function PassengerSafeCancellationCard() {
   const utils = trpc.useUtils();
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState<CancellationReason>("changed_mind");
   const [note, setNote] = useState("");
   const [message, setMessage] = useState("");
+  const [pendingReleaseRideId, setPendingReleaseRideId] = useState<string | null>(() => savedPendingRelease());
 
   const rideQuery = trpc.system.taxiOps.passenger.getCurrentRide.useQuery(undefined, {
     retry: false,
     refetchInterval: 4000,
   });
 
+  const releaseMutation = trpc.system.taxiCardPayments.releaseAuthorization.useMutation({
+    onSuccess: () => {
+      savePendingRelease(null);
+      setPendingReleaseRideId(null);
+      setMessage("La retención de tarjeta se ha liberado correctamente.");
+    },
+    onError: (error) => setMessage(`El viaje sigue cancelado, pero no se pudo liberar la retención: ${error.message}`),
+  });
+
   const cancelMutation = trpc.system.taxiPassengerCancellation.cancel.useMutation({
-    onSuccess: async () => {
-      setMessage("Viaje cancelado correctamente.");
-      setOpen(false);
+    onSuccess: async (result) => {
+      const release = (result as any)?.payment_release;
+      const cancelledRideId = String((result as any)?.id || "");
+      if (release?.released === false && cancelledRideId) {
+        savePendingRelease(cancelledRideId);
+        setPendingReleaseRideId(cancelledRideId);
+        setMessage(`Viaje cancelado. La retención de tarjeta sigue pendiente de liberar: ${release.message || "puedes reintentarlo ahora."}`);
+        setOpen(true);
+      } else if (release?.status === "cancelled") {
+        savePendingRelease(null);
+        setPendingReleaseRideId(null);
+        setMessage("Viaje cancelado y retención de tarjeta liberada correctamente.");
+        setOpen(true);
+      } else {
+        savePendingRelease(null);
+        setPendingReleaseRideId(null);
+        setMessage("Viaje cancelado correctamente.");
+        setOpen(true);
+      }
       setNote("");
       await Promise.all([
         utils.system.taxiOps.passenger.getCurrentRide.invalidate(),
@@ -48,86 +86,106 @@ export function PassengerSafeCancellationCard() {
   const ride = rideQuery.data;
   const canCancel = ride?.status === "pending" || ride?.status === "assigned";
 
-  if (!canCancel) return null;
+  if (!canCancel && !message && !pendingReleaseRideId) return null;
 
   return (
     <section className="bg-[#f7f8fb] px-4 pt-4">
       <div className="mx-auto max-w-5xl overflow-hidden rounded-[2rem] border border-red-100 bg-white shadow-xl">
-        <button
-          type="button"
-          onClick={() => {
-            setMessage("");
-            setOpen((value) => !value);
-          }}
-          className="flex min-h-[7rem] w-full items-center justify-between gap-4 bg-gradient-to-br from-red-600 to-rose-700 p-5 text-left text-white transition active:scale-[0.99]"
-        >
-          <span className="flex items-center gap-4">
-            <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[1.35rem] bg-white/15 shadow-inner">
-              <XCircle className="h-8 w-8" />
+        {canCancel && (
+          <button
+            type="button"
+            onClick={() => {
+              setMessage("");
+              setOpen((value) => !value);
+            }}
+            className="flex min-h-[7rem] w-full items-center justify-between gap-4 bg-gradient-to-br from-red-600 to-rose-700 p-5 text-left text-white transition active:scale-[0.99]"
+          >
+            <span className="flex items-center gap-4">
+              <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[1.35rem] bg-white/15 shadow-inner">
+                <XCircle className="h-8 w-8" />
+              </span>
+              <span>
+                <span className="block text-xl font-black">Cancelar viaje</span>
+                <span className="mt-1 block text-sm font-bold text-white/80">Indica el motivo para dejar constancia.</span>
+              </span>
             </span>
-            <span>
-              <span className="block text-xl font-black">Cancelar viaje</span>
-              <span className="mt-1 block text-sm font-bold text-white/80">Indica el motivo para dejar constancia.</span>
-            </span>
-          </span>
-          <ChevronDown className={`h-6 w-6 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
-        </button>
+            <ChevronDown className={`h-6 w-6 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
+          </button>
+        )}
 
-        {open && (
+        {(open || message || pendingReleaseRideId) && (
           <div className="space-y-4 p-5">
-            <div className="rounded-2xl bg-amber-50 p-4 text-sm font-bold text-amber-900">
-              <AlertTriangle className="mr-2 inline h-5 w-5" />
-              Solo puedes cancelar antes de que el viaje haya comenzado.
-            </div>
+            {canCancel && (
+              <>
+                <div className="rounded-2xl bg-amber-50 p-4 text-sm font-bold text-amber-900">
+                  <AlertTriangle className="mr-2 inline h-5 w-5" />
+                  Solo puedes cancelar antes de que el viaje haya comenzado.
+                </div>
 
-            <div className="grid gap-2 sm:grid-cols-2">
-              {reasons.map((item) => {
-                const active = reason === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => setReason(item.id)}
-                    className={`min-h-14 rounded-2xl border-2 px-4 py-3 text-left text-sm font-black transition active:scale-[0.98] ${
-                      active
-                        ? "border-red-600 bg-red-50 text-red-800"
-                        : "border-slate-100 bg-white text-slate-700 hover:border-slate-200"
-                    }`}
-                  >
-                    {item.label}
-                  </button>
-                );
-              })}
-            </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {reasons.map((item) => {
+                    const active = reason === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => setReason(item.id)}
+                        className={`min-h-14 rounded-2xl border-2 px-4 py-3 text-left text-sm font-black transition active:scale-[0.98] ${
+                          active ? "border-red-600 bg-red-50 text-red-800" : "border-slate-100 bg-white text-slate-700 hover:border-slate-200"
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    );
+                  })}
+                </div>
 
-            <label className="block">
-              <span className="mb-2 block text-sm font-black text-slate-700">Nota opcional</span>
-              <textarea
-                value={note}
-                onChange={(event) => setNote(event.target.value.slice(0, 500))}
-                rows={3}
-                className="w-full resize-none rounded-2xl border-2 border-slate-100 bg-slate-50 p-4 text-base font-semibold outline-none transition focus:border-red-300 focus:bg-white"
-                placeholder="Añade algún detalle para administración o soporte."
-              />
-            </label>
+                <label className="block">
+                  <span className="mb-2 block text-sm font-black text-slate-700">Nota opcional</span>
+                  <textarea
+                    value={note}
+                    onChange={(event) => setNote(event.target.value.slice(0, 500))}
+                    rows={3}
+                    className="w-full resize-none rounded-2xl border-2 border-slate-100 bg-slate-50 p-4 text-base font-semibold outline-none transition focus:border-red-300 focus:bg-white"
+                    placeholder="Añade algún detalle para administración o soporte."
+                  />
+                </label>
+              </>
+            )}
 
             {message && <p className="rounded-2xl bg-slate-100 p-3 text-sm font-bold text-slate-700">{message}</p>}
+            {!message && pendingReleaseRideId && <p className="rounded-2xl bg-amber-50 p-3 text-sm font-bold text-amber-900">Hay una retención de tarjeta pendiente de liberar de un viaje cancelado.</p>}
 
-            <Button
-              type="button"
-              variant="destructive"
-              size="lg"
-              disabled={cancelMutation.isPending}
-              onClick={() => {
-                if (!ride?.id) return;
-                setMessage("");
-                cancelMutation.mutate({ rideId: ride.id, reason, note: note.trim() || undefined });
-              }}
-              className="w-full"
-            >
-              {cancelMutation.isPending ? <Loader2 className="h-5 w-5 animate-spin" /> : <XCircle className="h-5 w-5" />}
-              Confirmar cancelación
-            </Button>
+            {pendingReleaseRideId && (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={releaseMutation.isPending}
+                onClick={() => releaseMutation.mutate({ rideId: pendingReleaseRideId })}
+                className="h-14 w-full rounded-2xl bg-white font-black"
+              >
+                {releaseMutation.isPending ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <RefreshCw className="mr-2 h-5 w-5" />}
+                Reintentar liberar retención
+              </Button>
+            )}
+
+            {canCancel && (
+              <Button
+                type="button"
+                variant="destructive"
+                size="lg"
+                disabled={cancelMutation.isPending}
+                onClick={() => {
+                  if (!ride?.id) return;
+                  setMessage("");
+                  cancelMutation.mutate({ rideId: ride.id, reason, note: note.trim() || undefined });
+                }}
+                className="w-full"
+              >
+                {cancelMutation.isPending ? <Loader2 className="h-5 w-5 animate-spin" /> : <XCircle className="h-5 w-5" />}
+                Confirmar cancelación
+              </Button>
+            )}
           </div>
         )}
       </div>

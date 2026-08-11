@@ -1,5 +1,6 @@
 import { AppBottomNav } from "@/components/AppBottomNav";
 import { PassengerAftercareHub } from "@/components/PassengerAftercareHub";
+import { PassengerCardAuthorization } from "@/components/PassengerCardAuthorization";
 import { PassengerCommandGrid } from "@/components/PassengerCommandGrid";
 import { PassengerDispatchStatus } from "@/components/PassengerDispatchStatus";
 import { PassengerDriverPublicProfileSection } from "@/components/PassengerDriverPublicProfileSection";
@@ -25,6 +26,7 @@ export default function PassengerApp() {
 
   return (
     <div className="min-h-screen scroll-pb-[calc(8.5rem+env(safe-area-inset-bottom))] bg-[#f3f3f3] pb-[calc(8.5rem+env(safe-area-inset-bottom))] md:scroll-pb-0 md:pb-0">
+      {!isProfile && !isSecurity && <PassengerCardAuthorization />}
       {isProfile ? (
         <>
           <PremiumInternalHeader eyebrow="Taximun pasajero" title="Mi perfil" description="Gestiona tus datos, preferencias y configuración de cuenta." homePath="/passenger" icon={<UserRound className="h-8 w-8" />} />

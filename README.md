@@ -41,7 +41,11 @@ ADMIN_EMAILS=
 OWNER_OPEN_ID=
 OAUTH_SERVER_URL=
 VITE_APP_ID=
+STRIPE_SECRET_KEY=sk_...
+STRIPE_PUBLISHABLE_KEY=pk_...
 ```
+
+`STRIPE_SECRET_KEY` permanece solo en el servidor. `STRIPE_PUBLISHABLE_KEY` se entrega al navegador únicamente cuando un pasajero necesita autorizar una tarjeta con Stripe.js.
 
 ## Comandos
 

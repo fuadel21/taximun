@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { PassengerCancellationTrace } from "@/components/PassengerCancellationTrace";
+import { PassengerCancelledCardRelease } from "@/components/PassengerCancelledCardRelease";
 import {
   AlertCircle,
   BellRing,
@@ -223,6 +224,8 @@ function RideDetailCard({ ride, liveStatus }: { ride: TaxiRideRow; liveStatus?: 
         <PassengerCancellationTrace status={ride.status} cancelledAt={ride.cancelled_at} cancelledByRole={ride.cancelled_by_role} reason={ride.cancellation_reason} note={ride.cancellation_note} />
 
         <div className="grid gap-3 sm:grid-cols-3"><InfoRow icon={<CreditCard className="h-5 w-5" />} title="Pago" value={paymentLabel(ride.payment_method)} /><InfoRow icon={<CalendarClock className="h-5 w-5" />} title="Solicitado" value={formatDate(ride.requested_at)} /><InfoRow icon={<ShieldCheck className="h-5 w-5" />} title="Estado" value={statusLabel(ride.status)} /></div>
+
+        <PassengerCancelledCardRelease rideId={ride.id} rideStatus={ride.status} paymentMethod={ride.payment_method} />
 
         {(ride.driver_name || ride.taxi_code || ride.plate || liveStatus?.driverName || liveStatus?.taxiCode || liveStatus?.plate) && <div className="rounded-3xl bg-zinc-100 p-4 text-sm font-bold text-zinc-800"><p className="font-black">Conductor y taxi</p><p className="mt-1">{liveStatus?.driverName || ride.driver_name || "Conductor pendiente"} · {liveStatus?.taxiCode || ride.taxi_code || "Taxi pendiente"} · {liveStatus?.plate || ride.plate || "Matrícula pendiente"}</p>{liveStatus?.updatedAt && <p className="mt-1 text-xs text-zinc-500">GPS actualizado: {formatDate(liveStatus.updatedAt)}</p>}</div>}
 
