@@ -84,7 +84,7 @@ export async function syncCardAuthorizationForRide(rideId: string) {
   if (!payment) return null;
   if (payment.provider === "internal_zero_fare") return payment;
   if (!payment.provider_payment_intent_id) return payment;
-  if (["captured", "partially_refunded", "refunded", "cancelled", "failed"].includes(String(payment.status))) {
+  if (["captured", "partially_refunded", "refunded", "cancelled"].includes(String(payment.status))) {
     return payment;
   }
 
