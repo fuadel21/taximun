@@ -15,7 +15,7 @@ function statusText(status?: string | null, zeroFare = false) {
   if (status === "cancelled") return "Autorización liberada";
   if (status === "refunded") return "Pago reembolsado";
   if (status === "partially_refunded") return "Reembolso parcial";
-  if (status === "failed") return "Pago fallido";
+  if (status === "failed") return "Tarjeta rechazada";
   return "Autorización pendiente";
 }
 
@@ -118,6 +118,14 @@ export function PassengerCardAuthorization() {
     }
 
     try {
+      if (payment?.status === "failed") {
+        await syncAuthorization.mutateAsync({ rideId: ride.id });
+        const refreshed = await paymentQuery.refetch();
+        if ((refreshed.data as any)?.status === "failed") {
+          throw new Error("Stripe no permite reutilizar todavía el intento anterior. Comprueba el estado del pago e inténtalo de nuevo.");
+        }
+      }
+
       const authorization = await createAuthorization.mutateAsync({ rideId: ride.id });
       const clientSecret = (authorization as any)?.client_secret;
       if (!clientSecret) throw new Error("Stripe no devolvió una autorización utilizable.");
@@ -159,7 +167,9 @@ export function PassengerCardAuthorization() {
                   ? "El total es 0 €. No hace falta bloquear ningún importe en la tarjeta."
                   : authorized
                     ? `Autorizado: ${moneyFromCents(payment?.amount_authorized)}. La captura se hace al cerrar el servicio.`
-                    : "Autoriza la tarjeta antes de que el conductor pueda iniciar el viaje."}
+                    : payment?.status === "failed"
+                      ? "La tarjeta anterior fue rechazada. Puedes introducir otra tarjeta y volver a autorizar el mismo viaje."
+                      : "Autoriza la tarjeta antes de que el conductor pueda iniciar el viaje."}
               </p>
             </div>
           </div>
@@ -180,7 +190,7 @@ export function PassengerCardAuthorization() {
             onClick={() => { setError(""); setMessage(""); setOpen(true); }}
             className="mt-4 h-14 w-full rounded-2xl bg-black font-black text-white"
           >
-            <CreditCard className="mr-2 h-5 w-5" />Autorizar tarjeta
+            <CreditCard className="mr-2 h-5 w-5" />{payment?.status === "failed" ? "Probar otra tarjeta" : "Autorizar tarjeta"}
           </Button>
         )}
 
