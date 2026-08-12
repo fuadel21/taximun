@@ -2,7 +2,7 @@ import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { AlertTriangle, Car, CheckCircle2, Clock3, Loader2, Search, Sparkles, XCircle } from "lucide-react";
+import { AlertTriangle, Car, CheckCircle2, Clock3, Loader2, RefreshCw, Search, Sparkles, XCircle } from "lucide-react";
 
 type DispatchStatus = {
   rideId: string;
@@ -19,21 +19,59 @@ type DispatchStatus = {
 
 type CancellationReason = "changed_mind" | "wait_too_long" | "wrong_pickup" | "driver_delay" | "duplicate_request" | "other";
 
+const PENDING_RELEASE_KEY = "taximun_pending_card_release_ride";
+
+function savePendingRelease(rideId: string | null) {
+  try {
+    if (rideId) localStorage.setItem(PENDING_RELEASE_KEY, rideId);
+    else localStorage.removeItem(PENDING_RELEASE_KEY);
+  } catch {}
+}
+
 export function PassengerDispatchStatus() {
   const utils = trpc.useUtils();
   const [showCancellation, setShowCancellation] = useState(false);
   const [reason, setReason] = useState<CancellationReason>("changed_mind");
   const [note, setNote] = useState("");
   const [actionError, setActionError] = useState("");
+  const [releaseMessage, setReleaseMessage] = useState("");
+  const [pendingReleaseRideId, setPendingReleaseRideId] = useState<string | null>(null);
 
   const query = trpc.system.taxiRideOffers.passenger.getDispatchStatus.useQuery(undefined, {
     retry: false,
     refetchInterval: 2000,
     refetchOnWindowFocus: true,
   });
+
+  const releaseAuthorization = trpc.system.taxiCardPayments.releaseAuthorization.useMutation({
+    onSuccess: () => {
+      savePendingRelease(null);
+      setPendingReleaseRideId(null);
+      setReleaseMessage("La retención de tarjeta se ha liberado correctamente.");
+    },
+    onError: (error) => setReleaseMessage(`El viaje sigue cancelado, pero la retención continúa pendiente: ${error.message}`),
+  });
+
   const cancelRide = trpc.system.taxiPassengerCancellation.cancel.useMutation({
-    onSuccess: async () => {
+    onSuccess: async (result) => {
       setActionError("");
+      const release = (result as any)?.payment_release;
+      const cancelledRideId = String((result as any)?.id || query.data?.rideId || "");
+
+      if (release?.released === false && cancelledRideId) {
+        savePendingRelease(cancelledRideId);
+        setPendingReleaseRideId(cancelledRideId);
+        setReleaseMessage(`Viaje cancelado. Stripe no pudo liberar todavía la retención: ${release.message || "puedes reintentarlo ahora."}`);
+      } else if (release?.status === "cancelled") {
+        savePendingRelease(null);
+        setPendingReleaseRideId(null);
+        setReleaseMessage("Viaje cancelado y retención de tarjeta liberada correctamente.");
+      } else {
+        savePendingRelease(null);
+        setPendingReleaseRideId(null);
+        setReleaseMessage("Viaje cancelado correctamente.");
+      }
+
       setShowCancellation(false);
       setNote("");
       await query.refetch();
@@ -44,7 +82,30 @@ export function PassengerDispatchStatus() {
   });
 
   const status = (query.data ?? null) as DispatchStatus | null;
-  if (!status) return null;
+
+  if (!status) {
+    if (!releaseMessage && !pendingReleaseRideId) return null;
+    return (
+      <section className="mx-auto max-w-5xl px-4 pt-4">
+        <div className={`rounded-3xl border p-4 shadow-sm ${pendingReleaseRideId ? "border-amber-200 bg-amber-50 text-amber-900" : "border-emerald-200 bg-emerald-50 text-emerald-900"}`}>
+          <p className="font-black">{pendingReleaseRideId ? "Retención de tarjeta pendiente" : "Cancelación completada"}</p>
+          <p className="mt-1 text-sm font-bold">{releaseMessage}</p>
+          {pendingReleaseRideId && (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={releaseAuthorization.isPending}
+              onClick={() => releaseAuthorization.mutate({ rideId: pendingReleaseRideId })}
+              className="mt-3 h-12 w-full rounded-2xl bg-white font-black"
+            >
+              {releaseAuthorization.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+              Reintentar liberar retención
+            </Button>
+          )}
+        </div>
+      </section>
+    );
+  }
 
   const assigned = status.phase === "driver_assigned";
   const waiting = status.phase === "waiting_driver_response";
@@ -69,6 +130,7 @@ export function PassengerDispatchStatus() {
   const submitCancellation = () => {
     const confirmed = window.confirm("¿Confirmas que quieres cancelar este servicio? El motivo quedará registrado.");
     if (!confirmed) return;
+    setReleaseMessage("");
     cancelRide.mutate({ rideId: status.rideId, reason, note: note.trim() || undefined });
   };
 
@@ -89,6 +151,8 @@ export function PassengerDispatchStatus() {
           </div>
           <Car className="h-5 w-5 shrink-0 opacity-60" />
         </div>
+
+        {releaseMessage && <p className="mt-3 rounded-2xl bg-white p-3 text-xs font-black text-slate-800">{releaseMessage}</p>}
 
         <Button type="button" variant="outline" onClick={() => setShowCancellation((value) => !value)} className="mt-3 h-10 w-full rounded-2xl border-white/80 bg-white font-black text-slate-800 hover:bg-white/90">
           <XCircle className="mr-2 h-4 w-4" />{showCancellation ? "Cerrar cancelación" : "Cancelar servicio"}
