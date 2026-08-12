@@ -5,6 +5,7 @@ import { supabase } from "./supabase-client";
 
 const WEBHOOK_PATH = "/api/webhooks/stripe";
 const TOLERANCE_SECONDS = 300;
+const STRIPE_API = "https://api.stripe.com/v1";
 
 function secureEqual(a: string, b: string) {
   const aa = Buffer.from(a);
@@ -31,6 +32,19 @@ function paymentStatusForIntent(status: string) {
   return "pending";
 }
 
+async function fetchCurrentPaymentIntent(intentId: string) {
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (!key) throw new Error("STRIPE_SECRET_KEY no configurada para conciliar PaymentIntent");
+  const response = await fetch(`${STRIPE_API}/payment_intents/${encodeURIComponent(intentId)}`, {
+    headers: { Authorization: `Bearer ${key}` },
+  });
+  const json = await response.json().catch(() => ({})) as any;
+  if (!response.ok) {
+    throw new Error(json?.error?.message || "No se pudo consultar el estado actual del PaymentIntent");
+  }
+  return json;
+}
+
 function connectStatusForAccount(account: any) {
   const currentlyDue = account?.requirements?.currently_due || [];
   const disabledReason = account?.requirements?.disabled_reason || null;
@@ -40,23 +54,34 @@ function connectStatusForAccount(account: any) {
   return "onboarding";
 }
 
-async function syncPaymentIntent(intent: any) {
+async function syncPaymentIntent(intent: any, eventType?: string) {
   if (intent?.metadata?.kind === "ride_tip") return;
-  const rideId = intent?.metadata?.ride_id;
-  if (!rideId || !intent?.id) return;
-  const amountCaptured = Number(intent.amount_received || 0);
+  if (!intent?.id) return;
+
+  // A payment_failed event may arrive after the same PaymentIntent was retried
+  // successfully. Reconcile Stripe's current state before allowing an old
+  // failure snapshot to downgrade an authorized/captured/cancelled payment.
+  const authoritativeIntent = eventType === "payment_intent.payment_failed"
+    ? await fetchCurrentPaymentIntent(intent.id)
+    : intent;
+
+  if (authoritativeIntent?.metadata?.kind === "ride_tip") return;
+  const rideId = authoritativeIntent?.metadata?.ride_id;
+  if (!rideId || authoritativeIntent?.id !== intent.id) return;
+
+  const amountCaptured = Number(authoritativeIntent.amount_received || 0);
   const commissionBps = Number(process.env.TAXIMUN_COMMISSION_BPS || 1500);
   const platformFee = Math.round(amountCaptured * commissionBps / 10000);
   const { error } = await supabase.from("taxi_payments").update({
-    status: paymentStatusForIntent(intent.status),
-    amount_authorized: Number(intent.amount || 0),
+    status: paymentStatusForIntent(authoritativeIntent.status),
+    amount_authorized: Number(authoritativeIntent.amount || 0),
     amount_captured: amountCaptured,
     platform_fee: platformFee,
     driver_net: Math.max(0, amountCaptured - platformFee),
-    provider_charge_id: typeof intent.latest_charge === "string" ? intent.latest_charge : null,
-    captured_at: intent.status === "succeeded" ? new Date().toISOString() : null,
+    provider_charge_id: typeof authoritativeIntent.latest_charge === "string" ? authoritativeIntent.latest_charge : null,
+    captured_at: authoritativeIntent.status === "succeeded" ? new Date().toISOString() : null,
     updated_at: new Date().toISOString(),
-  }).eq("provider_payment_intent_id", intent.id);
+  }).eq("provider_payment_intent_id", authoritativeIntent.id);
   if (error) throw error;
 }
 
@@ -246,7 +271,7 @@ async function processEvent(event: any) {
     case "payment_intent.succeeded":
     case "payment_intent.payment_failed":
     case "payment_intent.canceled":
-      await syncPaymentIntent(event.data.object);
+      await syncPaymentIntent(event.data.object, event.type);
       break;
     case "checkout.session.completed":
     case "checkout.session.async_payment_succeeded":
