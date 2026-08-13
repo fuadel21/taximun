@@ -216,7 +216,7 @@ async function reconcileTransferRecovery(paymentId: string, recoveredCustomerCen
       reversed_at: fullyReversed ? now : null,
       failure_code: null,
       failure_message: null,
-      payout_blocked_reason: fullyReversed ? reasonKey : null,
+      payout_blocked_reason: reasonKey,
       last_attempt_at: now,
       attempt_count: attemptCount,
       last_requested_by: requestedBy,
@@ -281,6 +281,7 @@ export const taxiStripeConnectRouter = router({
       if (input?.email) params.set("email", input.email);
 
       const account = await stripeRequest("/accounts", params, "POST", `taximun-connect-account-${driverId}`);
+      const connectReady = Boolean(account.charges_enabled && account.payouts_enabled);
       const { data, error: upsertError } = await supabase.from("taxi_driver_connect_accounts").upsert({
         driver_id: driverId,
         stripe_account_id: account.id,
@@ -289,7 +290,7 @@ export const taxiStripeConnectRouter = router({
         payouts_enabled: Boolean(account.payouts_enabled),
         details_submitted: Boolean(account.details_submitted),
         requirements_due: account.requirements?.currently_due || [],
-        status: account.payouts_enabled ? "enabled" : "onboarding",
+        status: connectReady ? "enabled" : account.requirements?.disabled_reason ? "restricted" : "onboarding",
         updated_at: new Date().toISOString(),
       }, { onConflict: "driver_id" }).select("*").single();
       if (upsertError) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: upsertError.message });
@@ -344,13 +345,6 @@ export const taxiStripeConnectRouter = router({
         if (!ride || ride.driver_id !== ctx.user.openId) throw new TRPCError({ code: "FORBIDDEN" });
       }
       return transferCapturedRideEarnings(input.rideId, ctx.user.openId);
-    }),
-
-  retryRecovery: protectedProcedure
-    .input(z.object({ paymentId: z.string().uuid() }))
-    .mutation(async ({ ctx, input }) => {
-      if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
-      return reconcileDriverTransferAfterRefund(input.paymentId, ctx.user.openId);
     }),
 
   getPayoutOverview: protectedProcedure.query(async ({ ctx }) => {
