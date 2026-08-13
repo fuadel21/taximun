@@ -4,6 +4,7 @@ import { taxiAdminCancellationRouter } from "../taxi-admin-cancellation-router";
 import { taxiAdminOperationsRouter } from "../taxi-admin-operations-router";
 import { taxiCardPaymentsRouter } from "../taxi-card-payments-router";
 import { taxiDriverAnalyticsRouter } from "../taxi-driver-analytics-router";
+import { taxiFinanceAdminRouter } from "../taxi-finance-admin-router";
 import { taxiJourneyValidationRouter } from "../taxi-journey-validation-router";
 import { taxiLiveTripRouter } from "../taxi-live-trip-router";
 import { taxiNotificationsRouter } from "../taxi-notifications-router";
@@ -36,6 +37,7 @@ export const systemRouter = router({
   taxiAdminOperations: taxiAdminOperationsRouter,
   taxiCardPayments: taxiCardPaymentsRouter,
   taxiDriverAnalytics: taxiDriverAnalyticsRouter,
+  taxiFinanceAdmin: taxiFinanceAdminRouter,
   taxiJourneyValidation: taxiJourneyValidationRouter,
   taxiLiveTrip: taxiLiveTripRouter,
   taxiNotifications: taxiNotificationsRouter,
