@@ -1,6 +1,10 @@
 import crypto from "crypto";
 import type { Express, Request, Response } from "express";
 import { createTaxiNotification } from "./taxi-notifications-router";
+import {
+  reconcileDriverTransferAfterLostDispute,
+  reconcileDriverTransferAfterRefund,
+} from "./taxi-stripe-connect-router";
 import { supabase } from "./supabase-client";
 
 const WEBHOOK_PATH = "/api/webhooks/stripe";
@@ -58,9 +62,6 @@ async function syncPaymentIntent(intent: any, eventType?: string) {
   if (intent?.metadata?.kind === "ride_tip") return;
   if (!intent?.id) return;
 
-  // A payment_failed event may arrive after the same PaymentIntent was retried
-  // successfully. Reconcile Stripe's current state before allowing an old
-  // failure snapshot to downgrade an authorized/captured/cancelled payment.
   const authoritativeIntent = eventType === "payment_intent.payment_failed"
     ? await fetchCurrentPaymentIntent(intent.id)
     : intent;
@@ -139,27 +140,27 @@ async function syncCheckoutTip(session: any, eventType: string, eventId: string)
 
 async function syncRefund(refund: any) {
   if (!refund?.id || !refund?.payment_intent) return;
-  const { data: payment, error: paymentError } = await supabase.from("taxi_payments").select("id,amount_captured,amount_refunded").eq("provider_payment_intent_id", refund.payment_intent).maybeSingle();
+  const { data: payment, error: paymentError } = await supabase
+    .from("taxi_payments")
+    .select("id")
+    .eq("provider_payment_intent_id", refund.payment_intent)
+    .maybeSingle();
   if (paymentError) throw paymentError;
   if (!payment) return;
-  const { error: refundError } = await supabase.from("taxi_payment_refunds").upsert({
-    payment_id: payment.id,
-    provider_refund_id: refund.id,
-    amount: Number(refund.amount || 0),
-    reason: refund.reason || "requested_by_customer",
-    status: refund.status || "pending",
-    requested_by: "stripe_webhook",
-  }, { onConflict: "provider_refund_id" });
-  if (refundError) throw refundError;
-  const { data: refunds, error: refundsError } = await supabase.from("taxi_payment_refunds").select("amount,status").eq("payment_id", payment.id).eq("status", "succeeded");
-  if (refundsError) throw refundsError;
-  const totalRefunded = (refunds || []).reduce((sum, row) => sum + Number(row.amount || 0), 0);
-  const { error: updateError } = await supabase.from("taxi_payments").update({
-    amount_refunded: totalRefunded,
-    status: totalRefunded >= Number(payment.amount_captured || 0) ? "refunded" : "partially_refunded",
-    updated_at: new Date().toISOString(),
-  }).eq("id", payment.id);
-  if (updateError) throw updateError;
+
+  const { error: ledgerError } = await supabase.rpc("taximun_record_payment_refund_atomic", {
+    p_payment_id: payment.id,
+    p_provider_refund_id: refund.id,
+    p_amount: Number(refund.amount || 0),
+    p_reason: refund.reason || "requested_by_customer",
+    p_status: refund.status || "pending",
+    p_requested_by: "stripe_webhook",
+  });
+  if (ledgerError) throw ledgerError;
+
+  if (refund.status === "succeeded") {
+    await reconcileDriverTransferAfterRefund(payment.id, "stripe_webhook");
+  }
 }
 
 async function syncConnectAccount(account: any, eventId: string) {
@@ -186,23 +187,35 @@ async function syncConnectAccount(account: any, eventId: string) {
 async function syncTransfer(transfer: any, eventType: string, eventId: string) {
   if (!transfer?.id) return;
   const now = new Date().toISOString();
+  const total = Number(transfer.amount || 0);
+  const amountReversed = Number(transfer.amount_reversed || 0);
+  const fullyReversed = Boolean(transfer.reversed) || total > 0 && amountReversed >= total;
   const patch: Record<string, unknown> = {
     updated_at: now,
     last_stripe_event_id: eventId,
     last_synced_at: now,
     failure_code: transfer?.failure_code || null,
     failure_message: transfer?.failure_message || null,
+    amount_reversed: amountReversed,
   };
-  if (eventType === "transfer.reversed" || Number(transfer.amount_reversed || 0) > 0 || transfer.reversed === true) {
+
+  const latestReversal = transfer.reversals?.data?.[0];
+  if (latestReversal?.id) {
+    patch.reversal_id = latestReversal.id;
+    patch.last_reversal_id = latestReversal.id;
+  }
+
+  if (fullyReversed) {
     patch.status = "reversed";
     patch.reversed_at = now;
-    patch.reversal_id = typeof transfer.reversals?.data?.[0]?.id === "string" ? transfer.reversals.data[0].id : null;
   } else if (eventType === "transfer.failed") {
     patch.status = "failed";
   } else {
     patch.status = "paid";
     patch.paid_at = now;
+    patch.reversed_at = null;
   }
+
   const { error } = await supabase.from("taxi_driver_transfers").update(patch).eq("stripe_transfer_id", transfer.id);
   if (error) throw error;
 }
@@ -249,20 +262,23 @@ async function syncDispute(dispute: any, eventType: string, eventId: string) {
     .single();
   if (disputeError) throw disputeError;
 
-  const transferPatch: Record<string, unknown> = {
-    dispute_id: saved.id,
-    dispute_hold: action !== "released",
-    payout_blocked_reason: action === "released" ? null : `stripe_dispute:${dispute.id}:${dispute.status || "open"}`,
-  };
-  if (action === "reverse") {
-    transferPatch.status = "reversed";
-    transferPatch.reversed_at = now;
-  }
   const { error: transferError } = await supabase
     .from("taxi_driver_transfers")
-    .update(transferPatch)
+    .update({
+      dispute_id: saved.id,
+      dispute_hold: action !== "released",
+      payout_blocked_reason: action === "released" ? null : `stripe_dispute:${dispute.id}:${dispute.status || "open"}`,
+    })
     .eq("payment_id", payment.id);
   if (transferError) throw transferError;
+
+  if (action === "reverse") {
+    await reconcileDriverTransferAfterLostDispute(
+      payment.id,
+      Number(dispute.amount || 0),
+      dispute.id
+    );
+  }
 }
 
 async function processEvent(event: any) {
