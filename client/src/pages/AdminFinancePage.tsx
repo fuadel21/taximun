@@ -32,10 +32,7 @@ export default function AdminFinancePage() {
   const attention = (overview?.attention || []) as any[];
   const connectAttention = (overview?.connectAttention || []) as any[];
   const recentTransfers = (overview?.recentTransfers || []) as any[];
-  const recentPaid = useMemo(
-    () => recentTransfers.filter((transfer) => ["paid", "reversed"].includes(String(transfer.status))).slice(0, 12),
-    [recentTransfers]
-  );
+  const recent = useMemo(() => recentTransfers.slice(0, 12), [recentTransfers]);
 
   const retry = async (paymentId: string) => {
     setWorkingPayment(paymentId);
@@ -80,11 +77,12 @@ export default function AdminFinancePage() {
         </section>
 
         {summary && (
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
             <Metric icon={<CreditCard className="h-5 w-5" />} label="Transferencias" value={String(summary.transferCount || 0)} />
             <Metric icon={<Banknote className="h-5 w-5" />} label="Enviado a Connect" value={moneyCents(summary.totalTransferred)} />
             <Metric icon={<RotateCcw className="h-5 w-5" />} label="Recuperado" value={moneyCents(summary.totalReversed)} />
-            <Metric icon={<ShieldAlert className="h-5 w-5" />} label="Requieren atención" value={String(summary.attentionCount || 0)} warning={Number(summary.attentionCount || 0) > 0} />
+            <Metric icon={<ShieldAlert className="h-5 w-5" />} label="Recuperación pendiente" value={String(summary.attentionCount || 0)} warning={Number(summary.attentionCount || 0) > 0} />
+            <Metric icon={<AlertTriangle className="h-5 w-5" />} label="Transferencias fallidas" value={String(summary.failedTransferCount || 0)} warning={Number(summary.failedTransferCount || 0) > 0} />
             <Metric icon={<WalletCards className="h-5 w-5" />} label="Connect pendientes" value={String(summary.connectAttentionCount || 0)} warning={Number(summary.connectAttentionCount || 0) > 0} />
           </div>
         )}
@@ -172,18 +170,19 @@ export default function AdminFinancePage() {
             <CardContent className="space-y-4 p-5">
               <div>
                 <h2 className="text-xl font-black">Últimas liquidaciones</h2>
-                <p className="text-sm font-semibold text-zinc-500">Trazabilidad de las transferencias más recientes hacia Connect.</p>
+                <p className="text-sm font-semibold text-zinc-500">Trazabilidad de las transferencias más recientes hacia Connect, incluidas las fallidas.</p>
               </div>
-              {recentPaid.length === 0 && <p className="rounded-2xl bg-zinc-100 p-4 text-sm font-bold text-zinc-500">Todavía no hay liquidaciones registradas.</p>}
-              {recentPaid.map((transfer) => (
+              {recent.length === 0 && <p className="rounded-2xl bg-zinc-100 p-4 text-sm font-bold text-zinc-500">Todavía no hay liquidaciones registradas.</p>}
+              {recent.map((transfer) => (
                 <div key={transfer.id} className="flex items-center justify-between gap-3 rounded-2xl bg-zinc-100 p-3">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-black">Viaje {String(transfer.ride_id).slice(0, 8).toUpperCase()}</p>
                     <p className="mt-1 text-xs font-bold text-zinc-500">{dateLabel(transfer.paid_at || transfer.updated_at)} · revertido {moneyCents(transfer.amount_reversed)}</p>
+                    {transfer.status === "failed" && transfer.failure_message && <p className="mt-1 text-xs font-bold text-red-700">{transfer.failure_message}</p>}
                   </div>
                   <div className="text-right">
                     <p className="font-black">{moneyCents(transfer.amount)}</p>
-                    <Badge className={transfer.status === "reversed" ? "bg-amber-100 text-amber-900 hover:bg-amber-100" : "bg-emerald-100 text-emerald-800 hover:bg-emerald-100"}>{transfer.status}</Badge>
+                    <Badge className={transfer.status === "failed" ? "bg-red-100 text-red-800 hover:bg-red-100" : transfer.status === "reversed" ? "bg-amber-100 text-amber-900 hover:bg-amber-100" : "bg-emerald-100 text-emerald-800 hover:bg-emerald-100"}>{transfer.status}</Badge>
                   </div>
                 </div>
               ))}
