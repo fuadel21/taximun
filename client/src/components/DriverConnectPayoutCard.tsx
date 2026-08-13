@@ -42,8 +42,8 @@ export function DriverConnectPayoutCard() {
   const overview = overviewQuery.data as any;
   const account = overview?.account ?? null;
   const items = (overview?.items ?? []) as any[];
-  const actionable = useMemo(
-    () => items.filter((item) => ["ready", "connect_required", "recovery_pending", "failed", "partially_reversed", "reversed"].includes(String(item.state))).slice(0, 12),
+  const visibleItems = useMemo(
+    () => items.filter((item) => ["paid", "ready", "connect_required", "recovery_pending", "failed", "partially_reversed", "reversed"].includes(String(item.state))).slice(0, 12),
     [items]
   );
   const connectReady = Boolean(account?.status === "enabled" && account?.payouts_enabled && account?.stripe_account_id);
@@ -151,17 +151,17 @@ export function DriverConnectPayoutCard() {
 
       {overviewQuery.isLoading && <p className="mt-4 rounded-2xl bg-slate-50 p-4 text-sm font-bold text-slate-500">Comprobando liquidaciones...</p>}
 
-      {actionable.length > 0 && (
+      {visibleItems.length > 0 && (
         <div className="mt-5 space-y-3">
           <div className="flex items-center justify-between gap-3">
             <div>
               <h3 className="font-black text-slate-950">Liquidaciones recientes</h3>
-              <p className="text-xs font-bold text-slate-500">Solo aparecen viajes que necesitan atención o tienen una reversión.</p>
+              <p className="text-xs font-bold text-slate-500">Muestra pagos enviados a Connect y cualquier viaje que todavía requiere atención.</p>
             </div>
             <ShieldCheck className="h-5 w-5 text-slate-400" />
           </div>
 
-          {actionable.map((item) => {
+          {visibleItems.map((item) => {
             const transfer = item.transfer;
             const payment = item.payment;
             const ride = item.ride;
@@ -182,6 +182,7 @@ export function DriverConnectPayoutCard() {
                     )}
                   </div>
 
+                  {item.state === "paid" && <CheckCircle2 className="h-6 w-6 shrink-0 text-emerald-600" />}
                   {item.state === "ready" && (
                     <Button type="button" onClick={() => retryRide(payment.ride_id)} disabled={transferRide.isPending} className="h-12 shrink-0 rounded-2xl bg-slate-950 font-black text-white">
                       {transferRide.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CreditCard className="mr-2 h-4 w-4" />}
