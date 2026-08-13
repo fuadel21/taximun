@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { protectedProcedure, router } from "./_core/trpc";
+import { reconcileDriverTransferAfterRefund } from "./taxi-stripe-connect-router";
 import { supabase } from "./supabase-client";
 
 const STRIPE_API = "https://api.stripe.com/v1";
@@ -332,12 +333,21 @@ export const taxiPaymentsRouter = router({
       }
 
       const ledger = Array.isArray(updatedPayment) ? updatedPayment[0] : updatedPayment;
-      return { id: refund.id, amount: refunded, status: refund.status, payment: ledger ?? null };
+      const transferRecovery = refund.status === "succeeded"
+        ? await reconcileDriverTransferAfterRefund(payment.id, ctx.user.openId)
+        : null;
+      return {
+        id: refund.id,
+        amount: refunded,
+        status: refund.status,
+        payment: ledger ?? null,
+        transfer_recovery: transferRecovery,
+      };
     }),
 
   getForRide: protectedProcedure.input(z.object({ rideId: z.string().uuid() })).query(async ({ ctx, input }) => {
     await rideForUser(input.rideId, ctx.user);
-    const { data, error } = await supabase.from("taxi_payments").select("id,ride_id,status,currency,amount_authorized,amount_captured,amount_refunded,platform_fee,driver_net,provider_payment_intent_id,created_at,updated_at,captured_at").eq("ride_id", input.rideId).maybeSingle();
+    const { data, error } = await supabase.from("taxi_payments").select("id,ride_id,provider,status,currency,amount_authorized,amount_captured,amount_refunded,platform_fee,driver_net,provider_payment_intent_id,created_at,updated_at,captured_at").eq("ride_id", input.rideId).maybeSingle();
     if (error) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: error.message });
     return data ?? null;
   }),
