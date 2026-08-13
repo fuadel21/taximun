@@ -35,7 +35,8 @@ export const taxiFinanceAdminRouter = router({
     if (accountsResult.error) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: accountsResult.error.message });
 
     const transfers = transfersResult.data || [];
-    const attention = transfers.filter((transfer: any) => transfer.refund_reversal_pending || transfer.status === "failed");
+    const attention = transfers.filter((transfer: any) => transfer.refund_reversal_pending === true);
+    const failedTransfers = transfers.filter((transfer: any) => transfer.status === "failed");
     const paymentIds = attention.map((transfer: any) => transfer.payment_id).filter(Boolean);
     const rideIds = attention.map((transfer: any) => transfer.ride_id).filter(Boolean);
 
@@ -72,6 +73,7 @@ export const taxiFinanceAdminRouter = router({
         totalTransferred,
         totalReversed,
         attentionCount: attentionItems.length,
+        failedTransferCount: failedTransfers.length,
         connectAttentionCount: restrictedAccounts.length,
       },
       attention: attentionItems,
@@ -87,11 +89,14 @@ export const taxiFinanceAdminRouter = router({
 
       const { data: transfer, error } = await supabase
         .from("taxi_driver_transfers")
-        .select("payment_id,dispute_id,payout_blocked_reason")
+        .select("payment_id,dispute_id,payout_blocked_reason,refund_reversal_pending")
         .eq("payment_id", input.paymentId)
         .maybeSingle();
       if (error) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: error.message });
       if (!transfer) throw new TRPCError({ code: "NOT_FOUND", message: "Liquidación no encontrada." });
+      if (!transfer.refund_reversal_pending) {
+        throw new TRPCError({ code: "CONFLICT", message: "Esta liquidación no tiene una recuperación pendiente." });
+      }
 
       if (transfer.dispute_id || String(transfer.payout_blocked_reason || "").startsWith("stripe_dispute_lost:")) {
         const { data: dispute, error: disputeError } = await supabase
