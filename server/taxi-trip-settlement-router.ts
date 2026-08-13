@@ -2,6 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { protectedProcedure, router } from "./_core/trpc";
 import { createTaxiNotification } from "./taxi-notifications-router";
+import { tryTransferCapturedRideEarnings } from "./taxi-stripe-connect-router";
 import { supabase } from "./supabase-client";
 
 const paymentStatusSchema = z.enum(["paid", "waived"]);
@@ -119,6 +120,18 @@ export const taxiTripSettlementRouter = router({
           paymentStatus: input.paymentStatus,
         },
       });
+
+      if (paymentMethod === "card" && input.paymentStatus === "paid" && input.finalFare > 0) {
+        const payout = await tryTransferCapturedRideEarnings(input.rideId, ctx.user.openId);
+        await supabase.from("taxi_activity_logs").insert({
+          actor_id: ctx.user.openId,
+          actor_role: "system",
+          message: payout.ok
+            ? "Liquidación Stripe Connect creada automáticamente"
+            : `Liquidación Stripe Connect pendiente · ${String(payout.message || "sin detalle").slice(0, 500)}`,
+          ride_id: input.rideId,
+        });
+      }
 
       return ride;
     }),
