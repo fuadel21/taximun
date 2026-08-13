@@ -1,4 +1,4 @@
-import { Activity, BellRing, CarFront, ClipboardCheck, Gift, LayoutDashboard, ShieldCheck, Stethoscope, UserCheck } from "lucide-react";
+import { Activity, BellRing, CarFront, CircleDollarSign, ClipboardCheck, Gift, LayoutDashboard, ShieldCheck, Stethoscope, UserCheck } from "lucide-react";
 import { useLocation } from "wouter";
 import type { ReactNode } from "react";
 
@@ -11,6 +11,7 @@ export function AdminCommandGrid() {
   return <section className="bg-white px-4 pb-3 pt-6"><div className="mx-auto max-w-7xl rounded-[2rem] bg-white p-1 sm:p-3"><div className="mb-5"><p className="text-sm font-black text-zinc-500">Taximun Admin</p><h2 className="mt-1 text-3xl font-black tracking-[-0.04em] text-black">Centro de mando</h2><p className="mt-2 text-sm font-semibold text-zinc-500">Accesos grandes a las áreas operativas y datos conectados en tiempo real.</p></div><div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
     <AdminTile featured title="Resumen" note="Indicadores y actividad real" icon={<LayoutDashboard className="h-8 w-8" />} onClick={() => setLocation("/admin/dashboard")} />
     <AdminTile title="Operaciones" note="Viajes y control en vivo" icon={<Activity className="h-8 w-8" />} onClick={() => setLocation("/admin/operations")} />
+    <AdminTile title="Finanzas" note="Cobros, Connect y recuperaciones" icon={<CircleDollarSign className="h-8 w-8" />} onClick={() => setLocation("/admin/finance")} />
     <AdminTile title="Promociones" note="Códigos y campañas reales" icon={<Gift className="h-8 w-8" />} onClick={() => setLocation("/admin/promotions")} />
     <AdminTile title="Conductores y flota" note="Altas y estados reales" icon={<CarFront className="h-8 w-8" />} onClick={() => setLocation("/admin/resources")} />
     <AdminTile title="Auditar viaje" note="Validación integral en lectura" icon={<ClipboardCheck className="h-8 w-8" />} onClick={() => setLocation("/admin/journey-test")} />
