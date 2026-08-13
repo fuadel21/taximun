@@ -3,6 +3,7 @@ import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { DriverConnectPayoutCard } from "@/components/DriverConnectPayoutCard";
 import { AlertTriangle, BarChart3, CalendarDays, Car, CreditCard, Euro, ReceiptText, Route, Star, XCircle } from "lucide-react";
 
 type Ride = {
@@ -108,6 +109,8 @@ export default function DriverEarningsPage() {
           <h1 className="mt-1 text-3xl font-black">Ingresos y estadísticas</h1>
           <p className="mt-2 text-sm font-semibold text-slate-300">Resumen profesional basado en importes finales de viajes liquidados.</p>
         </section>
+
+        <DriverConnectPayoutCard />
 
         {dashboardQuery.isLoading && <div className="rounded-3xl bg-white p-4 text-sm font-black text-slate-500">Cargando estadísticas...</div>}
         {dashboardQuery.error && <div className="rounded-3xl bg-red-50 p-4 text-sm font-black text-red-700">{dashboardQuery.error.message}</div>}
