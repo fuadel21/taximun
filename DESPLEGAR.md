@@ -141,6 +141,34 @@ conductor) se activa al configurar una cuenta Connect en el dashboard de Stripe.
 - [ ] (Opcional) Hosting en Railway/Render
 - [ ] (Opcional) Stripe en test mode
 
+## Publicar en Vercel
+
+El repo ya está listo (`vercel.json` + funciones en `api/`). Al hacer push a
+`main` Vercel reconstruye solo.
+
+**Variables de entorno del proyecto en Vercel** (Settings → Environment
+Variables, para Production y Preview):
+
+| Variable | Valor |
+|---|---|
+| `SUPABASE_URL` | `https://<ref>.supabase.co` |
+| `SUPABASE_ANON_KEY` | clave «anon» pública |
+| `SUPABASE_SERVICE_ROLE_KEY` | clave `service_role` (secreta) |
+| `VITE_SUPABASE_URL` | la misma `SUPABASE_URL` |
+| `VITE_SUPABASE_ANON_KEY` | la misma clave «anon» |
+| `ADMIN_EMAILS` | correos admin separados por comas |
+| `JWT_SECRET` | un UUID cualquiera |
+
+**Cómo funciona `/api/trpc` en Vercel**: el handler se empaqueta a un único
+CJS autocontenido (`dist/api-trpc.cjs`) durante `pnpm build`
+(`scripts/build-serverless.mjs`). No lo toques: con `"type": "module"` en
+package.json, compilar los fuentes TS directamente como ESM rompe los imports
+sin extensión (ERR_MODULE_NOT_FOUND).
+
+**Botones de acceso demo**: en `/auth` hay botones para entrar con
+`pasajero@taximun.app` y `conductor@taximun.app`. Se quitan definiendo
+`VITE_DEMO_LOGIN=false` y redesplegando (hazlo antes de un lanzamiento real).
+
 ## Problemas frecuentes
 
 | Síntoma | Causa probable |
@@ -150,3 +178,5 @@ conductor) se activa al configurar una cuenta Connect en el dashboard de Stripe.
 | Las colas están vacías | El conductor no está «available» en la zona exacta («Aeroport T1», «Sants Estació»…) o pg_cron está deshabilitado |
 | Las reservas no se activan | pg_cron deshabilitado — el job corre cada 5 min, espera o fuerza con el botón «Procesar reservas» del panel |
 | Login no funciona en el hosting | Faltan las variables `VITE_SUPABASE_*` en el build |
+| `/api/trpc/*` devuelve el HTML de la SPA o 405 | El rewrite SPA está tragándose `/api` — el `vercel.json` debe excluir `/api` del fallback (`/((?!api/).*)`) |
+| `FUNCTION_INVOCATION_FAILED` en Vercel | La función no se empaquetó: ejecuta `pnpm build` y comprueba que existe `dist/api-trpc.cjs` |
