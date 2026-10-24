@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { CheckCircle2, Loader2, RotateCcw, Save } from "lucide-react";
+import { AdminTariffZonesCard } from "@/components/AdminTariffZonesCard";
 
 type Field = { key: string; label: string; hint: string; step?: string };
 
@@ -124,6 +125,8 @@ export default function AdminTariffsPage() {
         </div>
       </CardContent></Card>
     ))}
+    {configQuery.data && <AdminTariffZonesCard />}
+
     {configQuery.data && (
       <div className="sticky bottom-4 z-10 flex flex-wrap items-center gap-3 rounded-3xl bg-black p-4 text-white shadow-xl">
         <p className="flex-1 text-sm font-bold text-white/60">Última actualización: {configQuery.data.updatedAt ? new Date(configQuery.data.updatedAt).toLocaleString("es-ES") : "—"}</p>

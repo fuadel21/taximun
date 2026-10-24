@@ -1,7 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { protectedProcedure, router } from "./_core/trpc";
-import { invalidateTariffCache } from "./barcelona-tariff";
+import { invalidateTariffCache, invalidateTariffZoneCache } from "./barcelona-tariff";
 import { supabase } from "./supabase-client";
 
 function assertAdmin(ctx: any) {
@@ -81,4 +81,54 @@ export const taxiAdminTariffsRouter = router({
     invalidateTariffCache();
     return { config: data as Record<string, unknown>, updatedAt: (data as any).updated_at ?? null };
   }),
+
+  /** Zonas geográficas que activan suplementos (editables en el mapa). */
+  listZones: protectedProcedure.query(async ({ ctx }) => {
+    assertAdmin(ctx);
+    const { data, error } = await supabase.from("taxi_tariff_zones").select("*").order("supplement_code").order("id");
+    if (error) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: error.message });
+    return data ?? [];
+  }),
+
+  upsertZone: protectedProcedure
+    .input(
+      z.object({
+        id: z.string().trim().min(2).max(60).regex(/^[a-z0-9-]+$/, "Usa minúsculas, números y guiones"),
+        label: z.string().trim().min(2).max(80),
+        supplementCode: z.enum(["airport", "moll_adossat", "fira", "sants"]),
+        appliesTo: z.enum(["origin", "destination", "both"]),
+        centerLat: z.number().min(-90).max(90),
+        centerLng: z.number().min(-180).max(180),
+        radiusMeters: z.number().int().min(50).max(10000),
+        isActive: z.boolean().default(true),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      assertAdmin(ctx);
+      const row = {
+        id: input.id,
+        label: input.label,
+        supplement_code: input.supplementCode,
+        applies_to: input.appliesTo,
+        center_lat: input.centerLat,
+        center_lng: input.centerLng,
+        radius_meters: input.radiusMeters,
+        is_active: input.isActive,
+        updated_at: new Date().toISOString(),
+      };
+      const { data, error } = await supabase.from("taxi_tariff_zones").upsert(row, { onConflict: "id" }).select().single();
+      if (error || !data) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: error?.message || "No se pudo guardar la zona." });
+      invalidateTariffZoneCache();
+      return data;
+    }),
+
+  deleteZone: protectedProcedure
+    .input(z.object({ id: z.string().trim().min(2).max(60) }))
+    .mutation(async ({ ctx, input }) => {
+      assertAdmin(ctx);
+      const { error } = await supabase.from("taxi_tariff_zones").delete().eq("id", input.id);
+      if (error) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: error.message });
+      invalidateTariffZoneCache();
+      return { ok: true };
+    }),
 });

@@ -192,3 +192,7 @@ sin extensión (ERR_MODULE_NOT_FOUND).
 ### Mapa de cola FIFO del conductor (2026-10-24)
 
 - `/driver` incluye `DriverQueueMap`: mapa Leaflet/OSM con los círculos oficiales de las 5 zonas de cola (Aeroport T1/T2, Sants, Port/Cruise, Centre), los taxis en cola como marcadores 🚕 con su número de turno y tu posición GPS resaltada en cian. Se actualiza en vivo cada 6 s (`getZoneQueue` ahora devuelve geometría de zona, GPS de los miembros y `myPositionCoords`).
+
+### Editor visual de zonas con suplemento (2026-10-24)
+
+- Las zonas que activan los suplementos oficiales viven en `taxi_tariff_zones` (migración `20261024030000`) y se editan en `/admin/tariffs` sobre mapa OSM: círculo por suplemento (color), centro arrastrable o al toque, radio, aplica en origen/destino/ambos, alta y baja de zonas. El motor las lee con caché de 60 s (invalidada al guardar); si la tabla falta, usa las oficiales por defecto (`DEFAULT_TARIFF_ZONES`).

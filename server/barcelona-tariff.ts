@@ -57,36 +57,88 @@ export const DEFAULT_AMB_CONFIG: AmbTariffConfig = {
 
 const TARIFF_TIME_ZONE = "Europe/Madrid";
 
-/* ────────────────────────── Zonas con suplemento ────────────────────────── */
+/* ─────────────────────── Zonas con suplemento (BD) ─────────────────────── */
 
-type Zone = { lat: number; lng: number; radiusM: number };
+export type TariffZone = {
+  id: string;
+  label: string;
+  supplementCode: "airport" | "moll_adossat" | "fira" | "sants";
+  appliesTo: "origin" | "destination" | "both";
+  centerLat: number;
+  centerLng: number;
+  radiusMeters: number;
+  isActive: boolean;
+};
 
-const ZONES = {
-  // Aeropuerto Josep Tarradellas Barcelona-El Prat (T1 y T2 + accesos)
-  airport: { lat: 41.2994, lng: 2.0799, radiusM: 2500 } satisfies Zone,
-  // Moll Adossat y terminales de cruceros del Port de Barcelona
-  mollAdossat: { lat: 41.3534, lng: 2.1763, radiusM: 1500 } satisfies Zone,
-  // Fira de Barcelona - Gran Via (L'Hospitalet)
-  firaGranVia: { lat: 41.3534, lng: 2.1277, radiusM: 900 } satisfies Zone,
-  // Estació de Sants (solo aplica como ORIGEN)
-  sants: { lat: 41.3790, lng: 2.1400, radiusM: 320 } satisfies Zone,
-} as const;
+/** Respaldo oficial si la tabla `taxi_tariff_zones` no existe o falla la lectura. */
+export const DEFAULT_TARIFF_ZONES: TariffZone[] = [
+  { id: "airport-t1", label: "Aeroport T1", supplementCode: "airport", appliesTo: "both", centerLat: 41.2974, centerLng: 2.0833, radiusMeters: 1500, isActive: true },
+  { id: "airport-t2", label: "Aeroport T2", supplementCode: "airport", appliesTo: "both", centerLat: 41.3007, centerLng: 2.0746, radiusMeters: 1200, isActive: true },
+  { id: "moll-adossat", label: "Moll Adossat · cruceros", supplementCode: "moll_adossat", appliesTo: "both", centerLat: 41.3534, centerLng: 2.1763, radiusMeters: 1500, isActive: true },
+  { id: "fira-gran-via", label: "Fira Barcelona · Gran Via", supplementCode: "fira", appliesTo: "origin", centerLat: 41.3534, centerLng: 2.1277, radiusMeters: 900, isActive: true },
+  { id: "sants-estacio", label: "Estació de Sants", supplementCode: "sants", appliesTo: "origin", centerLat: 41.3790, centerLng: 2.1400, radiusMeters: 320, isActive: true },
+];
 
 const radians = (value: number) => (value * Math.PI) / 180;
 
-function distanceMeters(aLat: number, aLng: number, zone: Zone) {
+function distanceMeters(aLat: number, aLng: number, bLat: number, bLng: number) {
   const earth = 6371000;
-  const dLat = radians(zone.lat - aLat);
-  const dLng = radians(zone.lng - aLng);
+  const dLat = radians(bLat - aLat);
+  const dLng = radians(bLng - aLng);
   const x =
     Math.sin(dLat / 2) ** 2 +
-    Math.cos(radians(aLat)) * Math.cos(radians(zone.lat)) * Math.sin(dLng / 2) ** 2;
+    Math.cos(radians(aLat)) * Math.cos(radians(bLat)) * Math.sin(dLng / 2) ** 2;
   return 2 * earth * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
 }
 
-function inZone(lat: number | undefined, lng: number | undefined, zone: Zone) {
+function inZone(lat: number | undefined, lng: number | undefined, zone: TariffZone) {
   if (typeof lat !== "number" || typeof lng !== "number" || !Number.isFinite(lat) || !Number.isFinite(lng)) return false;
-  return distanceMeters(lat, lng, zone) <= zone.radiusM;
+  return distanceMeters(lat, lng, zone.centerLat, zone.centerLng) <= zone.radiusMeters;
+}
+
+const ZONE_CACHE_TTL_MS = 60_000;
+let zoneCache: { value: TariffZone[]; at: number } | null = null;
+
+export function invalidateTariffZoneCache() {
+  zoneCache = null;
+}
+
+/** Zonas activas desde `taxi_tariff_zones`; ante fallo, las oficiales por defecto. */
+export async function getAmbTariffZones(): Promise<TariffZone[]> {
+  if (zoneCache && Date.now() - zoneCache.at < ZONE_CACHE_TTL_MS) return zoneCache.value;
+  try {
+    const { data, error } = await supabase
+      .from("taxi_tariff_zones")
+      .select("*")
+      .eq("is_active", true);
+    if (error || !Array.isArray(data) || data.length === 0) throw new Error(error?.message || "sin zonas");
+    const value: TariffZone[] = data.map((row: any) => ({
+      id: String(row.id),
+      label: String(row.label || row.id),
+      supplementCode: row.supplement_code,
+      appliesTo: row.applies_to || "both",
+      centerLat: Number(row.center_lat),
+      centerLng: Number(row.center_lng),
+      radiusMeters: Number(row.radius_meters),
+      isActive: true,
+    })).filter((zone) => Number.isFinite(zone.centerLat) && Number.isFinite(zone.centerLng) && zone.radiusMeters > 0);
+    if (value.length === 0) throw new Error("zonas inválidas");
+    zoneCache = { value, at: Date.now() };
+    return value;
+  } catch {
+    zoneCache = { value: DEFAULT_TARIFF_ZONES, at: Date.now() };
+    return DEFAULT_TARIFF_ZONES;
+  }
+}
+
+/** ¿El punto cae en alguna zona activa del suplemento indicado en origen/destino? */
+function inSupplementZone(zones: TariffZone[], code: TariffZone["supplementCode"], at: "origin" | "destination", lat?: number, lng?: number) {
+  return zones.some(
+    (zone) =>
+      zone.supplementCode === code &&
+      (zone.appliesTo === "both" || zone.appliesTo === at) &&
+      inZone(lat, lng, zone),
+  );
 }
 
 /** Festivos locales de Barcelona que arrastran T2 durante todo el día. */
@@ -295,7 +347,7 @@ function addressMentionsFira(address: string) {
 }
 
 export async function quoteAmbFare(input: AmbFareInput): Promise<AmbFareResult> {
-  const config = await getAmbTariffConfig();
+  const [config, zones] = await Promise.all([getAmbTariffConfig(), getAmbTariffZones()]);
   const period = ambTariffPeriod(input.requestedAt);
 
   const hasCoords = [input.pickupLat, input.pickupLng, input.dropoffLat, input.dropoffLng].every(Number.isFinite);
@@ -319,19 +371,20 @@ export async function quoteAmbFare(input: AmbFareInput): Promise<AmbFareResult> 
     durationMinutes = Math.round(input.routeDurationMinutes as number);
   }
 
-  // Zonas con suplemento: coordenadas cuando existen, texto como respaldo.
+  // Zonas con suplemento (editor visual en /admin/tariffs): coordenadas cuando
+  // existen, texto como respaldo.
   const pickupAtAirport =
-    inZone(input.pickupLat, input.pickupLng, ZONES.airport) || (!hasCoords && addressMentionsAirport(input.pickupAddress));
+    inSupplementZone(zones, "airport", "origin", input.pickupLat, input.pickupLng) || (!hasCoords && addressMentionsAirport(input.pickupAddress));
   const dropoffAtAirport =
-    inZone(input.dropoffLat, input.dropoffLng, ZONES.airport) || (!hasCoords && addressMentionsAirport(input.dropoffAddress));
+    inSupplementZone(zones, "airport", "destination", input.dropoffLat, input.dropoffLng) || (!hasCoords && addressMentionsAirport(input.dropoffAddress));
   const pickupAtPort =
-    inZone(input.pickupLat, input.pickupLng, ZONES.mollAdossat) || (!hasCoords && addressMentionsPort(input.pickupAddress));
+    inSupplementZone(zones, "moll_adossat", "origin", input.pickupLat, input.pickupLng) || (!hasCoords && addressMentionsPort(input.pickupAddress));
   const dropoffAtPort =
-    inZone(input.dropoffLat, input.dropoffLng, ZONES.mollAdossat) || (!hasCoords && addressMentionsPort(input.dropoffAddress));
+    inSupplementZone(zones, "moll_adossat", "destination", input.dropoffLat, input.dropoffLng) || (!hasCoords && addressMentionsPort(input.dropoffAddress));
   const pickupAtSants =
-    inZone(input.pickupLat, input.pickupLng, ZONES.sants) || (!hasCoords && addressMentionsSants(input.pickupAddress));
+    inSupplementZone(zones, "sants", "origin", input.pickupLat, input.pickupLng) || (!hasCoords && addressMentionsSants(input.pickupAddress));
   const pickupAtFira =
-    inZone(input.pickupLat, input.pickupLng, ZONES.firaGranVia) || (!hasCoords && addressMentionsFira(input.pickupAddress));
+    inSupplementZone(zones, "fira", "origin", input.pickupLat, input.pickupLng) || (!hasCoords && addressMentionsFira(input.pickupAddress));
 
   // T4: precio fijo aeropuerto <-> Moll Adossat (en ambos sentidos).
   if ((pickupAtAirport && dropoffAtPort) || (pickupAtPort && dropoffAtAirport)) {
