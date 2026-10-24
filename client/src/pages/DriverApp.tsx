@@ -8,6 +8,7 @@ import { DriverTipConfirmations } from "@/components/DriverTipConfirmations";
 import { DriverTripSettlementSection } from "@/components/DriverTripSettlementSection";
 import DriverZoneQueueCard from "@/components/DriverZoneQueueCard";
 import { PremiumInternalHeader } from "@/components/PremiumInternalHeader";
+import { HomeTopBar } from "@/components/HomeTopBar";
 import { TaxiProfileSettings } from "@/components/TaxiProfileSettings";
 import { TaxiSupportActions } from "@/components/TaxiSupportActions";
 import { BarChart3, Car, Home, Navigation, ShieldCheck, UserRound } from "lucide-react";
@@ -70,6 +71,7 @@ export default function DriverApp() {
         </div>
       ) : (
         <div className="min-h-screen bg-black">
+          <HomeTopBar brand="Taximun Driver" subtitle="Ajustes y perfil" settingsPath="/driver/profile" />
           <DriverGpsHeartbeat />
           <DriverCommandGrid />
           <DriverZoneQueueCard />

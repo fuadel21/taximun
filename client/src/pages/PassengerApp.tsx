@@ -8,6 +8,7 @@ import { PassengerLiveTrackingSection } from "@/components/PassengerLiveTracking
 import { PassengerPostTripRatingSection } from "@/components/PassengerPostTripRatingSection";
 import { PassengerSafeCancellationCard } from "@/components/PassengerSafeCancellationCard";
 import { PremiumInternalHeader } from "@/components/PremiumInternalHeader";
+import { HomeTopBar } from "@/components/HomeTopBar";
 import { TaxiProfileSettings } from "@/components/TaxiProfileSettings";
 import { TaxiSupportActions } from "@/components/TaxiSupportActions";
 import "@/styles/passenger-safe-cancellation.css";
@@ -56,6 +57,7 @@ export default function PassengerApp() {
         </div>
       ) : (
         <div>
+          <HomeTopBar brand="Taximun Pasajero" subtitle="Ajustes y perfil" settingsPath="/passenger/profile" />
           <PassengerDispatchStatus />
           <PassengerCommandGrid />
           <PassengerSafeCancellationCard />

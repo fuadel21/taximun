@@ -34,7 +34,7 @@ export function GlobalNotificationDock() {
   if (shouldHide || !hasSession) return null;
 
   return (
-    <div className="fixed right-4 top-4 z-[9999]">
+    <div className="fixed right-4 top-[4.5rem] z-[9999]">
       <TaxiNotificationCenter compact />
     </div>
   );

@@ -206,3 +206,9 @@ sin extensión (ERR_MODULE_NOT_FOUND).
 - El motor usa ahora la **T3 del anexo IMET 2026**: bandera 4,1117 € + 1,1148 €/km + 0,2832 €/min (tráfico real) en diurna; 4,4321 € + 1,4710 €/km + 0,2226 €/min en nocturna/sábado/festivo. Solo los suplementos contemplados en T3 (aeropuerto, vehículo 5-8 plazas, noches especiales 4,60 €), redondeo a múltiplos de 0,05 €, mínimo 8 €, aeropuerto 21 € y T4 aeropuerto↔Moll Adossat 46,00 € fijos.
 - `/admin/tariffs` permite conmutar entre **T3 (oficial para apps)** y T1/T2 (taxímetro) y editar todos los importes T3 (migración `20261024040000`).
 - La reserva muestra el desglose con la línea «Tiempo con tráfico · X min × Y €» y la etiqueta del tramo T3 aplicado.
+
+### Ajustes, flecha atrás y cierre de sesión (2026-10-24)
+
+- Nueva `HomeTopBar` fija en las homes de pasajero, conductor y admin: marca + botón ⚙ Ajustes (→ perfil) o salida directa en admin.
+- «Cerrar sesión» al final del perfil (`TaxiProfileSettings`, pasajero y conductor) con `logoutAndRedirect()` (`client/src/lib/logout.ts`): signOut + limpieza de storage + /auth.
+- El dock de notificaciones baja a `top-[4.5rem]` para no tapar el botón de ajustes en móvil (bug real detectado por el arnés).

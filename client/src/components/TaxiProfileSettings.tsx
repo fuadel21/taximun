@@ -6,7 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Car, CreditCard, FileText, Loader2, Phone, ShieldCheck, Star, Upload, UserRound } from "lucide-react";
+import { Car, CreditCard, FileText, Loader2, LogOut, Phone, ShieldCheck, Star, Upload, UserRound } from "lucide-react";
+import { logoutAndRedirect } from "@/lib/logout";
 
 type ProfileRole = "passenger" | "driver" | "admin";
 type DocumentType = "identity" | "driver_license" | "taxi_license" | "insurance" | "vehicle_inspection" | "other";
@@ -83,6 +84,7 @@ function formatFileSize(value: unknown) {
 }
 
 export function TaxiProfileSettings({ role }: { role: ProfileRole }) {
+  const [loggingOut, setLoggingOut] = useState(false);
   const utils = trpc.useUtils();
   const profileQuery = trpc.system.taxiProfiles.getMe.useQuery(undefined, {
     retry: false,
@@ -374,6 +376,23 @@ export function TaxiProfileSettings({ role }: { role: ProfileRole }) {
           </Button>
         </CardContent>
       </Card>
+
+      <div className="mx-auto mt-6 max-w-6xl rounded-[1.75rem] border border-red-100 bg-white p-5 shadow-xl">
+        <p className="text-lg font-black text-slate-900">Sesión</p>
+        <p className="mt-1 text-sm font-semibold text-slate-500">Cierra la sesión de Taximun en este dispositivo.</p>
+        <Button
+          variant="outline"
+          disabled={loggingOut}
+          onClick={async () => {
+            setLoggingOut(true);
+            await logoutAndRedirect();
+          }}
+          className="mt-4 h-14 w-full rounded-2xl border-red-200 bg-red-50 text-base font-black text-red-700 hover:bg-red-100"
+        >
+          {loggingOut ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <LogOut className="mr-2 h-5 w-5" />}
+          Cerrar sesión
+        </Button>
+      </div>
     </section>
   );
 }
