@@ -9,6 +9,8 @@ import {
   supabase,
   verifyRecoveryCallback,
 } from "@/lib/supabase";
+import { DevAuthPanel } from "@/components/DevAuthPanel";
+import { DemoQuickAccess, demoLoginEnabled, type DemoAccount } from "@/components/DemoQuickAccess";
 import { AlertCircle, ArrowLeft, ArrowRight, Car, CheckCircle2, KeyRound, Lock, Mail, ShieldCheck, UserRound, Users } from "lucide-react";
 
 type PublicAuthRole = "passenger" | "driver";
@@ -58,6 +60,11 @@ function friendlyRecoverySendError(error: unknown) {
 }
 
 export default function AuthReal() {
+  // Sin Supabase configurado → modo demo local con acceso rápido por rol.
+  if (!hasSupabaseBrowserConfig()) {
+    return <DevAuthPanel />;
+  }
+
   const [role, setRole] = useState<PublicAuthRole>("passenger");
   const [mode, setMode] = useState<AuthMode>("login");
   const [name, setName] = useState("");
@@ -67,6 +74,7 @@ export default function AuthReal() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
+  const [demoBusyAccount, setDemoBusyAccount] = useState<string | null>(null);
   const [recoveryVerified, setRecoveryVerified] = useState(false);
   const [recoveryCooldown, setRecoveryCooldown] = useState(0);
 
@@ -86,7 +94,7 @@ export default function AuthReal() {
     const redirectDescription = readRedirectValue("error_description");
     const recoveryMarker = readRedirectValue("recovery") === "1" || readRedirectValue("type") === "recovery";
 
-    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: authListener } = supabase.auth.onAuthStateChange((event: any, session: any) => {
       if (event === "PASSWORD_RECOVERY" && session && !cancelled) {
         setRecoveryVerified(true);
         setMode("recovery");
@@ -257,6 +265,33 @@ export default function AuthReal() {
     }
   };
 
+  const handleDemoLogin = async (account: DemoAccount) => {
+    resetMessages();
+    if (!validateConfig()) return;
+    setLoading(true);
+    setDemoBusyAccount(account.email);
+    try {
+      clearGuest();
+      clearRecoveryCallbackVerification();
+      setRecoveryVerified(false);
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: account.email,
+        password: account.password,
+      });
+      if (signInError) throw signInError;
+      await redirectByServerRole();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? `No se pudo entrar con la cuenta demo (${err.message}).`
+          : "No se pudo entrar con la cuenta demo.",
+      );
+    } finally {
+      setLoading(false);
+      setDemoBusyAccount(null);
+    }
+  };
+
   const handleSubmit = async () => {
     resetMessages();
     if (!validateConfig()) return;
@@ -391,6 +426,10 @@ export default function AuthReal() {
               {loading ? "Procesando..." : mode === "login" ? "Continuar" : mode === "signup" ? "Crear cuenta" : mode === "forgot" ? forgotButtonLabel : recoveryVerified ? "Guardar nueva contraseña" : "Verificando enlace..."}
               <ArrowRight className="ml-2 h-5 w-5" />
             </Button>
+
+            {mode === "login" && demoLoginEnabled && (
+              <DemoQuickAccess onLogin={handleDemoLogin} busy={loading} busyAccount={demoBusyAccount} />
+            )}
           </div>
         </div>
       </section>
