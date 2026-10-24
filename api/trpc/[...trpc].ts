@@ -1,36 +1,20 @@
-import "dotenv/config";
-import { nodeHTTPRequestHandler } from "@trpc/server/adapters/node-http";
-import { appRouter } from "../../server/routers";
-import { createContext } from "../../server/_core/context";
+/**
+ * Función serverless de Vercel para /api/trpc/*.
+ *
+ * IMPORTANTE: el handler real vive empaquetado en `dist/api-trpc.cjs`
+ * (lo genera `pnpm build` con esbuild, ver scripts/build-serverless.mjs).
+ *
+ * Motivo: con "type": "module" en package.json, @vercel/node compila este
+ * fichero como ESM y los imports relativos SIN extensión de server/*.ts
+ * (p. ej. "../../server/routers") rompen en runtime (ERR_MODULE_NOT_FOUND →
+ * FUNCTION_INVOCATION_FAILED). Un bundle CJS autocontenido lo elimina de raíz.
+ *
+ * El acceso tolerante (default?.default ?? default) cubre las dos formas de
+ * interoperabilidad CJS→ESM según el marcador __esModule del bundle.
+ */
+// @ts-ignore -- generado por pnpm build (dist/api-trpc.d.ts declara los tipos)
+import * as bundle from "../../dist/api-trpc.cjs";
 
-function getTrpcPath(req: any) {
-  const queryPath = req.query?.trpc;
-  if (Array.isArray(queryPath)) return queryPath.join("/");
-  if (typeof queryPath === "string") return queryPath;
+const handler = (bundle as any).default?.default ?? (bundle as any).default;
 
-  const url = new URL(req.url || "/", "https://taximun.vercel.app");
-  return decodeURIComponent(url.pathname.replace(/^\/api\/trpc\/?/, ""));
-}
-
-export default async function handler(req: any, res: any) {
-  res.setHeader("x-taximun-api", "trpc-node-handler");
-
-  if (req.method === "OPTIONS") {
-    res.statusCode = 204;
-    res.end();
-    return;
-  }
-
-  const path = getTrpcPath(req);
-
-  return nodeHTTPRequestHandler({
-    router: appRouter,
-    req,
-    res,
-    path,
-    createContext: (opts) => createContext(opts as any),
-    onError({ error, path }) {
-      console.error("Taximun tRPC error", { path, message: error.message, code: error.code });
-    },
-  });
-}
+export default handler as (req: any, res: any) => any;
