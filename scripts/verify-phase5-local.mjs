@@ -1,7 +1,7 @@
 import { chromium } from "/home/user/.tools/node_modules/playwright/index.mjs";
 import fs from "node:fs";
 
-const BASE = "http://localhost:3000";
+const BASE = process.env.BASE_URL || "http://localhost:3000";
 const SHOTS = "docs/validacion-navegador";
 fs.mkdirSync(SHOTS, { recursive: true });
 

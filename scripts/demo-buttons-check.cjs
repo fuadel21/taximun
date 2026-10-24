@@ -1,6 +1,6 @@
 /** Verifica los botones de acceso rápido demo en /auth (modo real Supabase). */
 const { chromium } = require(process.env.HOME + "/.tools/node_modules/playwright");
-const BASE = "http://localhost:3000";
+const BASE = process.env.BASE_URL || "http://localhost:3000";
 
 (async () => {
   const browser = await chromium.launch();
