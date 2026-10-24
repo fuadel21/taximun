@@ -1,6 +1,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
+import { RideOfferMiniMap } from "@/components/RideOfferMiniMap";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -29,6 +30,10 @@ type Ride = {
   passenger_name?: string | null;
   pickup_address: string;
   dropoff_address: string;
+  pickup_lat?: number | null;
+  pickup_lng?: number | null;
+  dropoff_lat?: number | null;
+  dropoff_lng?: number | null;
   estimated_fare: number | string;
   estimated_duration: number | string;
   distance_km: number | string;
@@ -42,6 +47,8 @@ type DriverStatus = {
   taxi_code?: string | null;
   plate?: string | null;
   status?: "available" | "busy" | "offline" | null;
+  current_lat?: number | null;
+  current_lng?: number | null;
 };
 
 type DriverOperationState = {
@@ -216,7 +223,7 @@ export default function DriverServicesPage() {
 
             <div className="grid gap-4 lg:grid-cols-2">
               {canOperate && !active && filteredPending.map((ride) => (
-                <RideRequestCard key={ride.id} ride={ride} saving={saving} canAccept={canAccept} onAccept={() => accept(ride.id)} onReject={() => rejectRide.mutate({ rideId: ride.id })} />
+                <RideRequestCard key={ride.id} ride={ride} saving={saving} canAccept={canAccept} driverAt={live?.current_lat != null && live?.current_lng != null ? { lat: Number(live.current_lat), lng: Number(live.current_lng) } : null} onAccept={() => accept(ride.id)} onReject={() => rejectRide.mutate({ rideId: ride.id })} />
               ))}
             </div>
           </CardContent>
@@ -226,13 +233,23 @@ export default function DriverServicesPage() {
   );
 }
 
-function RideRequestCard({ ride, saving, canAccept, onAccept, onReject }: { ride: Ride; saving: boolean; canAccept: boolean; onAccept: () => void; onReject: () => void }) {
+function RideRequestCard({ ride, saving, canAccept, driverAt, onAccept, onReject }: { ride: Ride; saving: boolean; canAccept: boolean; driverAt: { lat: number; lng: number } | null; onAccept: () => void; onReject: () => void }) {
+  const hasPickupCoords = ride.pickup_lat != null && ride.pickup_lng != null;
   return (
     <div className="rounded-[2rem] border border-zinc-200 bg-white p-5 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div><p className="font-black"><UserRound className="mr-2 inline h-5 w-5" />{ride.passenger_name || "Pasajero"}</p><p className="mt-1 text-xs font-bold text-zinc-500">{formatDate(ride.requested_at)}</p></div>
         {statusBadge(ride.status)}
       </div>
+      {hasPickupCoords && (
+        <div className="mt-4">
+          <RideOfferMiniMap
+            pickup={{ lat: Number(ride.pickup_lat), lng: Number(ride.pickup_lng), address: ride.pickup_address }}
+            dropoff={ride.dropoff_lat != null && ride.dropoff_lng != null ? { lat: Number(ride.dropoff_lat), lng: Number(ride.dropoff_lng), address: ride.dropoff_address } : null}
+            driverAt={driverAt}
+          />
+        </div>
+      )}
       <RideSummary ride={ride} />
       {!canAccept && <p className="mt-4 rounded-2xl bg-amber-50 p-3 text-xs font-bold text-amber-800">Completa verificación, taxi, matrícula y estado Online para aceptar.</p>}
       <div className="mt-4 grid gap-2 sm:grid-cols-3">

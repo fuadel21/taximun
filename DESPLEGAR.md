@@ -196,3 +196,7 @@ sin extensión (ERR_MODULE_NOT_FOUND).
 ### Editor visual de zonas con suplemento (2026-10-24)
 
 - Las zonas que activan los suplementos oficiales viven en `taxi_tariff_zones` (migración `20261024030000`) y se editan en `/admin/tariffs` sobre mapa OSM: círculo por suplemento (color), centro arrastrable o al toque, radio, aplica en origen/destino/ambos, alta y baja de zonas. El motor las lee con caché de 60 s (invalidada al guardar); si la tabla falta, usa las oficiales por defecto (`DEFAULT_TARIFF_ZONES`).
+
+### Mini-mapa en la oferta del conductor (2026-10-24)
+
+- Cada tarjeta de solicitud en `/driver/queue` incluye `RideOfferMiniMap`: mapa OSM con tu posición 🚕, punto de recogida, destino, ruta de aproximación (OSRM) con ETA ("Llegada al punto: X min · Y km") y ruta del viaje en trazo suave. `getPendingRides` ya traía coordenadas (select completo de `taxi_rides`); `getStatus` aporta el GPS del conductor.
