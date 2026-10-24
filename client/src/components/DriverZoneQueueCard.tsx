@@ -1,15 +1,30 @@
-import { useQuery } from "@tanstack/react-query";
 import { trpc } from "@/lib/trpc";
+import { DriverQueueMap } from "@/components/DriverQueueMap";
 import { Anchor, Building2, ListOrdered, Plane, Timer, TrainFront } from "lucide-react";
+
+type QueueMember = {
+  driverId: string;
+  driverName: string;
+  taxiCode: string | null;
+  isMe?: boolean;
+  position: number;
+  joinedAt?: string | null;
+  lat: number | null;
+  lng: number | null;
+};
 
 type ZoneQueue = {
   zoneId: string;
   zoneName: string;
+  centerLat: number | null;
+  centerLng: number | null;
+  radiusMeters: number | null;
   waiting: number;
   estimatedWaitMinutes: number;
   head: { driverId: string; driverName: string; position: number } | null;
   myPosition: number | null;
   driversAhead: number | null;
+  members?: QueueMember[];
 };
 
 const zoneIcon = (zoneName: string) => {
@@ -30,7 +45,7 @@ export default function DriverZoneQueueCard() {
     retry: false,
   });
   const data = queue.data as
-    | { myZone: string | null; myStatus: string; inQueueZone: ZoneQueue | null; queues: ZoneQueue[] }
+    | { myZone: string | null; myStatus: string; myPositionCoords: { lat: number; lng: number } | null; inQueueZone: ZoneQueue | null; queues: ZoneQueue[] }
     | undefined;
 
   if (!data) {
@@ -99,6 +114,12 @@ export default function DriverZoneQueueCard() {
             </p>
           )}
         </div>
+
+        <DriverQueueMap
+          zones={data.queues.map((zone) => ({ ...zone, members: zone.members ?? [] }))}
+          myPositionCoords={data.myPositionCoords}
+          className="h-[340px] sm:h-[420px]"
+        />
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
           {data.queues.map((zone) => {

@@ -188,3 +188,7 @@ sin extensión (ERR_MODULE_NOT_FOUND).
 - **Mapa en la reserva** (`/passenger/book`): Leaflet + tiles OSM, origen por geolocalización (respaldo Plaça Catalunya), búsqueda Nominatim, destino con toque/arrastre, ruta dibujada y precio por categoría antes de confirmar. Sin claves de API (Nominatim/OSRM/OSM públicos).
 - Servicios geo: `client/src/lib/osm-services.ts`; selector: `client/src/components/RideMapPicker.tsx`.
 - Verificación local: `node scripts/verify-phase5-local.mjs` (con dev server arriba; ajustar ruta de playwright según instalación).
+
+### Mapa de cola FIFO del conductor (2026-10-24)
+
+- `/driver` incluye `DriverQueueMap`: mapa Leaflet/OSM con los círculos oficiales de las 5 zonas de cola (Aeroport T1/T2, Sants, Port/Cruise, Centre), los taxis en cola como marcadores 🚕 con su número de turno y tu posición GPS resaltada en cian. Se actualiza en vivo cada 6 s (`getZoneQueue` ahora devuelve geometría de zona, GPS de los miembros y `myPositionCoords`).

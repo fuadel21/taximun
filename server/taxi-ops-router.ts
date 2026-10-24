@@ -324,7 +324,7 @@ export const taxiOpsRouter = router({
       const [zonesRes, queueRes, liveRes] = await Promise.all([
         supabase.from("queue_zones").select("id,name,center_lat,center_lng,radius_meters").eq("is_active", true).order("name"),
         supabase.from("driver_queues").select("driver_id,zone_id,position,joined_at").eq("is_active", true).order("position"),
-        supabase.from("driver_live_status").select("driver_id,driver_name,taxi_code,plate,status,current_zone"),
+        supabase.from("driver_live_status").select("driver_id,driver_name,taxi_code,plate,status,current_zone,current_lat,current_lng"),
       ]);
       throwIfSupabaseError(zonesRes.error);
       throwIfSupabaseError(queueRes.error);
@@ -342,16 +342,26 @@ export const taxiOpsRouter = router({
         const members = queueRows
           .filter((row: any) => row.zone_id === zone.id)
           .sort((a: any, b: any) => Number(a.position) - Number(b.position))
-          .map((row: any) => ({
-            driverId: row.driver_id,
-            driverName: nameOf(row.driver_id),
-            position: Number(row.position),
-            joinedAt: row.joined_at,
-          }));
+          .map((row: any) => {
+            const live = liveDrivers.find((d) => d.driver_id === row.driver_id);
+            return {
+              driverId: row.driver_id,
+              driverName: nameOf(row.driver_id),
+              taxiCode: live?.taxi_code ?? null,
+              isMe: row.driver_id === ctx.user.openId,
+              position: Number(row.position),
+              joinedAt: row.joined_at,
+              lat: Number.isFinite(Number(live?.current_lat)) ? Number(live?.current_lat) : null,
+              lng: Number.isFinite(Number(live?.current_lng)) ? Number(live?.current_lng) : null,
+            };
+          });
         const mine = members.find((m) => m.driverId === ctx.user.openId) ?? null;
         return {
           zoneId: zone.id,
           zoneName: zone.name,
+          centerLat: Number.isFinite(Number(zone.center_lat)) ? Number(zone.center_lat) : null,
+          centerLng: Number.isFinite(Number(zone.center_lng)) ? Number(zone.center_lng) : null,
+          radiusMeters: Number.isFinite(Number(zone.radius_meters)) ? Number(zone.radius_meters) : null,
           waiting: members.length,
           estimatedWaitMinutes: members.length * QUEUE_MINUTES_PER_POSITION,
           head: members[0] ?? null,
@@ -364,6 +374,9 @@ export const taxiOpsRouter = router({
       return {
         myZone: myZoneName,
         myStatus: myLive?.status ?? "offline",
+        myPositionCoords: Number.isFinite(Number(myLive?.current_lat)) && Number.isFinite(Number(myLive?.current_lng))
+          ? { lat: Number(myLive!.current_lat), lng: Number(myLive!.current_lng) }
+          : null,
         inQueueZone: queues.find((q) => q.zoneName === myZoneName) ?? null,
         queues,
       };
