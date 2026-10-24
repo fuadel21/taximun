@@ -1,4 +1,4 @@
-import { Activity, BellRing, CarFront, ClipboardCheck, Gift, LayoutDashboard, ShieldCheck, Stethoscope, UserCheck } from "lucide-react";
+import { Activity, BellRing, CarFront, ClipboardCheck, Coins, Gift, LayoutDashboard, ShieldCheck, Stethoscope, UserCheck } from "lucide-react";
 import { useLocation } from "wouter";
 import type { ReactNode } from "react";
 
@@ -12,6 +12,7 @@ export function AdminCommandGrid() {
     <AdminTile featured title="Resumen" note="Indicadores y actividad real" icon={<LayoutDashboard className="h-8 w-8" />} onClick={() => setLocation("/admin/dashboard")} />
     <AdminTile title="Operaciones" note="Viajes y control en vivo" icon={<Activity className="h-8 w-8" />} onClick={() => setLocation("/admin/operations")} />
     <AdminTile title="Promociones" note="Códigos y campañas reales" icon={<Gift className="h-8 w-8" />} onClick={() => setLocation("/admin/promotions")} />
+    <AdminTile title="Tarifas AMB" note="Precio cerrado oficial" icon={<Coins className="h-8 w-8" />} onClick={() => setLocation("/admin/tariffs")} />
     <AdminTile title="Conductores y flota" note="Altas y estados reales" icon={<CarFront className="h-8 w-8" />} onClick={() => setLocation("/admin/resources")} />
     <AdminTile title="Auditar viaje" note="Validación integral en lectura" icon={<ClipboardCheck className="h-8 w-8" />} onClick={() => setLocation("/admin/journey-test")} />
     <AdminTile title="Verificación" note="Conductores y documentación" icon={<UserCheck className="h-8 w-8" />} onClick={() => setLocation("/admin/verification")} />

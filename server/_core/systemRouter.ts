@@ -2,6 +2,7 @@ import { z } from "zod";
 import { adminControlRouter } from "../admin-control-router";
 import { taxiAdminCancellationRouter } from "../taxi-admin-cancellation-router";
 import { taxiAdminOperationsRouter } from "../taxi-admin-operations-router";
+import { taxiAdminTariffsRouter } from "../taxi-admin-tariffs-router";
 import { taxiCardPaymentsRouter } from "../taxi-card-payments-router";
 import { taxiDriverAnalyticsRouter } from "../taxi-driver-analytics-router";
 import { taxiJourneyValidationRouter } from "../taxi-journey-validation-router";
@@ -34,6 +35,7 @@ export const systemRouter = router({
   adminControl: adminControlRouter,
   taxiAdminCancellation: taxiAdminCancellationRouter,
   taxiAdminOperations: taxiAdminOperationsRouter,
+  taxiAdminTariffs: taxiAdminTariffsRouter,
   taxiCardPayments: taxiCardPaymentsRouter,
   taxiDriverAnalytics: taxiDriverAnalyticsRouter,
   taxiJourneyValidation: taxiJourneyValidationRouter,

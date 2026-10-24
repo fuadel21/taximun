@@ -15,6 +15,7 @@ const requirementsSchema = z.object({
 const bookingPayloadSchema = z.object({
   pickupAddress: z.string().trim().min(2).max(220), dropoffAddress: z.string().trim().min(2).max(220),
   pickupLat: z.number().optional(), pickupLng: z.number().optional(), dropoffLat: z.number().optional(), dropoffLng: z.number().optional(),
+  routeDistanceKm: z.number().positive().max(200).optional(), routeDurationMinutes: z.number().positive().max(600).optional(),
   category: categorySchema, paymentMethod: paymentSchema, intermediateStops: z.array(stopSchema).max(2).default([]), requirements: requirementsSchema.default(() => ({ wheelchair: false, largeLuggage: false, pet: false, childSeat: false, hearingAssistance: false, visualAssistance: false, reducedMobility: false, notes: "" })),
   promoCode: z.string().trim().max(40).optional(),
 });
@@ -37,6 +38,7 @@ async function quoteFor(ctx: any, input: BookingInput, requestedAt: Date, exclud
   return calculateTaxiQuote({
     passengerId: ctx.user.openId, pickupAddress: input.pickupAddress, dropoffAddress: input.dropoffAddress,
     pickupLat: input.pickupLat, pickupLng: input.pickupLng, dropoffLat: input.dropoffLat, dropoffLng: input.dropoffLng,
+    routeDistanceKm: input.routeDistanceKm, routeDurationMinutes: input.routeDurationMinutes,
     category: input.category, intermediateStops: input.intermediateStops, requirements: input.requirements, requestedAt, promoCode: input.promoCode,
     excludeScheduledBookingId,
   });

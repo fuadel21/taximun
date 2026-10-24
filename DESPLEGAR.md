@@ -180,3 +180,11 @@ sin extensión (ERR_MODULE_NOT_FOUND).
 | Login no funciona en el hosting | Faltan las variables `VITE_SUPABASE_*` en el build |
 | `/api/trpc/*` devuelve el HTML de la SPA o 405 | El rewrite SPA está tragándose `/api` — el `vercel.json` debe excluir `/api` del fallback (`/((?!api/).*)`) |
 | `FUNCTION_INVOCATION_FAILED` en Vercel | La función no se empaquetó: ejecuta `pnpm build` y comprueba que existe `dist/api-trpc.cjs` |
+
+## Fase 5 · Tarifas oficiales AMB y mapa OSM (2026-10-24)
+
+- **Motor de tarifas** (`server/barcelona-tariff.ts`): tarifa metropolitana oficial con T1/T2 por tramo horario (Europa/Madrid, sábados y festivos → T2), suplementos geolocalizados (aeropuerto, Moll Adossat, Fira y Sants por origen, vehículo 5-8 plazas, noches especiales), mínimos (aeropuerto 21 €, app 8 €), tope de suplementos 17,10 € y T4 fijo 45 € aeropuerto↔puerto. Todos los importes editables en `/admin/tariffs` (tabla `taxi_tariff_config`, migración `20261024020000`); si la tabla falta, se usan los valores oficiales por defecto.
+- **Precio cerrado por adelantado**: el quote usa la ruta real del cliente (OSRM) acotada por el servidor; sin ruta estima recta×1,28. Promociones intactas.
+- **Mapa en la reserva** (`/passenger/book`): Leaflet + tiles OSM, origen por geolocalización (respaldo Plaça Catalunya), búsqueda Nominatim, destino con toque/arrastre, ruta dibujada y precio por categoría antes de confirmar. Sin claves de API (Nominatim/OSRM/OSM públicos).
+- Servicios geo: `client/src/lib/osm-services.ts`; selector: `client/src/components/RideMapPicker.tsx`.
+- Verificación local: `node scripts/verify-phase5-local.mjs` (con dev server arriba; ajustar ruta de playwright según instalación).

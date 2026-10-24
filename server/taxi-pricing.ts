@@ -1,4 +1,5 @@
 import { TRPCError } from "@trpc/server";
+import { quoteAmbFare } from "./barcelona-tariff";
 import { supabase } from "./supabase-client";
 
 export type TaxiCategory = "standard" | "comfort" | "van" | "accessible";
@@ -21,6 +22,8 @@ export type TaxiQuoteInput = {
   pickupLng?: number;
   dropoffLat?: number;
   dropoffLng?: number;
+  routeDistanceKm?: number;
+  routeDurationMinutes?: number;
   category: TaxiCategory;
   intermediateStops: Array<{ address: string; lat?: number; lng?: number }>;
   requirements: TaxiRequirements;
@@ -29,63 +32,7 @@ export type TaxiQuoteInput = {
   excludeScheduledBookingId?: string;
 };
 
-const MARKET_TIME_ZONE = "Europe/Madrid";
-const MODEL = {
-  version: "taximun_pricing_v2_madrid",
-  baseFare: 3.1,
-  perKm: 1.32,
-  perMinute: 0.28,
-  bookingFee: 1.2,
-  minimumFare: 7,
-  airportSupplement: 4.5,
-  nightMultiplier: 1.15,
-  roadFactor: 1.28,
-  averageUrbanSpeedKmh: 24,
-  stopSupplement: 2.5,
-  luggageSupplement: 3,
-  petSupplement: 2,
-  childSeatSupplement: 4,
-  categoryMultipliers: {
-    standard: 1,
-    comfort: 1.18,
-    van: 1.45,
-    accessible: 1.35,
-  } satisfies Record<TaxiCategory, number>,
-};
-
 const round = (value: number) => Number(value.toFixed(2));
-const radians = (value: number) => (value * Math.PI) / 180;
-
-function haversineKm(aLat: number, aLng: number, bLat: number, bLng: number) {
-  const earth = 6371;
-  const dLat = radians(bLat - aLat);
-  const dLng = radians(bLng - aLng);
-  const x = Math.sin(dLat / 2) ** 2 + Math.cos(radians(aLat)) * Math.cos(radians(bLat)) * Math.sin(dLng / 2) ** 2;
-  return 2 * earth * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
-}
-
-function airport(address: string) {
-  const value = address.toLowerCase();
-  return ["aeroport", "aeropuerto", "el prat", "bcn airport", "terminal t1", "terminal t2"].some((item) => value.includes(item));
-}
-
-function madridTariffPeriod(date: Date) {
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone: MARKET_TIME_ZONE,
-    hour: "2-digit",
-    hourCycle: "h23",
-    weekday: "short",
-  }).formatToParts(date);
-  const hour = Number(parts.find((part) => part.type === "hour")?.value ?? "0");
-  const weekday = parts.find((part) => part.type === "weekday")?.value ?? "Mon";
-  const weekend = weekday === "Sat" || weekday === "Sun";
-  return {
-    hour,
-    weekday,
-    weekend,
-    isNightOrWeekend: hour >= 20 || hour < 7 || weekend,
-  };
-}
 
 function excludeEditedBooking(query: any, bookingId?: string) {
   if (!bookingId) return query;
@@ -128,7 +75,7 @@ async function promotionFor(input: TaxiQuoteInput, subtotal: number) {
     throw new TRPCError({ code: "BAD_REQUEST", message: "El código promocional ha agotado sus usos." });
   }
   if (Number(userUses || 0) >= Number(promotion.max_uses_per_user || 1)) {
-    throw new TRPCError({ code: "BAD_REQUEST", message: "Ya has utilizado este código el máximo de veces permitido." });
+    throw new TRPCError({ code: "BAD_REQUEST", message: "Ya ha utilizado este código el máximo de veces permitido." });
   }
 
   const raw = promotion.discount_type === "percent"
@@ -138,61 +85,81 @@ async function promotionFor(input: TaxiQuoteInput, subtotal: number) {
   return { promotion, discount: round(Math.min(subtotal, Math.max(0, capped))) };
 }
 
+/**
+ * Presupuesto con la tarifa oficial del taxi de Barcelona (AMB) y precio
+ * cerrado por adelantado: bajada de bandera + €/km del tramo horario (T1/T2),
+ * suplementos oficiales, mínimos de percepción y promociones.
+ */
 export async function calculateTaxiQuote(input: TaxiQuoteInput) {
-  const hasCoordinates = [input.pickupLat, input.pickupLng, input.dropoffLat, input.dropoffLng].every(Number.isFinite);
-  const directKm = hasCoordinates
-    ? haversineKm(input.pickupLat!, input.pickupLng!, input.dropoffLat!, input.dropoffLng!) * MODEL.roadFactor
-    : 5.2;
-  const distanceKm = round(Math.max(1.2, directKm + input.intermediateStops.length * 2.2));
-  const durationMinutes = Math.max(5, Math.round(distanceKm / MODEL.averageUrbanSpeedKmh * 60 + 5 + input.intermediateStops.length * 7));
-  const baseFare = MODEL.baseFare;
-  const distanceFare = round(distanceKm * MODEL.perKm);
-  const timeFare = round(durationMinutes * MODEL.perMinute);
-  const airportSupplement = airport(input.pickupAddress) || airport(input.dropoffAddress) ? MODEL.airportSupplement : 0;
-  const stopSupplement = round(input.intermediateStops.length * MODEL.stopSupplement);
-  const luggageSupplement = input.requirements.largeLuggage ? MODEL.luggageSupplement : 0;
-  const petSupplement = input.requirements.pet ? MODEL.petSupplement : 0;
-  const childSeatSupplement = input.requirements.childSeat ? MODEL.childSeatSupplement : 0;
-  const categoryMultiplier = MODEL.categoryMultipliers[input.category];
-  const tariffPeriod = madridTariffPeriod(input.requestedAt);
-  const nightMultiplier = tariffPeriod.isNightOrWeekend ? MODEL.nightMultiplier : 1;
-  const beforeMultipliers = baseFare + distanceFare + timeFare + MODEL.bookingFee + airportSupplement + stopSupplement + luggageSupplement + petSupplement + childSeatSupplement;
-  const subtotal = round(Math.max(MODEL.minimumFare, beforeMultipliers * categoryMultiplier * nightMultiplier));
+  const fare = await quoteAmbFare({
+    pickupAddress: input.pickupAddress,
+    dropoffAddress: input.dropoffAddress,
+    pickupLat: input.pickupLat,
+    pickupLng: input.pickupLng,
+    dropoffLat: input.dropoffLat,
+    dropoffLng: input.dropoffLng,
+    routeDistanceKm: input.routeDistanceKm,
+    routeDurationMinutes: input.routeDurationMinutes,
+    category: input.category,
+    requestedAt: input.requestedAt,
+  });
+
+  // Las paradas intermedias alargan la ruta; sin ruta real del cliente se
+  // suman como tramo adicional conservador.
+  const stops = input.intermediateStops.length;
+  const hasClientRoute = Boolean(input.routeDistanceKm);
+  const extraKm = fare.isFlatRate || hasClientRoute ? 0 : round(stops * 2.2);
+  const distanceKm = round(fare.distanceKm + extraKm);
+  const durationMinutes = fare.isFlatRate ? fare.durationMinutes : fare.durationMinutes + stops * 6;
+
+  // Tramo de distancia adicional por paradas sin ruta real.
+  let subtotal = fare.subtotal;
+  if (!fare.isFlatRate && extraKm > 0) subtotal = round(subtotal + extraKm * fare.perKm);
+
   const promo = await promotionFor(input, subtotal);
   const discount = promo?.discount || 0;
   const total = round(Math.max(0, subtotal - discount));
 
   return {
-    version: MODEL.version,
+    version: "amb_barcelona_official_v1",
     quotedAt: new Date().toISOString(),
     subtotal,
     discount,
     total,
-    lowerFare: round(total * 0.9),
-    upperFare: round(total * 1.12),
+    lowerFare: round(total * 0.95),
+    upperFare: round(total * 1.15),
     distanceKm,
     durationMinutes,
     promoCode: promo?.promotion.code || null,
     promotionId: promo?.promotion.id || null,
     breakdown: {
-      baseFare,
-      distanceFare,
-      timeFare,
-      bookingFee: MODEL.bookingFee,
-      airportSupplement,
-      stopSupplement,
-      luggageSupplement,
-      petSupplement,
-      childSeatSupplement,
-      categoryMultiplier,
-      nightMultiplier,
-      tariffTimeZone: MARKET_TIME_ZONE,
-      tariffLocalHour: tariffPeriod.hour,
-      tariffWeekday: tariffPeriod.weekday,
-      accessibilitySupplement: 0,
+      // Tramo oficial aplicado
+      tariff: fare.tariff,
+      tariffLabel: fare.tariffLabel,
+      isFlatRate: fare.isFlatRate,
+      // Conceptos oficiales
+      baseFare: fare.flagDrop,
+      perKm: fare.perKm,
+      distanceFare: fare.distanceFare,
+      timeFare: 0,
+      bookingFee: fare.serviceFee,
+      supplements: fare.supplements,
+      supplementsTotal: fare.supplementsTotal,
+      supplementsCapped: fare.supplementsCapped,
+      minimumApplied: fare.minimumApplied,
+      minimumLabel: fare.minimumLabel,
       discount,
+      // Compatibilidad con vistas antiguas
+      airportSupplement: fare.supplements.find((item) => item.code === "airport")?.amount || 0,
+      stopSupplement: 0,
+      luggageSupplement: 0,
+      petSupplement: 0,
+      childSeatSupplement: 0,
+      categoryMultiplier: input.category === "comfort" ? 1 : 1,
+      nightMultiplier: fare.tariff === "T2" ? 1 : 1,
       category: input.category,
-      stops: input.intermediateStops.length,
+      stops,
+      routeSource: input.routeDistanceKm ? "client_osrm" : "estimated",
     },
   };
 }
