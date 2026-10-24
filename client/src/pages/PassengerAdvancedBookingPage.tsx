@@ -17,6 +17,7 @@ type QuoteData = {
   distanceKm: number; durationMinutes: number; promoCode: string | null;
   breakdown: {
     tariff: string; tariffLabel: string; isFlatRate: boolean; baseFare: number; perKm: number; distanceFare: number;
+    timeFare?: number; timeMinutes?: number; perMinute?: number;
     supplements?: Array<{ code: string; label: string; amount: number }>; supplementsTotal?: number;
     minimumApplied?: number | null; minimumLabel?: string | null; bookingFee?: number; routeSource?: string;
   };
@@ -266,6 +267,9 @@ export default function PassengerAdvancedBookingPage() {
       ? ["Precio fijo T4", breakdown.supplementsTotal ?? breakdown.distanceFare]
       : ["Bajada de bandera", breakdown.baseFare],
     ...(!breakdown.isFlatRate ? [["Recorrido", breakdown.distanceFare] as [string, number]] : []),
+    ...(!breakdown.isFlatRate && (breakdown.timeFare || 0) > 0
+      ? [[`Tiempo con tráfico · ${breakdown.timeMinutes ?? 0} min × ${Number(breakdown.perMinute || 0).toFixed(4).replace(/0+$/, "").replace(/\.$/, "")} €`, breakdown.timeFare] as [string, number]]
+      : []),
     ...(breakdown.supplements || []).map((item) => [item.label, item.amount] as [string, number]),
     ...(breakdown.minimumApplied ? [[breakdown.minimumLabel || "Mínimo aplicado", breakdown.minimumApplied - (breakdown.baseFare + breakdown.distanceFare + (breakdown.supplementsTotal || 0) + (breakdown.bookingFee || 0))] as [string, number]] : []),
     ...((breakdown.bookingFee || 0) > 0 ? [["Cargo de servicio de la app", breakdown.bookingFee] as [string, number]] : []),
@@ -367,7 +371,7 @@ export default function PassengerAdvancedBookingPage() {
         <div className="border-t border-zinc-100 bg-black p-5 text-white sm:p-7">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
-              <p className="text-sm font-black text-white/50">Precio cerrado por adelantado · tarifa oficial AMB</p>
+              <p className="text-sm font-black text-white/50">Precio cerrado por adelantado · tarifa oficial AMB{breakdown?.tariff === "T3" ? " (T3 por app)" : ""}</p>
               <p className="mt-1 text-4xl font-black sm:text-5xl">{quoteReady ? (activeQuote ? money(activeQuote.total) : "…") : "Elige el destino"}</p>
               <p className="mt-2 text-sm font-bold text-white/50">
                 {activeQuote ? `${breakdown?.tariffLabel || ""} · ${activeQuote.distanceKm} km · ${activeQuote.durationMinutes} min` : "Se calcula con la tarifa metropolitana vigente"}

@@ -14,10 +14,18 @@
 import { supabase } from "./supabase-client";
 
 export type AmbTariffConfig = {
+  closedPriceMode: "T3" | "T1T2"; // T3 = tarifa oficial de precio cerrado por app (IMET)
   t1FlagDrop: number;      // Bajada de bandera T1 (laborables 08:00-20:00)
   t1PerKm: number;         // €/km T1
   t2FlagDrop: number;      // Bajada de bandera T2 (noche laborable + sábado/festivo 24h)
   t2PerKm: number;         // €/km T2
+  // T3 · precio cerrado por app (anexo IMET 2026)
+  t3DayFlagDrop: number;   // Laborable 8-20
+  t3DayPerKm: number;
+  t3DayPerMinute: number;  // Tiempo en condiciones de tráfico real
+  t3NightFlagDrop: number; // Laborable 20-8, sábados y festivos
+  t3NightPerKm: number;
+  t3NightPerMinute: number;
   waitingPerHour: number;  // Espera/detención €/h
   supAirport: number;      // Suplemento aeropuerto (origen O destino)
   supMollAdossat: number;  // Suplemento Moll Adossat (cruceros, origen O destino)
@@ -35,21 +43,28 @@ export type AmbTariffConfig = {
 };
 
 export const DEFAULT_AMB_CONFIG: AmbTariffConfig = {
+  closedPriceMode: "T3",
   t1FlagDrop: 2.8,
   t1PerKm: 1.35,
   t2FlagDrop: 2.8,
   t2PerKm: 1.66,
+  t3DayFlagDrop: 4.1117,
+  t3DayPerKm: 1.1148,
+  t3DayPerMinute: 0.2832,
+  t3NightFlagDrop: 4.4321,
+  t3NightPerKm: 1.471,
+  t3NightPerMinute: 0.2226,
   waitingPerHour: 27.75,
   supAirport: 4.6,
   supMollAdossat: 4.6,
   supFiraOrigen: 3.3,
   supSantsOrigen: 2.55,
   supLargeVehicle: 4.6,
-  supSpecialNight: 3.1,
+  supSpecialNight: 4.6,
   minAirportTotal: 21,
   minAppService: 8,
   maxSupplements: 17.1,
-  t4FlatPortAirport: 45,
+  t4FlatPortAirport: 46,
   serviceFee: 0,
   comfortMultiplier: 1,
   roadFactor: 1.28,
@@ -217,10 +232,17 @@ export function invalidateTariffCache() {
 }
 
 const CONFIG_COLUMN_MAP: Record<keyof AmbTariffConfig, string> = {
+  closedPriceMode: "closed_price_mode",
   t1FlagDrop: "t1_flag_drop",
   t1PerKm: "t1_per_km",
   t2FlagDrop: "t2_flag_drop",
   t2PerKm: "t2_per_km",
+  t3DayFlagDrop: "t3_day_flag_drop",
+  t3DayPerKm: "t3_day_per_km",
+  t3DayPerMinute: "t3_day_per_minute",
+  t3NightFlagDrop: "t3_night_flag_drop",
+  t3NightPerKm: "t3_night_per_km",
+  t3NightPerMinute: "t3_night_per_minute",
   waitingPerHour: "waiting_per_hour",
   supAirport: "sup_airport",
   supMollAdossat: "sup_moll_adossat",
@@ -238,12 +260,21 @@ const CONFIG_COLUMN_MAP: Record<keyof AmbTariffConfig, string> = {
 };
 
 function coerceConfig(row: Record<string, unknown>): AmbTariffConfig {
-  const num = (key: keyof AmbTariffConfig) => {
+  const num = (key: Exclude<keyof AmbTariffConfig, "closedPriceMode">) => {
     const raw = row[CONFIG_COLUMN_MAP[key]] ?? row[key];
     const value = typeof raw === "number" ? raw : Number(raw);
     return Number.isFinite(value) && value >= 0 ? value : DEFAULT_AMB_CONFIG[key];
   };
+  const modeRaw = row[CONFIG_COLUMN_MAP.closedPriceMode] ?? row.closedPriceMode;
+  const closedPriceMode = modeRaw === "T1T2" ? "T1T2" : "T3";
   return {
+    closedPriceMode,
+    t3DayFlagDrop: num("t3DayFlagDrop"),
+    t3DayPerKm: num("t3DayPerKm"),
+    t3DayPerMinute: num("t3DayPerMinute"),
+    t3NightFlagDrop: num("t3NightFlagDrop"),
+    t3NightPerKm: num("t3NightPerKm"),
+    t3NightPerMinute: num("t3NightPerMinute"),
     t1FlagDrop: num("t1FlagDrop"),
     t1PerKm: num("t1PerKm"),
     t2FlagDrop: num("t2FlagDrop"),
@@ -301,13 +332,16 @@ export type AmbFareInput = {
 };
 
 export type AmbFareResult = {
-  tariff: "T1" | "T2" | "T4";
+  tariff: "T1" | "T2" | "T3" | "T4";
   tariffLabel: string;
   distanceKm: number;
   durationMinutes: number;
   flagDrop: number;
   perKm: number;
   distanceFare: number;
+  timeMinutes: number;
+  perMinute: number;
+  timeFare: number;
   supplements: Array<{ code: string; label: string; amount: number }>;
   supplementsTotal: number;
   supplementsCapped: boolean;
@@ -397,6 +431,9 @@ export async function quoteAmbFare(input: AmbFareInput): Promise<AmbFareResult> 
       flagDrop: 0,
       perKm: 0,
       distanceFare: 0,
+      timeMinutes: 0,
+      perMinute: 0,
+      timeFare: 0,
       supplements: [{ code: "t4_flat", label: "Precio fijo T4 aeropuerto ↔ puerto (incluye suplementos)", amount: flat }],
       supplementsTotal: flat,
       supplementsCapped: false,
@@ -408,21 +445,36 @@ export async function quoteAmbFare(input: AmbFareInput): Promise<AmbFareResult> 
     };
   }
 
-  const flagDrop = period.tariff === "T2" ? config.t2FlagDrop : config.t1FlagDrop;
-  const perKm = period.tariff === "T2" ? config.t2PerKm : config.t1PerKm;
+  // T3 = tarifa oficial de precio cerrado por app (anexo IMET): bandera +
+  // longitud + TIEMPO con tráfico real, y solo los suplementos contemplados
+  // (aeropuerto, vehículo 5-8 plazas, noches especiales). Incluye el
+  // desplazamiento hasta la recogida y 5 minutos de espera.
+  const isT3 = config.closedPriceMode !== "T1T2";
+  const isNightPeriod = period.tariff === "T2";
+  const flagDrop = isT3
+    ? isNightPeriod ? config.t3NightFlagDrop : config.t3DayFlagDrop
+    : isNightPeriod ? config.t2FlagDrop : config.t1FlagDrop;
+  const perKm = isT3
+    ? isNightPeriod ? config.t3NightPerKm : config.t3DayPerKm
+    : isNightPeriod ? config.t2PerKm : config.t1PerKm;
+  const perMinute = isT3
+    ? isNightPeriod ? config.t3NightPerMinute : config.t3DayPerMinute
+    : 0;
   const distanceFare = round(distanceKm * perKm);
+  const timeMinutes = durationMinutes;
+  const timeFare = round(timeMinutes * perMinute);
 
   const supplements: Array<{ code: string; label: string; amount: number }> = [];
   if (pickupAtAirport || dropoffAtAirport) {
     supplements.push({ code: "airport", label: pickupAtAirport ? "Suplemento aeropuerto (origen)" : "Suplemento aeropuerto (destino)", amount: round(config.supAirport) });
   }
-  if (pickupAtPort || dropoffAtPort) {
+  if (!isT3 && (pickupAtPort || dropoffAtPort)) {
     supplements.push({ code: "moll_adossat", label: pickupAtPort ? "Suplemento Moll Adossat · cruceros (origen)" : "Suplemento Moll Adossat · cruceros (destino)", amount: round(config.supMollAdossat) });
   }
-  if (pickupAtFira) {
+  if (!isT3 && pickupAtFira) {
     supplements.push({ code: "fira", label: "Suplemento Fira Barcelona · Gran Via (origen)", amount: round(config.supFiraOrigen) });
   }
-  if (pickupAtSants) {
+  if (!isT3 && pickupAtSants) {
     supplements.push({ code: "sants", label: "Suplemento Estació de Sants (origen)", amount: round(config.supSantsOrigen) });
   }
   if (input.category === "van") {
@@ -436,32 +488,40 @@ export async function quoteAmbFare(input: AmbFareInput): Promise<AmbFareResult> 
   const supplementsTotal = round(Math.min(rawSupplementsTotal, config.maxSupplements));
   const supplementsCapped = rawSupplementsTotal > supplementsTotal;
 
-  let subtotal = round(flagDrop + distanceFare + supplementsTotal + config.serviceFee);
+  const round05 = (value: number) => Math.round(value * 20) / 20;
+  let subtotal = round05(flagDrop + distanceFare + timeFare + supplementsTotal + config.serviceFee);
   if (input.category === "comfort" && config.comfortMultiplier !== 1) {
-    subtotal = round(subtotal * config.comfortMultiplier);
+    subtotal = round05(subtotal * config.comfortMultiplier);
   }
 
   // Mínimos oficiales: aeropuerto (incluye suplementos) y servicio por app.
   let minimumApplied: number | null = null;
   let minimumLabel: string | null = null;
   if (pickupAtAirport && subtotal < config.minAirportTotal) {
-    minimumApplied = round(config.minAirportTotal);
+    minimumApplied = round05(config.minAirportTotal);
     minimumLabel = "Percepción mínima oficial en carreras desde el aeropuerto";
-    subtotal = round(config.minAirportTotal);
+    subtotal = round05(config.minAirportTotal);
   } else if (subtotal < config.minAppService) {
-    minimumApplied = round(config.minAppService);
-    minimumLabel = "Percepción mínima de servicio concertado por app";
-    subtotal = round(config.minAppService);
+    minimumApplied = round05(config.minAppService);
+    minimumLabel = "Importe mínimo de un servicio con precio cerrado";
+    subtotal = round05(config.minAppService);
   }
 
   return {
-    tariff: period.tariff,
-    tariffLabel: period.label,
+    tariff: isT3 ? "T3" : period.tariff,
+    tariffLabel: isT3
+      ? period.tariff === "T2"
+        ? "T3 · precio cerrado (laborable 20:00-8:00, sábados y festivos)"
+        : "T3 · precio cerrado (laborable 8:00-20:00)"
+      : period.label,
     distanceKm,
     durationMinutes,
     flagDrop: round(flagDrop),
     perKm,
     distanceFare,
+    timeMinutes,
+    perMinute,
+    timeFare,
     supplements,
     supplementsTotal,
     supplementsCapped,

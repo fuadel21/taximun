@@ -10,6 +10,18 @@ type Field = { key: string; label: string; hint: string; step?: string };
 
 const GROUPS: Array<{ title: string; note: string; fields: Field[] }> = [
   {
+    title: "T3 · tarifa oficial de precio cerrado por app (IMET)",
+    note: "Precio cerrado = bandera + €/km + €/min con tráfico real + suplementos contemplados (aeropuerto, 5-8 plazas, noches especiales). Incluye el desplazamiento hasta la recogida y 5 min de espera; se redondea a múltiplos de 0,05 €.",
+    fields: [
+      { key: "t3_day_flag_drop", label: "T3 diurna · bajada de bandera (€)", hint: "Laborables de 8:00 a 20:00", step: "0.0001" },
+      { key: "t3_day_per_km", label: "T3 diurna · precio por kilómetro (€)", hint: "Concepto longitud", step: "0.0001" },
+      { key: "t3_day_per_minute", label: "T3 diurna · precio por minuto (€)", hint: "Tiempo en condiciones de tráfico real", step: "0.0001" },
+      { key: "t3_night_flag_drop", label: "T3 nocturna · bajada de bandera (€)", hint: "Laborables 20:00-8:00, sábados y festivos", step: "0.0001" },
+      { key: "t3_night_per_km", label: "T3 nocturna · precio por kilómetro (€)", hint: "Concepto longitud", step: "0.0001" },
+      { key: "t3_night_per_minute", label: "T3 nocturna · precio por minuto (€)", hint: "Tiempo en condiciones de tráfico real", step: "0.0001" },
+    ],
+  },
+  {
     title: "Tarifa T1 · laborables de 8:00 a 20:00",
     note: "Tramo horario diurno de lunes a viernes no festivos.",
     fields: [
@@ -73,6 +85,7 @@ export default function AdminTariffsPage() {
     const config = configQuery.data.config as Record<string, unknown>;
     const next: Record<string, string> = {};
     for (const key of ALL_KEYS) next[key] = String(config[key] ?? "");
+    next.closed_price_mode = String(config.closed_price_mode || "T3");
     setForm(next);
   }, [configQuery.data]);
 
@@ -85,7 +98,11 @@ export default function AdminTariffsPage() {
         if (!Number.isFinite(value)) throw new Error(`El campo ${key} no es un número válido.`);
         payload[key] = value;
       }
+      const modeValue = (document.getElementById("tariff-mode-select") as HTMLSelectElement | null)?.value || "T3";
       await update.mutateAsync({
+        closedPriceMode: modeValue === "T1T2" ? "T1T2" : "T3",
+        t3DayFlagDrop: payload.t3_day_flag_drop, t3DayPerKm: payload.t3_day_per_km, t3DayPerMinute: payload.t3_day_per_minute,
+        t3NightFlagDrop: payload.t3_night_flag_drop, t3NightPerKm: payload.t3_night_per_km, t3NightPerMinute: payload.t3_night_per_minute,
         t1FlagDrop: payload.t1_flag_drop, t1PerKm: payload.t1_per_km,
         t2FlagDrop: payload.t2_flag_drop, t2PerKm: payload.t2_per_km,
         waitingPerHour: payload.waiting_per_hour,
@@ -110,6 +127,17 @@ export default function AdminTariffsPage() {
     {(error || configQuery.error) && <div className="rounded-3xl bg-red-50 p-4 font-bold text-red-700">{error || configQuery.error?.message}</div>}
     {notice && <div className="rounded-3xl bg-emerald-50 p-4 font-bold text-emerald-800"><CheckCircle2 className="mr-2 inline h-5 w-5" />{notice}</div>}
     {configQuery.isLoading && <div className="rounded-3xl bg-white p-6 font-bold text-zinc-500"><Loader2 className="mr-2 inline animate-spin" />Cargando configuración…</div>}
+    {configQuery.data && (
+      <Card className="rounded-[2rem] border-0 bg-white"><CardContent className="p-5 sm:p-7">
+        <h2 className="text-xl font-black">Modo de precio de la app</h2>
+        <p className="mt-1 text-sm font-bold text-zinc-400">T3 es la tarifa oficial de precio cerrado para contratación por aplicación; T1/T2 replica el taxímetro. La app es de mediación, por lo que el modo oficial es T3.</p>
+        <select id="tariff-mode-select" value={form.closed_price_mode || "T3"} onChange={(e) => setForm((current) => ({ ...current, closed_price_mode: e.target.value }))} className="mt-4 h-14 w-full rounded-2xl border px-4 text-lg font-black">
+          <option value="T3">T3 · precio cerrado por app (oficial)</option>
+          <option value="T1T2">T1/T2 · taxímetro (laborable/nocturna)</option>
+        </select>
+      </CardContent></Card>
+    )}
+
     {configQuery.data && GROUPS.map((group) => (
       <Card key={group.title} className="rounded-[2rem] border-0 bg-white"><CardContent className="p-5 sm:p-7">
         <h2 className="text-xl font-black">{group.title}</h2>

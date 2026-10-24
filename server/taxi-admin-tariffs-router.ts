@@ -14,10 +14,17 @@ const money = z.number().min(0).max(500);
 const factor = z.number().min(0.5).max(3);
 
 const tariffUpdateSchema = z.object({
+  closedPriceMode: z.enum(["T3", "T1T2"]),
   t1FlagDrop: money,
   t1PerKm: z.number().min(0).max(10),
   t2FlagDrop: money,
   t2PerKm: z.number().min(0).max(10),
+  t3DayFlagDrop: money,
+  t3DayPerKm: z.number().min(0).max(10),
+  t3DayPerMinute: z.number().min(0).max(10),
+  t3NightFlagDrop: money,
+  t3NightPerKm: z.number().min(0).max(10),
+  t3NightPerMinute: z.number().min(0).max(10),
   waitingPerHour: money,
   supAirport: money,
   supMollAdossat: money,
@@ -36,6 +43,13 @@ const tariffUpdateSchema = z.object({
 
 /** Columnas de la tabla taxi_tariff_config en snake_case. */
 const COLUMN_MAP: Record<keyof z.infer<typeof tariffUpdateSchema>, string> = {
+  closedPriceMode: "closed_price_mode",
+  t3DayFlagDrop: "t3_day_flag_drop",
+  t3DayPerKm: "t3_day_per_km",
+  t3DayPerMinute: "t3_day_per_minute",
+  t3NightFlagDrop: "t3_night_flag_drop",
+  t3NightPerKm: "t3_night_per_km",
+  t3NightPerMinute: "t3_night_per_minute",
   t1FlagDrop: "t1_flag_drop",
   t1PerKm: "t1_per_km",
   t2FlagDrop: "t2_flag_drop",

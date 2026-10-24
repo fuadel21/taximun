@@ -200,3 +200,9 @@ sin extensión (ERR_MODULE_NOT_FOUND).
 ### Mini-mapa en la oferta del conductor (2026-10-24)
 
 - Cada tarjeta de solicitud en `/driver/queue` incluye `RideOfferMiniMap`: mapa OSM con tu posición 🚕, punto de recogida, destino, ruta de aproximación (OSRM) con ETA ("Llegada al punto: X min · Y km") y ruta del viaje en trazo suave. `getPendingRides` ya traía coordenadas (select completo de `taxi_rides`); `getStatus` aporta el GPS del conductor.
+
+### Tarifa T3 oficial de precio cerrado por app (2026-10-24)
+
+- El motor usa ahora la **T3 del anexo IMET 2026**: bandera 4,1117 € + 1,1148 €/km + 0,2832 €/min (tráfico real) en diurna; 4,4321 € + 1,4710 €/km + 0,2226 €/min en nocturna/sábado/festivo. Solo los suplementos contemplados en T3 (aeropuerto, vehículo 5-8 plazas, noches especiales 4,60 €), redondeo a múltiplos de 0,05 €, mínimo 8 €, aeropuerto 21 € y T4 aeropuerto↔Moll Adossat 46,00 € fijos.
+- `/admin/tariffs` permite conmutar entre **T3 (oficial para apps)** y T1/T2 (taxímetro) y editar todos los importes T3 (migración `20261024040000`).
+- La reserva muestra el desglose con la línea «Tiempo con tráfico · X min × Y €» y la etiqueta del tramo T3 aplicado.
