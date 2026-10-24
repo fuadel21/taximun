@@ -62,6 +62,17 @@ export const taxiServerDispatchRouter = router({
       )
       .mutation(async ({ input }) => runDispatch(input.rideId, input.offerSeconds)),
 
+    /**
+     * Ejecuta el procesador de reservas programadas (recordatorios 24h/2h/30m
+     * y conversión a viaje 15 minutos antes). En producción lo lanza pg_cron
+     * cada 5 minutos; aquí se puede forzar a mano desde el panel de operaciones.
+     */
+    processScheduledBookings: adminProcedure.mutation(async () => {
+      const { data, error } = await supabase.rpc("taximun_process_scheduled_bookings", {});
+      throwIfSupabaseError(error);
+      return data ?? { reminders_24h: 0, reminders_2h: 0, reminders_30m: 0, rides_dispatched: 0, rides_deferred: 0 };
+    }),
+
     dispatchPendingBatch: adminProcedure
       .input(z.object({ limit: z.number().int().min(1).max(50).default(20) }).optional())
       .mutation(async ({ input }) => {

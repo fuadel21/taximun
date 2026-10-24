@@ -9,7 +9,7 @@ function fail(error: { message: string } | null) {
 export const taxiAdminOperationsRouter = router({
   snapshot: adminProcedure.query(async () => {
     const freshSince = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-    const [driversResult, ridesResult, safetyResult, offersResult] = await Promise.all([
+    const [driversResult, ridesResult, safetyResult, offersResult, queueZonesResult, queueRowsResult] = await Promise.all([
       supabase
         .from("driver_live_status")
         .select("driver_id,driver_name,taxi_code,plate,status,current_lat,current_lng,updated_at,last_offer_at,offers_received")
@@ -33,17 +33,52 @@ export const taxiAdminOperationsRouter = router({
         .eq("status", "pending")
         .order("offered_at", { ascending: false })
         .limit(300),
+      supabase
+        .from("queue_zones")
+        .select("id,name,center_lat,center_lng,radius_meters")
+        .eq("is_active", true)
+        .order("name"),
+      supabase
+        .from("driver_queues")
+        .select("driver_id,zone_id,position,joined_at")
+        .eq("is_active", true)
+        .order("position")
+        .limit(500),
     ]);
 
     fail(driversResult.error);
     fail(ridesResult.error);
     fail(safetyResult.error);
     fail(offersResult.error);
+    fail(queueZonesResult.error);
+    fail(queueRowsResult.error);
 
     const drivers = driversResult.data ?? [];
     const rides = ridesResult.data ?? [];
     const safety = safetyResult.data ?? [];
     const offers = offersResult.data ?? [];
+    const queueZones = queueZonesResult.data ?? [];
+    const queueRows = queueRowsResult.data ?? [];
+    const driverNameOf = (id: string) => drivers.find((d) => d.driver_id === id)?.driver_name ?? id;
+
+    const queues = queueZones.map((zone: any) => {
+      const members = queueRows
+        .filter((row: any) => row.zone_id === zone.id)
+        .sort((a: any, b: any) => Number(a.position) - Number(b.position))
+        .map((row: any) => ({
+          driverId: row.driver_id,
+          driverName: driverNameOf(row.driver_id),
+          position: Number(row.position),
+          joinedAt: row.joined_at,
+        }));
+      return {
+        zoneId: zone.id,
+        zoneName: zone.name,
+        waiting: members.length,
+        head: members[0] ?? null,
+        members,
+      };
+    });
 
     return {
       generatedAt: new Date().toISOString(),
@@ -51,6 +86,7 @@ export const taxiAdminOperationsRouter = router({
       rides,
       safety,
       offers,
+      queues,
       summary: {
         totalDrivers: drivers.length,
         freshDrivers: drivers.filter((driver) => String(driver.updated_at || "") >= freshSince).length,
@@ -62,6 +98,7 @@ export const taxiAdminOperationsRouter = router({
         activeAlerts: safety.length,
         criticalAlerts: safety.filter((report) => report.priority === "critical" || report.category === "sos").length,
         activeOffers: offers.length,
+        queuedDrivers: queues.reduce((total: number, zone: any) => total + zone.waiting, 0),
       },
     };
   }),

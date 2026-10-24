@@ -7,7 +7,7 @@ import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { AlertTriangle, Car, Clock3, Loader2, MapPinned, RefreshCw, Route, ShieldAlert, Users } from "lucide-react";
+import { AlertTriangle, CalendarClock, Car, Clock3, ListOrdered, Loader2, MapPinned, RefreshCw, Route, ShieldAlert, Users } from "lucide-react";
 
 type Filter = "all" | "available" | "busy" | "stale";
 
@@ -28,6 +28,15 @@ export default function AdminOperationsCenterPage() {
   const allowed = !isGuest && user?.role === "admin";
   const [filter, setFilter] = useState<Filter>("all");
   const snapshot = trpc.system.taxiAdminOperations.snapshot.useQuery(undefined, { enabled: allowed, retry: false, refetchInterval: 5000, refetchOnWindowFocus: true });
+  const [bookingRun, setBookingRun] = useState<string | null>(null);
+  const processBookings = trpc.system.taxiServerDispatch.admin.processScheduledBookings.useMutation({
+    onSuccess: (result: any) => {
+      const r = result ?? {};
+      setBookingRun(`Recordatorios 24h/2h/30m: ${r.reminders_24h ?? 0}/${r.reminders_2h ?? 0}/${r.reminders_30m ?? 0} · activadas: ${r.rides_dispatched ?? 0} · diferidas: ${r.rides_deferred ?? 0}`);
+      snapshot.refetch();
+    },
+    onError: (error: any) => setBookingRun(`Error: ${error?.message ?? "desconocido"}`),
+  });
 
   const data = snapshot.data as any;
   const drivers = useMemo(() => {
@@ -65,6 +74,39 @@ export default function AdminOperationsCenterPage() {
           <Stat title="Asignados" value={data?.summary?.assignedRides ?? 0} icon={Route} />
           <Stat title="En curso" value={data?.summary?.inProgressRides ?? 0} icon={MapPinned} />
           <Stat title="SOS críticos" value={data?.summary?.criticalAlerts ?? 0} icon={ShieldAlert} urgent={(data?.summary?.criticalAlerts ?? 0) > 0} />
+        </section>
+
+        <section className="space-y-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <h3 className="flex items-center gap-2 text-lg font-black tracking-tight"><ListOrdered className="h-5 w-5" />Colas FIFO por zona <span className="text-sm font-bold text-zinc-500">({data?.summary?.queuedDrivers ?? 0} conductores en cola)</span></h3>
+            <div className="flex items-center gap-2">
+              {bookingRun && <Badge className="bg-zinc-200 px-3 text-zinc-700 hover:bg-zinc-200">{bookingRun}</Badge>}
+              <Button onClick={() => processBookings.mutate()} disabled={processBookings.isPending} className="h-11 rounded-2xl bg-black px-4 text-sm font-black text-white">
+                {processBookings.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CalendarClock className="mr-2 h-4 w-4" />}Procesar reservas
+              </Button>
+            </div>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            {(data?.queues ?? []).map((zone: any) => (
+              <Card key={zone.zoneId} className="rounded-3xl border-black/5 bg-white shadow-sm">
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-black uppercase tracking-tight text-zinc-500">{zone.zoneName}</p>
+                    <Badge className={zone.waiting > 0 ? "bg-black text-white" : "bg-zinc-200 text-zinc-600"}>{zone.waiting} en cola</Badge>
+                  </div>
+                  <p className="mt-2 text-xl font-black">{zone.head ? zone.head.driverName : "Sin cola"}</p>
+                  <p className="text-xs font-bold text-zinc-400">{zone.head ? `Turno de ${zone.head.driverName} · #${zone.head.position}` : "Nadie esperando en la zona"}</p>
+                  <div className="mt-2 space-y-1">
+                    {(zone.members ?? []).slice(0, 5).map((member: any) => (
+                      <p key={member.driverId} className="truncate text-xs font-semibold text-zinc-500">#{member.position} · {member.driverName}</p>
+                    ))}
+                    {(zone.members?.length ?? 0) > 5 && <p className="text-xs font-bold text-zinc-400">+{(zone.members?.length ?? 0) - 5} más</p>}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+            {(data?.queues ?? []).length === 0 && <p className="text-sm font-bold text-zinc-500">Sin zonas con cola configuradas.</p>}
+          </div>
         </section>
 
         <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_430px]">

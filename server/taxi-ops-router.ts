@@ -188,7 +188,7 @@ export const taxiOpsRouter = router({
           serviceType: serviceTypeSchema.default("taxi"),
           fareRangeMin: z.number().min(0).optional(),
           fareRangeMax: z.number().min(0).optional(),
-          fareBreakdown: z.record(z.unknown()).default({}),
+          fareBreakdown: z.record(z.string(), z.unknown()).default({}),
         })
       )
       .mutation(async ({ ctx, input }) => {
@@ -259,12 +259,114 @@ export const taxiOpsRouter = router({
       throwIfSupabaseError(error);
       return data ?? [];
     }),
+
+    // Cancelación clásica del panel de pasajero.
+    cancelRide: protectedProcedure
+      .input(z.object({ rideId: z.string().uuid() }))
+      .mutation(async ({ ctx, input }) => {
+        assertPassenger(ctx);
+
+        const { data: ride, error } = await supabase
+          .from("taxi_rides")
+          .select("*")
+          .eq("id", input.rideId)
+          .eq("passenger_id", ctx.user.openId)
+          .maybeSingle();
+
+        throwIfSupabaseError(error);
+        if (!ride) throw new TRPCError({ code: "NOT_FOUND", message: "Viaje no encontrado." });
+        if (!["pending", "assigned"].includes(ride.status)) {
+          throw new TRPCError({ code: "CONFLICT", message: "El viaje ya no se puede cancelar." });
+        }
+
+        const { data: updated, error: updateError } = await supabase
+          .from("taxi_rides")
+          .update({
+            status: "cancelled",
+            cancelled_at: new Date().toISOString(),
+            cancellation_reason: "passenger_cancelled",
+          })
+          .eq("id", input.rideId)
+          .select("*")
+          .single();
+
+        throwIfSupabaseError(updateError);
+
+        if (ride.driver_id) {
+          const { error: liveError } = await supabase
+            .from("driver_live_status")
+            .update({ status: "available" })
+            .eq("driver_id", ride.driver_id);
+          throwIfSupabaseError(liveError);
+        }
+
+        await logActivity({
+          actorId: ctx.user.openId,
+          actorRole: actorRole(ctx),
+          message: "Viaje cancelado por pasajero",
+          rideId: input.rideId,
+        });
+
+        return updated;
+      }),
   }),
 
   driver: router({
     getOperationalStatus: protectedProcedure.query(async ({ ctx }) => {
       assertDriver(ctx);
       return getDriverOperationState(ctx.user.openId);
+    }),
+
+    /** Estado de las colas FIFO por zona y posición del conductor que pregunta. */
+    getZoneQueue: protectedProcedure.query(async ({ ctx }) => {
+      assertDriver(ctx);
+
+      const [zonesRes, queueRes, liveRes] = await Promise.all([
+        supabase.from("queue_zones").select("id,name,center_lat,center_lng,radius_meters").eq("is_active", true).order("name"),
+        supabase.from("driver_queues").select("driver_id,zone_id,position,joined_at").eq("is_active", true).order("position"),
+        supabase.from("driver_live_status").select("driver_id,driver_name,taxi_code,plate,status,current_zone"),
+      ]);
+      throwIfSupabaseError(zonesRes.error);
+      throwIfSupabaseError(queueRes.error);
+      throwIfSupabaseError(liveRes.error);
+
+      const zones = zonesRes.data ?? [];
+      const queueRows = queueRes.data ?? [];
+      const liveDrivers = liveRes.data ?? [];
+      const nameOf = (id: string) => liveDrivers.find((d) => d.driver_id === id)?.driver_name ?? id;
+      const myLive = liveDrivers.find((d) => d.driver_id === ctx.user.openId) ?? null;
+      const myZoneName = myLive?.current_zone ? String(myLive.current_zone).trim() : null;
+      const QUEUE_MINUTES_PER_POSITION = 6;
+
+      const queues = zones.map((zone: any) => {
+        const members = queueRows
+          .filter((row: any) => row.zone_id === zone.id)
+          .sort((a: any, b: any) => Number(a.position) - Number(b.position))
+          .map((row: any) => ({
+            driverId: row.driver_id,
+            driverName: nameOf(row.driver_id),
+            position: Number(row.position),
+            joinedAt: row.joined_at,
+          }));
+        const mine = members.find((m) => m.driverId === ctx.user.openId) ?? null;
+        return {
+          zoneId: zone.id,
+          zoneName: zone.name,
+          waiting: members.length,
+          estimatedWaitMinutes: members.length * QUEUE_MINUTES_PER_POSITION,
+          head: members[0] ?? null,
+          myPosition: mine?.position ?? null,
+          driversAhead: mine ? mine.position - 1 : null,
+          members,
+        };
+      });
+
+      return {
+        myZone: myZoneName,
+        myStatus: myLive?.status ?? "offline",
+        inQueueZone: queues.find((q) => q.zoneName === myZoneName) ?? null,
+        queues,
+      };
     }),
 
     upsertStatus: protectedProcedure
@@ -466,6 +568,85 @@ export const taxiOpsRouter = router({
         });
 
         return ride;
+      }),
+
+    // Flujo clásico del panel de conductor: iniciar/cerrar sin PIN explícito.
+    startRide: protectedProcedure
+      .input(z.object({ rideId: z.string().uuid() }))
+      .mutation(async ({ ctx, input }) => {
+        assertDriver(ctx);
+
+        const { data: ride, error } = await supabase
+          .from("taxi_rides")
+          .select("*")
+          .eq("id", input.rideId)
+          .eq("driver_id", ctx.user.openId)
+          .maybeSingle();
+
+        throwIfSupabaseError(error);
+        if (!ride) throw new TRPCError({ code: "NOT_FOUND", message: "Viaje no encontrado." });
+        if (ride.status !== "assigned") throw new TRPCError({ code: "CONFLICT", message: "El viaje ya no está pendiente de inicio." });
+
+        const { data: updated, error: updateError } = await supabase
+          .from("taxi_rides")
+          .update({
+            status: "in_progress",
+            driver_arrived_at: ride.driver_arrived_at ?? new Date().toISOString(),
+            started_at: new Date().toISOString(),
+          })
+          .eq("id", input.rideId)
+          .select("*")
+          .single();
+
+        throwIfSupabaseError(updateError);
+        await logActivity({
+          actorId: ctx.user.openId,
+          actorRole: actorRole(ctx),
+          message: "Viaje iniciado",
+          rideId: input.rideId,
+        });
+        return updated;
+      }),
+
+    completeRide: protectedProcedure
+      .input(z.object({ rideId: z.string().uuid() }))
+      .mutation(async ({ ctx, input }) => {
+        assertDriver(ctx);
+
+        const { data: ride, error } = await supabase
+          .from("taxi_rides")
+          .select("*")
+          .eq("id", input.rideId)
+          .eq("driver_id", ctx.user.openId)
+          .maybeSingle();
+
+        throwIfSupabaseError(error);
+        if (!ride) throw new TRPCError({ code: "NOT_FOUND", message: "Viaje no encontrado." });
+        if (ride.status !== "in_progress") throw new TRPCError({ code: "CONFLICT", message: "El viaje debe estar en curso." });
+
+        const finalFare = Number(ride.final_fare ?? ride.estimated_fare ?? 0);
+        const { data: updated, error: updateError } = await supabase
+          .from("taxi_rides")
+          .update({ status: "completed", final_fare: finalFare, completed_at: new Date().toISOString() })
+          .eq("id", input.rideId)
+          .select("*")
+          .single();
+
+        throwIfSupabaseError(updateError);
+
+        const { error: liveError } = await supabase
+          .from("driver_live_status")
+          .update({ status: "available" })
+          .eq("driver_id", ctx.user.openId);
+        throwIfSupabaseError(liveError);
+
+        await logActivity({
+          actorId: ctx.user.openId,
+          actorRole: actorRole(ctx),
+          message: `Viaje completado · ${finalFare.toFixed(2)} €`,
+          rideId: input.rideId,
+        });
+        return updated;
       }),
   }),
 

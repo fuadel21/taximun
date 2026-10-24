@@ -49,6 +49,7 @@ export const taxiLiveTripRouter = router({
           .single();
 
         throwIfSupabaseError(error);
+        if (!data) throw new TRPCError({ code: "CONFLICT", message: "El viaje ya no está pendiente de llegada." });
 
         await createTaxiNotification({
           recipientId: data.passenger_id,

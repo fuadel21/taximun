@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
-import { supabase } from "@/lib/supabase";
+import { hasSupabaseBrowserConfig, supabase } from "@/lib/supabase";
 import { TaxiMap } from "@/components/TaxiMap";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -92,13 +92,21 @@ export default function DriverPanelModern() {
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [taxiCode, setTaxiCode] = useState("");
   const [plate, setPlate] = useState("");
-  const [zone, setZone] = useState(market.zones[0].name);
+  const [zone, setZone] = useState<string>(market.zones[0].name);
   const [error, setError] = useState("");
 
   useEffect(() => {
     let cancelled = false;
     const prepare = async () => {
       try {
+        // Modo demo local: la sesión la gestiona el servidor (cookie dev).
+        if (!hasSupabaseBrowserConfig()) {
+          if (!cancelled) {
+            setSessionOk(true);
+            setChecking(false);
+          }
+          return;
+        }
         localStorage.removeItem("taximun_guest_role");
         localStorage.removeItem("manus-runtime-user-info");
         localStorage.setItem("taximun_real_auth", "1");

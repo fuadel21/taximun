@@ -3,6 +3,7 @@ import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { supabase } from "./supabase-client";
 import { TRPCError } from "@trpc/server";
 import { systemRouter } from "./_core/systemRouter";
+import { createDevSession, destroyDevSession, isLocalModeActive, resetLocalDemo } from "./local-mode";
 
 // Helper to create role-based procedures
 const passengerProcedure = protectedProcedure.use(async ({ ctx, next }) => {
@@ -33,7 +34,39 @@ export const appRouter = router({
   auth: router({
     me: publicProcedure.query(({ ctx }) => ctx.user),
 
+    // Modo demo local: acceso rápido por rol sin Supabase/Manus OAuth.
+    // Solo disponible cuando no hay SUPABASE_URL configurada.
+    devLogin: publicProcedure
+      .input(
+        z.object({
+          role: z.enum(["passenger", "driver", "admin"]),
+          name: z.string().trim().min(2).max(60).nullish(),
+          driverIndex: z.number().int().min(1).max(4).nullish(),
+        })
+      )
+      .mutation(({ ctx, input }) => {
+        if (!isLocalModeActive()) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "El acceso rápido solo está disponible en modo demo local.",
+          });
+        }
+        const user = createDevSession(ctx.res, input.role, input.name, input.driverIndex);
+        return user;
+      }),
+
+    // Modo demo local: reinicia los datos de demostración a su estado inicial.
+    devReset: publicProcedure.mutation(() => {
+      if (!isLocalModeActive()) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Solo disponible en modo demo local." });
+      }
+      return resetLocalDemo();
+    }),
+
     logout: publicProcedure.mutation(({ ctx }) => {
+      if (isLocalModeActive()) {
+        destroyDevSession(ctx.req, ctx.res);
+      }
       ctx.res.clearCookie("auth-token", {
         httpOnly: true,
         secure: true,

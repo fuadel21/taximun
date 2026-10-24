@@ -154,7 +154,7 @@ export default function PassengerPanel() {
   const [fare, setFare] = useState(12.8);
   const [duration, setDuration] = useState(14);
   const [distanceKm, setDistanceKm] = useState(5.4);
-  const [paymentMethod, setPaymentMethod] = useState("cash");
+  const [paymentMethod, setPaymentMethod] = useState<"cash" | "card" | "bizum">("cash");
   const [formError, setFormError] = useState<string | null>(null);
 
   useEffect(() => {

@@ -1,13 +1,22 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import ws from "ws";
 import { ENV } from "./_core/env";
+import { isLocalModeActive, localSupabase } from "./local-mode";
 
-// Create Supabase client for server-side operations
-export const supabase = createClient(ENV.supabaseUrl, ENV.supabaseServiceRoleKey, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false,
-  },
-});
+// Create Supabase client for server-side operations.
+// Sin SUPABASE_URL el sistema arranca en modo demo con un almacén local
+// en memoria (server/local-mode) para poder desarrollar sin credenciales.
+// El cliente local respeta la misma interfaz (tipos incluidos vía cast).
+export const supabase: SupabaseClient = isLocalModeActive()
+  ? (localSupabase as unknown as SupabaseClient)
+  : createClient(ENV.supabaseUrl, ENV.supabaseServiceRoleKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+      // Node.js < 22 no trae WebSocket nativo: supabase-js (realtime) lo exige.
+      realtime: { transport: ws as any },
+    });
 
 // Helper function to get user session from JWT token
 export async function getUserFromToken(token: string) {

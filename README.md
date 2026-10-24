@@ -2,6 +2,38 @@
 
 Taximun es una plataforma profesional de taxi con enfoque **Barcelona-first** y arquitectura preparada para crecer por ciudades. La meta es competir en experiencia con apps tipo Uber/Cabify, pero orientada a taxis y operadores locales: pasajero, conductor y administración en un mismo sistema.
 
+## 🚀 Arranque rápido (modo demo local, sin credenciales)
+
+```bash
+pnpm install
+pnpm dev        # → http://localhost:3000
+```
+
+Sin variables de entorno la app arranca en **modo demo local**:
+
+- Datos de demostración en memoria (Barcelona): 4 conductores verificados con taxis y zonas, pasajera con historial, reservas programadas, promoción `TAXIMUN10`, incidencias y métricas.
+- Login rápido por rol en `/auth` (pasajero / conductor / administración) con sesiones de desarrollo firmadas (cookie) que sobreviven reinicios del servidor.
+- Toda la operativa funciona: presupuesto con motor de tarifas, despacho inteligente por distancia, ofertas con cuenta atrás, PIN de recogida, ciclo de vida completo del viaje, pagos (efectivo real, tarjeta simulada), valoraciones, chat, notificaciones y paneles de administración.
+- **Reservas programadas automáticas**: un planificador local (equivalente al `pg_cron` de producción) envía recordatorios 24 h / 2 h / 30 min y convierte cada reserva en viaje real 15 minutos antes de la hora programada, con guard de pasajero con viaje activo (`PASSENGER_HAS_ACTIVE_RIDE`). El admin puede forzar el procesado desde el centro de operaciones ("Procesar reservas") o vía `taxiServerDispatch.admin.processScheduledBookings`.
+- **Colas FIFO por zona** (Aeroport T1/T2, Sants Estació, Port/Cruise, Centre): los conductores disponibles en la zona entran en cola automáticamente y salen al aceptar un viaje; el despacho da prioridad a la cabeza de cola de la zona de recogida por encima de la distancia. El conductor ve su posición en la home ("Cola de zona") y el admin ve todas las colas en el centro de operaciones. Ajusta el intervalo del planificador con `TAXIMUN_LOCAL_SCHEDULER_MS` (por defecto 30 s).
+- `auth.devReset` (tRPC) reinicia los datos demo a su estado inicial. Los datos se pierden al reiniciar el proceso: para persistencia real conecta Supabase.
+
+El modo demo vive en `server/local-mode/` y solo se activa cuando `SUPABASE_URL` está vacía. En cuanto configures Supabase (ver `.env.example`), el backend usa el cliente real y las migraciones de `supabase/migrations/` crean el esquema completo.
+
+**¿Listo para producción? Sigue la guía paso a paso: [`DESPLEGAR.md`](./DESPLEGAR.md)** (proyecto Supabase gratis + migraciones + alta de conductores + hosting + Stripe). Herramientas incluidas:
+
+```bash
+bash scripts/verify-migrations.sh       # valida las 64 migraciones contra Postgres local
+bash scripts/build-migration-bundle.sh  # genera supabase/migration-bundle.sql para el SQL Editor
+```
+
+### Tests E2E del modo demo
+
+```bash
+python3 scripts/e2e-demo-test.py    # ciclo completo: presupuesto → despacho → PIN → cobro → valoración
+python3 scripts/e2e-fase3-test.py   # reservas automáticas + colas FIFO por zona + guards de doble aceptación
+```
+
 ## Estado actual
 
 La aplicación ya tiene tres superficies principales:

@@ -90,9 +90,9 @@ async function sendChatMessage(input: {
   if (recipientId) {
     await createTaxiNotification({
       recipientId,
-      recipientRole,
+      recipientRole: recipientRole as "passenger" | "driver" | "admin" | "user",
       actorId: input.user.openId,
-      actorRole: senderRole,
+      actorRole: senderRole as "passenger" | "driver" | "admin" | "system",
       type: "info",
       title: senderRole === "driver" ? "Mensaje de tu conductor" : "Mensaje de tu pasajero",
       body: input.message,
@@ -100,7 +100,7 @@ async function sendChatMessage(input: {
       metadata: {
         kind: "trip_chat_message",
         rideId: input.ride.id,
-        messageId: data.id,
+        messageId: data?.id,
         messageType: input.messageType,
       },
     });

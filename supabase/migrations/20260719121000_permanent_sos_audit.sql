@@ -33,7 +33,7 @@ create policy taxi_safety_events_admin_select
 on public.taxi_safety_report_events
 for select
 to authenticated
-using (public.is_admin());
+using (public.taximun_is_admin());
 
 create or replace function public.taximun_audit_safety_report()
 returns trigger

@@ -41,13 +41,57 @@ if (!supabaseUrl || !supabaseAnonKey) {
   );
 }
 
-export const supabase = createClient(supabaseUrl || "", supabaseAnonKey || "", {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: !capturedRecoveryProof,
-  },
-});
+/**
+ * Sin configuración de Supabase la app arranca en MODO DEMO LOCAL:
+ * el login se resuelve con auth.devLogin (cookie de desarrollo) y este
+ * cliente sustituto responde de forma inofensiva a las llamadas directas
+ * de auth/storage que hacen algunos componentes.
+ */
+function createDemoStubClient(): any {
+  const notAvailable = async () => ({
+    data: null,
+    error: { message: "Modo demo local: función no disponible sin Supabase." },
+  });
+  const noSession = async () => ({ data: { session: null }, error: null });
+  return {
+    auth: {
+      getSession: noSession,
+      getUser: notAvailable,
+      refreshSession: noSession,
+      signInWithPassword: notAvailable,
+      signUp: notAvailable,
+      signOut: async () => ({ error: null }),
+      updateUser: notAvailable,
+      resetPasswordForEmail: notAvailable,
+      onAuthStateChange: (_cb: any) => ({
+        data: { subscription: { unsubscribe: () => {} } },
+      }),
+    },
+    storage: {
+      from: (_bucket: string) => ({
+        upload: notAvailable,
+        remove: async () => ({ data: null, error: null }),
+        getPublicUrl: (path: string) => ({ data: { publicUrl: `local://${path}` } }),
+      }),
+    },
+    channel: (_name: string) => ({
+      on: () => ({ subscribe: (cb?: (s: string) => void) => { cb?.("SUBSCRIBED"); return {}; } }),
+      subscribe: (cb?: (s: string) => void) => { cb?.("SUBSCRIBED"); return {}; },
+    }),
+    removeChannel: () => {},
+  };
+}
+
+export const supabase: any =
+  supabaseUrl && supabaseAnonKey
+    ? createClient(supabaseUrl, supabaseAnonKey, {
+        auth: {
+          persistSession: true,
+          autoRefreshToken: true,
+          detectSessionInUrl: !capturedRecoveryProof,
+        },
+      })
+    : createDemoStubClient();
 
 export function verifyRecoveryCallback(): Promise<RecoveryVerificationResult> {
   if (recoveryVerificationPromise) return recoveryVerificationPromise;

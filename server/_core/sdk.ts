@@ -7,6 +7,7 @@ import { SignJWT, jwtVerify } from "jose";
 import type { User } from "../../drizzle/schema";
 import * as db from "../db";
 import { getUserFromToken } from "../supabase-client";
+import { isLocalModeActive, resolveDevSession } from "../local-mode";
 import { ENV } from "./env";
 import type {
   ExchangeTokenRequest,
@@ -295,6 +296,14 @@ class SDKServer {
 
   async authenticateRequest(req: Request): Promise<AuthenticatedUser> {
     const signedInAt = new Date();
+
+    // 0. Modo demo local: solo se admiten sesiones de desarrollo (cookie
+    //    taximun_dev_session emitida por auth.devLogin). Ver server/local-mode.
+    if (isLocalModeActive()) {
+      const localUser = resolveDevSession(req);
+      if (localUser) return localUser as AuthenticatedUser;
+      throw ForbiddenError("No active local demo session");
+    }
 
     // 1. Prefer the session cookie for the legacy OAuth flow.
     const cookies = this.parseCookies(req.headers.cookie);

@@ -24,7 +24,7 @@ export function DriverOperationalIdentityCard() {
   });
   const [taxiCode, setTaxiCode] = useState("");
   const [plate, setPlate] = useState("");
-  const [zone, setZone] = useState(market.zones[0].name);
+  const [zone, setZone] = useState<string>(market.zones[0].name);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 

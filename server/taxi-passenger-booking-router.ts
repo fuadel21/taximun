@@ -15,7 +15,7 @@ const requirementsSchema = z.object({
 const bookingPayloadSchema = z.object({
   pickupAddress: z.string().trim().min(2).max(220), dropoffAddress: z.string().trim().min(2).max(220),
   pickupLat: z.number().optional(), pickupLng: z.number().optional(), dropoffLat: z.number().optional(), dropoffLng: z.number().optional(),
-  category: categorySchema, paymentMethod: paymentSchema, intermediateStops: z.array(stopSchema).max(2).default([]), requirements: requirementsSchema.default({}),
+  category: categorySchema, paymentMethod: paymentSchema, intermediateStops: z.array(stopSchema).max(2).default([]), requirements: requirementsSchema.default(() => ({ wheelchair: false, largeLuggage: false, pet: false, childSeat: false, hearingAssistance: false, visualAssistance: false, reducedMobility: false, notes: "" })),
   promoCode: z.string().trim().max(40).optional(),
 });
 

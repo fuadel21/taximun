@@ -6,6 +6,7 @@ import { DriverRideOfferOverlay } from "@/components/DriverRideOfferOverlay";
 import { DriverSessionRecovery } from "@/components/DriverSessionRecovery";
 import { DriverTipConfirmations } from "@/components/DriverTipConfirmations";
 import { DriverTripSettlementSection } from "@/components/DriverTripSettlementSection";
+import DriverZoneQueueCard from "@/components/DriverZoneQueueCard";
 import { PremiumInternalHeader } from "@/components/PremiumInternalHeader";
 import { TaxiProfileSettings } from "@/components/TaxiProfileSettings";
 import { TaxiSupportActions } from "@/components/TaxiSupportActions";
@@ -71,6 +72,7 @@ export default function DriverApp() {
         <div className="min-h-screen bg-black">
           <DriverGpsHeartbeat />
           <DriverCommandGrid />
+          <DriverZoneQueueCard />
           <DriverTurnPage />
         </div>
       )}

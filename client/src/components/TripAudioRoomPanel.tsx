@@ -206,6 +206,7 @@ export function TripAudioRoomPanel({ rideId, callRequestId, role }: { rideId: st
       streamRef.current = stream;
       let current = room;
       if (!current || ["ended", "expired"].includes(current.status)) current = await openRoom.mutateAsync({ rideId, callRequestId });
+      if (!current) throw new Error("No se pudo abrir la sala de audio.");
       await joinRoom.mutateAsync({ roomId: current.id });
       activeRoomRef.current = current.id;
       joinedRef.current = true;
@@ -236,13 +237,13 @@ export function TripAudioRoomPanel({ rideId, callRequestId, role }: { rideId: st
         try {
           if (signal.signal_type === "offer" && role === "passenger") {
             if (peer.signalingState !== "stable") await peer.setLocalDescription({ type: "rollback" });
-            await peer.setRemoteDescription(signal.payload as RTCSessionDescriptionInit);
+            await peer.setRemoteDescription(signal.payload as unknown as RTCSessionDescriptionInit);
             await flushPendingIce(peer);
             const answer = await peer.createAnswer();
             await peer.setLocalDescription(answer);
             await sendRtcSignal(activeRoomId, "answer", { type: answer.type, sdp: answer.sdp });
           } else if (signal.signal_type === "answer" && role === "driver" && peer.signalingState === "have-local-offer") {
-            await peer.setRemoteDescription(signal.payload as RTCSessionDescriptionInit);
+            await peer.setRemoteDescription(signal.payload as unknown as RTCSessionDescriptionInit);
             await flushPendingIce(peer);
           } else if (signal.signal_type === "ice") {
             const candidate = signal.payload as RTCIceCandidateInit;
