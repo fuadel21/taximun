@@ -111,16 +111,16 @@ function inZone(lat: number | undefined, lng: number | undefined, zone: TariffZo
   return distanceMeters(lat, lng, zone.centerLat, zone.centerLng) <= zone.radiusMeters;
 }
 
-const ZONE_CACHE_TTL_MS = 60_000;
-let zoneCache: { value: TariffZone[]; at: number } | null = null;
-
+/**
+ * Sin caché entre peticiones (mismo motivo que la configuración): los cambios
+ * de zonas desde administración se aplican al instante en todas las instancias.
+ */
 export function invalidateTariffZoneCache() {
-  zoneCache = null;
+  /* las zonas ya no se cachean entre peticiones */
 }
 
 /** Zonas activas desde `taxi_tariff_zones`; ante fallo, las oficiales por defecto. */
 export async function getAmbTariffZones(): Promise<TariffZone[]> {
-  if (zoneCache && Date.now() - zoneCache.at < ZONE_CACHE_TTL_MS) return zoneCache.value;
   try {
     const { data, error } = await supabase
       .from("taxi_tariff_zones")
@@ -138,10 +138,8 @@ export async function getAmbTariffZones(): Promise<TariffZone[]> {
       isActive: true,
     })).filter((zone) => Number.isFinite(zone.centerLat) && Number.isFinite(zone.centerLng) && zone.radiusMeters > 0);
     if (value.length === 0) throw new Error("zonas inválidas");
-    zoneCache = { value, at: Date.now() };
     return value;
   } catch {
-    zoneCache = { value: DEFAULT_TARIFF_ZONES, at: Date.now() };
     return DEFAULT_TARIFF_ZONES;
   }
 }
@@ -224,11 +222,14 @@ export function ambTariffPeriod(date: Date): AmbTariffPeriod {
 
 /* ───────────────────── Configuración persistida (admin) ─────────────────── */
 
-const CACHE_TTL_MS = 60_000;
-let cache: { value: AmbTariffConfig; at: number } | null = null;
-
+/**
+ * Sin caché: en serverless cada instancia tiene su memoria, así que la
+ * configuración de tarifas se lee de la base de datos en cada presupuesto
+ * (SELECT por clave primaria). Los cambios de administración se aplican al
+ * instante en todas las instancias.
+ */
 export function invalidateTariffCache() {
-  cache = null;
+  /* la configuración ya no se cachea entre peticiones */
 }
 
 const CONFIG_COLUMN_MAP: Record<keyof AmbTariffConfig, string> = {
@@ -298,7 +299,6 @@ function coerceConfig(row: Record<string, unknown>): AmbTariffConfig {
 
 /** Lee la configuración de la tabla `taxi_tariff_config`; ante cualquier fallo usa los valores oficiales. */
 export async function getAmbTariffConfig(): Promise<AmbTariffConfig> {
-  if (cache && Date.now() - cache.at < CACHE_TTL_MS) return cache.value;
   try {
     const { data, error } = await supabase
       .from("taxi_tariff_config")
@@ -306,11 +306,8 @@ export async function getAmbTariffConfig(): Promise<AmbTariffConfig> {
       .eq("id", 1)
       .maybeSingle();
     if (error || !data) throw new Error(error?.message || "sin configuración");
-    const value = coerceConfig(data as Record<string, unknown>);
-    cache = { value, at: Date.now() };
-    return value;
+    return coerceConfig(data as Record<string, unknown>);
   } catch {
-    cache = { value: DEFAULT_AMB_CONFIG, at: Date.now() };
     return DEFAULT_AMB_CONFIG;
   }
 }
