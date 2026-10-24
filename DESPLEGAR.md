@@ -222,7 +222,7 @@ sin extensión (ERR_MODULE_NOT_FOUND).
 
 ### CI (GitHub Actions)
 
-- `.github/workflows/ci.yml`: en cada push/PR a `main`, pnpm 10 + Node 20, `tsc --noEmit`, `pnpm build` y artefacto `dist/`. Estado: `GET /repos/fuadel21/taximun/actions/runs`.
+- `.github/workflows/ci.yml`: en cada push/PR a `main`, pnpm 10 + Node 20, `tsc --noEmit`, `pnpm build` y artefacto `dist/`. **Pendiente de subir**: el PAT usado no tiene scope `workflow` (GitHub lo exige para crear archivos en `.github/workflows`). El archivo está listo en el workspace; cuando haya un token con ese scope (o se suba a mano desde la web de GitHub), el CI arrancará en el siguiente push.
 
 ### Telemetría de errores del navegador
 

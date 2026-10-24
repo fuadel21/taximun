@@ -69,7 +69,7 @@ try {
     check("Recibo: total 31,40 €", modal.includes("31,40"));
     check("Recibo: forma de pago (Efectivo)", modal.includes("Efectivo"));
     check("Recibo: botón Imprimir / PDF", modal.includes("Imprimir / PDF"));
-    await pax.screenshot({ path: "../docs/validacion-navegador/fase6-recibo.png", fullPage: true });
+    await pax.screenshot({ path: "docs/validacion-navegador/fase6-recibo.png", fullPage: true });
     // cerrar modal
     await pax.locator('button[aria-label="Cerrar recibo"]').click();
     await pax.waitForTimeout(400);
@@ -107,7 +107,7 @@ try {
   } else {
     check("Telemetría: marcar como resuelto funciona", false, "botón no encontrado");
   }
-  await admin.screenshot({ path: "../docs/validacion-navegador/fase6-telemetria-admin.png", fullPage: true });
+  await admin.screenshot({ path: "docs/validacion-navegador/fase6-telemetria-admin.png", fullPage: true });
   await admin.close();
   await pax.close();
 } catch (error) {
