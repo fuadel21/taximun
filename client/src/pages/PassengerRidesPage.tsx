@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { PassengerReceiptModal } from "@/components/PassengerReceiptModal";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -191,6 +192,7 @@ export default function PassengerRidesPage() {
 
 function RideDetailCard({ ride, liveStatus }: { ride: TaxiRideRow; liveStatus?: DriverLiveStatus | null }) {
   const [shared, setShared] = useState(false);
+  const [receiptOpen, setReceiptOpen] = useState(false);
   const breakdown = (ride.fare_breakdown || {}) as Record<string, unknown>;
   const isActive = ["pending", "assigned", "in_progress"].includes(ride.status);
   const etaText = ride.status === "in_progress" ? "En viaje" : liveStatus?.etaMinutes ? `${liveStatus.etaMinutes} min` : "Esperando GPS";
@@ -231,7 +233,8 @@ function RideDetailCard({ ride, liveStatus }: { ride: TaxiRideRow; liveStatus?: 
 
         {(ride.fare_range_min || ride.fare_range_max || Object.keys(breakdown).length > 0) && <div className="rounded-3xl border border-zinc-200 bg-white p-4"><p className="font-black">Tarifa estimada</p>{(ride.fare_range_min || ride.fare_range_max) && <p className="mt-1 text-xs font-bold text-zinc-500">Rango: {money(ride.fare_range_min)} - {money(ride.fare_range_max)}</p>}<div className="mt-3 grid gap-2 text-xs font-bold text-zinc-600 sm:grid-cols-2">{typeof breakdown.baseFare !== "undefined" && <p>Salida: <span className="text-black">{money(breakdown.baseFare)}</span></p>}{typeof breakdown.distanceFare !== "undefined" && <p>Distancia: <span className="text-black">{money(breakdown.distanceFare)}</span></p>}{typeof breakdown.timeFare !== "undefined" && <p>Tiempo: <span className="text-black">{money(breakdown.timeFare)}</span></p>}{typeof breakdown.bookingFee !== "undefined" && <p>Gestión app: <span className="text-black">{money(breakdown.bookingFee)}</span></p>}</div></div>}
 
-        <div className="grid grid-cols-2 gap-3"><Button onClick={shareRide} variant="outline" className="h-14 rounded-2xl bg-white font-black"><Share2 className="mr-2 h-5 w-5" />{shared ? "Copiado" : "Compartir"}</Button><Button onClick={() => { window.location.href = isActive ? "/passenger" : "/passenger/security"; }} className="h-14 rounded-2xl bg-black font-black text-white">{isActive ? <BellRing className="mr-2 h-5 w-5" /> : <ShieldCheck className="mr-2 h-5 w-5" />}{isActive ? "Ver activo" : "Soporte"}</Button></div>
+        <div className={ride.status === "completed" ? "grid gap-3 sm:grid-cols-3" : "grid grid-cols-2 gap-3"}><Button onClick={shareRide} variant="outline" className="h-14 rounded-2xl bg-white font-black"><Share2 className="mr-2 h-5 w-5" />{shared ? "Copiado" : "Compartir"}</Button>{ride.status === "completed" && <Button onClick={() => setReceiptOpen(true)} variant="outline" className="h-14 rounded-2xl bg-white font-black"><ReceiptText className="mr-2 h-5 w-5" />Recibo</Button>}<Button onClick={() => { window.location.href = isActive ? "/passenger" : "/passenger/security"; }} className="h-14 rounded-2xl bg-black font-black text-white">{isActive ? <BellRing className="mr-2 h-5 w-5" /> : <ShieldCheck className="mr-2 h-5 w-5" />}{isActive ? "Ver activo" : "Soporte"}</Button></div>
+        {receiptOpen && <PassengerReceiptModal rideId={ride.id} onClose={() => setReceiptOpen(false)} />}
       </CardContent>
     </Card>
   );

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { MAP_TILE_URL, MAP_TILE_ATTRIBUTION } from "@/lib/map-config";
 
 export type MapPlace = { lat: number; lng: number; address: string };
 
@@ -51,8 +52,8 @@ export function RideMapPicker({ pickup, dropoff, route, pickMode, onMapPick, use
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
     const map = L.map(containerRef.current, { zoomControl: true, attributionControl: true }).setView(BARCELONA_CENTER, 13);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: "© OpenStreetMap contributors",
+    L.tileLayer(MAP_TILE_URL, {
+      attribution: MAP_TILE_ATTRIBUTION,
       maxZoom: 19,
     }).addTo(map);
     map.on("click", (event: L.LeafletMouseEvent) => {

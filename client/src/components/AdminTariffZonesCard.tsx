@@ -5,6 +5,7 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CheckCircle2, Loader2, MapPin, PlusCircle, Save, Trash2 } from "lucide-react";
+import { MAP_TILE_URL, MAP_TILE_ATTRIBUTION } from "@/lib/map-config";
 
 type Zone = {
   id: string;
@@ -80,8 +81,8 @@ export function AdminTariffZonesCard() {
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
     const map = L.map(containerRef.current, { zoomControl: true }).setView(BARCELONA, 12);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: "© OpenStreetMap contributors",
+    L.tileLayer(MAP_TILE_URL, {
+      attribution: MAP_TILE_ATTRIBUTION,
       maxZoom: 19,
     }).addTo(map);
     map.on("click", (event: L.LeafletMouseEvent) => {

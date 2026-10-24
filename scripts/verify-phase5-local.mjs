@@ -1,5 +1,6 @@
-import { chromium } from "/home/user/.tools/node_modules/playwright/index.mjs";
+import { chromium } from "playwright";
 import fs from "node:fs";
+import { loginForm } from "./login-form.mjs";
 
 const BASE = process.env.BASE_URL || "http://localhost:3000";
 const SHOTS = "docs/validacion-navegador";
@@ -13,9 +14,11 @@ page.on("console", (msg) => { if (msg.type() === "error") errors.push(`console: 
 
 const check = (name, ok, note = "") => console.log(`${ok ? "✓" : "✗"} ${name}${note ? ` — ${note}` : ""}`);
 
-// 1) Home y login demo pasajero
+// 1) Home y login por formulario (pasajera demo)
 await page.goto(`${BASE}/auth`, { waitUntil: "networkidle" });
-await page.click('button:has-text("Entrar como pasajero")');
+await page.fill('input[type="email"]', "pasajero@taximun.app");
+await page.fill('input[type="password"]', "Taximun-Demo-2026");
+await page.click('button:has-text("Continuar")');
 await page.waitForURL("**/passenger**", { timeout: 20000 });
 await page.goto(`${BASE}/passenger/book`, { waitUntil: "networkidle" });
 await page.waitForSelector(".leaflet-container", { timeout: 15000 });

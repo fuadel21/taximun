@@ -4,7 +4,7 @@
  * 2) Entra como Pau (conductor) y comprueba la tarjeta con mini-mapa + ETA.
  * 3) Cancela el viaje como pasajera para dejar el estado limpio.
  */
-import { chromium } from "/home/user/.tools/node_modules/playwright/index.mjs";
+import { chromium } from "playwright";
 import fs from "node:fs";
 
 const BASE = process.env.BASE_URL || "http://localhost:3000";
@@ -77,7 +77,9 @@ page.on("pageerror", (err) => errors.push(`pageerror: ${err.message}`));
 page.on("console", (msg) => { if (msg.type() === "error") errors.push(`console: ${msg.text()}`); });
 
 await page.goto(`${BASE}/auth`, { waitUntil: "networkidle" });
-await page.click('button:has-text("Entrar como conductor")');
+await page.fill('input[type="email"]', "conductor@taximun.app");
+await page.fill('input[type="password"]', "Taximun-Demo-2026");
+await page.click('button:has-text("Continuar")');
 await page.waitForURL("**/driver**", { timeout: 20000 });
 await page.goto(`${BASE}/driver/queue`, { waitUntil: "networkidle" });
 await page.waitForSelector("text=Solicitudes disponibles", { timeout: 20000 });

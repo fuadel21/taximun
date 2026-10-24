@@ -212,3 +212,34 @@ sin extensión (ERR_MODULE_NOT_FOUND).
 - Nueva `HomeTopBar` fija en las homes de pasajero, conductor y admin: marca + botón ⚙ Ajustes (→ perfil) o salida directa en admin.
 - «Cerrar sesión» al final del perfil (`TaxiProfileSettings`, pasajero y conductor) con `logoutAndRedirect()` (`client/src/lib/logout.ts`): signOut + limpieza de storage + /auth.
 - El dock de notificaciones baja a `top-[4.5rem]` para no tapar el botón de ajustes en móvil (bug real detectado por el arnés).
+
+## Fase 6 · Endurecimiento para producción (2026-10-24)
+
+### Higiene y entorno
+
+- `VITE_DEMO_LOGIN=false` en Vercel (production/preview/development): tras el deploy, los botones de acceso rápido demo desaparecen de `/auth` y solo queda el login por formulario. En local sigue funcionando con `.env` propio (`VITE_DEMO_LOGIN=true`) para los arneses Playwright.
+- Los tokens de servicio usados durante el desarrollo (Vercel PAT, GitHub PAT, Supabase) deben **revocarse al cerrar la fase**.
+
+### CI (GitHub Actions)
+
+- `.github/workflows/ci.yml`: en cada push/PR a `main`, pnpm 10 + Node 20, `tsc --noEmit`, `pnpm build` y artefacto `dist/`. Estado: `GET /repos/fuadel21/taximun/actions/runs`.
+
+### Telemetría de errores del navegador
+
+- Migración `20261024050000`: tabla `client_error_logs` (message, stack, source_url, user_agent, open_id, resolved) con RLS.
+- `client/src/lib/error-telemetry.ts` se monta en `main.tsx`: captura `window.onerror` + `unhandledrejection`, deduplica, agrupa en lotes de 10 (flush 4 s) y envía con `system.taxiSystemHealth.logClientError` **solo si hay sesión iniciada** (Bearer). No hay bucle: los fallos del propio envío se descartan.
+- Panel: `/admin/health` incluye `AdminClientErrorsCard` (últimos 30 errores, marcar resuelto, ver stack).
+
+### Recibo del servicio (regla 22 IMET)
+
+- `system.taxiPassengerTracking.getRideReceipt` (pasajero propietario o admin): ride completo + perfil del conductor (nombre, nº de licencia, código de taxi, matrícula).
+- En `/passenger/rides`, los viajes **completados** muestran el botón «Recibo»: modal imprimible con nº de servicio, fecha/hora, origen/destino, tarifa aplicada, desglose completo (bandera, km, tiempo con tráfico, suplementos, cargo de servicio, descuentos), total, forma de pago, conductor, taxi y licencia. «Imprimir / PDF» usa `window.print()` con CSS `@media print` que aísla el recibo.
+
+### Legales
+
+- Páginas públicas `/legal/terminos` y `/legal/privacidad` (versión preliminar, español), enlazadas desde el pie de `/auth`. Marcar «versión preliminar» hasta revisión legal profesional.
+
+### Abstracción de infraestructura geográfica
+
+- `client/src/lib/map-config.ts` centraliza tiles, geocodificación y rutas. Variables: `VITE_MAP_TILE_URL`, `VITE_MAP_TILE_ATTRIBUTION`, `VITE_GEOCODING_BASE_URL`, `VITE_ROUTING_BASE_URL` (todas opcionales; por defecto los servicios públicos de OSM). Cambiar de proveedor comercial = definir las variables, sin tocar componentes.
+- Consumidores migrados: `RideMapPicker`, `PassengerTripTrackingMap`, `DriverQueueMap`, `AdminTariffZonesCard`, `RideOfferMiniMap`, `TaxiMap`, `AdminOperationsCenterPage` y `osm-services.ts`.

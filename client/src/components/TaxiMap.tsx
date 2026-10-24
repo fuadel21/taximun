@@ -3,6 +3,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { useI18nContext } from "@/contexts/I18nContext";
 import { MAP_DEFAULTS } from "@shared/constants";
+import { MAP_TILE_URL, MAP_TILE_ATTRIBUTION } from "@/lib/map-config";
 
 interface TaxiLocation {
   id: number;
@@ -43,8 +44,8 @@ export function TaxiMap({
       MAP_DEFAULTS.DEFAULT_ZOOM
     );
 
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: '© OpenStreetMap contributors',
+    L.tileLayer(MAP_TILE_URL, {
+      attribution: MAP_TILE_ATTRIBUTION,
       maxZoom: MAP_DEFAULTS.MAX_ZOOM,
       minZoom: MAP_DEFAULTS.MIN_ZOOM,
     }).addTo(map.current);

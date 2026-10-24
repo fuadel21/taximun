@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AlertTriangle, CalendarClock, Car, Clock3, ListOrdered, Loader2, MapPinned, RefreshCw, Route, ShieldAlert, Users } from "lucide-react";
+import { MAP_TILE_URL, MAP_TILE_ATTRIBUTION } from "@/lib/map-config";
 
 type Filter = "all" | "available" | "busy" | "stale";
 
@@ -114,7 +115,7 @@ export default function AdminOperationsCenterPage() {
             <CardHeader className="space-y-4 border-b border-zinc-200"><CardTitle className="text-2xl font-black">Mapa operativo</CardTitle><div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{(["all", "available", "busy", "stale"] as Filter[]).map((value) => <Button key={value} variant={filter === value ? "default" : "outline"} onClick={() => setFilter(value)} className="h-12 rounded-2xl font-black">{value === "all" ? "Todos" : value === "available" ? "Libres" : value === "busy" ? "Ocupados" : "Sin señal"}</Button>)}</div></CardHeader>
             <CardContent className="p-0">
               <MapContainer center={center} zoom={12} scrollWheelZoom className="h-[620px] w-full">
-                <TileLayer attribution="&copy; OpenStreetMap" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                <TileLayer attribution={MAP_TILE_ATTRIBUTION} url={MAP_TILE_URL} />
                 {positionedDrivers.map((driver: any) => <CircleMarker key={driver.driver_id} center={[Number(driver.current_lat), Number(driver.current_lng)]} radius={driver.status === "available" ? 9 : 7} pathOptions={{ color: driver.status === "available" ? "#10b981" : driver.status === "busy" ? "#f59e0b" : "#64748b", fillOpacity: 0.9 }}><Popup><strong>{driver.driver_name || driver.taxi_code || "Conductor"}</strong><br />{driver.plate || "Sin matrícula"}<br />Estado: {driver.status}<br />Señal: {ageLabel(driver.updated_at)}</Popup></CircleMarker>)}
                 {rides.filter((ride: any) => Number.isFinite(Number(ride.pickup_lat)) && Number.isFinite(Number(ride.pickup_lng))).map((ride: any) => <CircleMarker key={`ride-${ride.id}`} center={[Number(ride.pickup_lat), Number(ride.pickup_lng)]} radius={7} pathOptions={{ color: ride.status === "pending" ? "#ef4444" : "#111111", fillOpacity: 0.75 }}><Popup><strong>Viaje {String(ride.id).slice(0, 8)}</strong><br />{ride.pickup_address || "Recogida"}<br />Estado: {ride.status}</Popup></CircleMarker>)}
               </MapContainer>

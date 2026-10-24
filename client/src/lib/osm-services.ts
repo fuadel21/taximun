@@ -18,8 +18,10 @@ export type OsmRoute = {
   durationMinutes: number;
 };
 
-const NOMINATIM = "https://nominatim.openstreetmap.org";
-const OSRM = "https://router.project-osrm.org";
+import { GEOCODING_BASE_URL, ROUTING_BASE_URL } from "@/lib/map-config";
+
+const NOMINATIM = GEOCODING_BASE_URL;
+const OSRM = ROUTING_BASE_URL;
 
 // Área preferida: Área Metropolitana de Barcelona (sesgo, no filtro estricto).
 const VIEWBOX = "1.85,41.60,2.35,41.25";

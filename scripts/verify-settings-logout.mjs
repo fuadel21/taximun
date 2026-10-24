@@ -2,7 +2,7 @@
  * Validación de ajustes, flechas de vuelta y cierre de sesión en las tres
  * apps (pasajero móvil/escritorio, conductor y admin).
  */
-import { chromium } from "/home/user/.tools/node_modules/playwright/index.mjs";
+import { chromium } from "playwright";
 import fs from "node:fs";
 
 const BASE = process.env.BASE_URL || "http://localhost:3000";
@@ -16,13 +16,10 @@ const browser = await chromium.launch();
 
 async function login(page, email) {
   await page.goto(`${BASE}/auth`, { waitUntil: "networkidle" });
-  if (email === "conductor") await page.click('button:has-text("Entrar como conductor")');
-  else if (email === "pasajero") await page.click('button:has-text("Entrar como pasajero")');
-  else {
-    await page.fill('input[type="email"]', email);
-    await page.fill('input[type="password"]', "Taximun-Demo-2026");
-    await page.click('button:has-text("Continuar")');
-  }
+  const resolved = email === "conductor" ? "conductor@taximun.app" : email === "pasajero" ? "pasajero@taximun.app" : email;
+  await page.fill('input[type="email"]', resolved);
+  await page.fill('input[type="password"]', "Taximun-Demo-2026");
+  await page.click('button:has-text("Continuar")');
   await page.waitForURL(/passenger|driver|admin/, { timeout: 20000 });
 }
 

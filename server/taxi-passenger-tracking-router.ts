@@ -1,4 +1,5 @@
 import { TRPCError } from "@trpc/server";
+import { z } from "zod";
 import { protectedProcedure, router } from "./_core/trpc";
 import { supabase } from "./supabase-client";
 
@@ -99,4 +100,33 @@ export const taxiPassengerTrackingRouter = router({
       message: hasDriverLocation ? "Ubicación del conductor actualizada." : "Conductor asignado, esperando ubicación GPS.",
     };
   }),
+
+  /** Recibo conforme del servicio (regla 22 T3): datos, desglose y licencia. */
+  getRideReceipt: protectedProcedure
+    .input(z.object({ rideId: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      assertPassenger(ctx);
+      const { data: ride, error } = await supabase
+        .from("taxi_rides")
+        .select("*")
+        .eq("id", input.rideId)
+        .maybeSingle();
+      throwIfSupabaseError(error);
+      if (!ride || (ride.passenger_id !== ctx.user.openId && ctx.user.role !== "admin")) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Viaje no encontrado." });
+      }
+      if (!["completed", "in_progress"].includes(String(ride.status))) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "El recibo está disponible al completar el servicio." });
+      }
+      let driverProfile: Record<string, unknown> | null = null;
+      if (ride.driver_id) {
+        const { data: profile } = await supabase
+          .from("taxi_user_profiles")
+          .select("full_name, driver_license_number, taxi_code, plate, vehicle_model")
+          .eq("user_id", ride.driver_id)
+          .maybeSingle();
+        driverProfile = profile ?? null;
+      }
+      return { ride, driverProfile };
+    }),
 });

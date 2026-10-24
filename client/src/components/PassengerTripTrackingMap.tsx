@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { MAP_TILE_URL, MAP_TILE_ATTRIBUTION, ROUTING_BASE_URL } from "@/lib/map-config";
 
 export type TrackingPoint = {
   latitude: number;
@@ -52,7 +53,7 @@ async function fetchRoadRoute(from: TrackingPoint, to: TrackingPoint): Promise<R
   try {
     const coordinates = `${from.longitude},${from.latitude};${to.longitude},${to.latitude}`;
     const response = await fetch(
-      `https://router.project-osrm.org/route/v1/driving/${coordinates}?overview=full&geometries=geojson&steps=false`,
+      `${ROUTING_BASE_URL}/route/v1/driving/${coordinates}?overview=full&geometries=geojson&steps=false`,
       { headers: { Accept: "application/json" } }
     );
     if (!response.ok) return null;
@@ -97,8 +98,8 @@ export function PassengerTripTrackingMap({
       attributionControl: true,
     }).setView(fallbackCenter, 13);
 
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: "© OpenStreetMap contributors",
+    L.tileLayer(MAP_TILE_URL, {
+      attribution: MAP_TILE_ATTRIBUTION,
       maxZoom: 19,
     }).addTo(map);
 

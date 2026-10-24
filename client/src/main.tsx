@@ -9,6 +9,7 @@ import { trpc } from "./lib/trpc";
 import { queryClient } from "./_core/queryClient";
 import { I18nProvider } from "./contexts/I18nContext";
 import { supabase } from "./lib/supabase";
+import { startErrorTelemetry } from "./lib/error-telemetry";
 
 const trpcClient = trpc.createClient({
   links: [
@@ -37,6 +38,8 @@ const trpcClient = trpc.createClient({
     } as any),
   ],
 });
+
+startErrorTelemetry();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

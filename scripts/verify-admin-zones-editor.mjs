@@ -1,4 +1,4 @@
-import { chromium } from "/home/user/.tools/node_modules/playwright/index.mjs";
+import { chromium } from "playwright";
 import fs from "node:fs";
 
 const BASE = process.env.BASE_URL || "http://localhost:3000";

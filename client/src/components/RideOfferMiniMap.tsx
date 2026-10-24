@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { fetchDrivingRoute } from "@/lib/osm-services";
+import { MAP_TILE_URL, MAP_TILE_ATTRIBUTION } from "@/lib/map-config";
 
 export type OfferPoint = { lat: number; lng: number; address?: string };
 
@@ -45,7 +46,7 @@ export function RideOfferMiniMap({ pickup, dropoff, driverAt, className }: RideO
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
     const map = L.map(containerRef.current, { zoomControl: false, attributionControl: false }).setView([pickup.lat, pickup.lng], 14);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "© OpenStreetMap contributors", maxZoom: 19 }).addTo(map);
+    L.tileLayer(MAP_TILE_URL, { attribution: MAP_TILE_ATTRIBUTION, maxZoom: 19 }).addTo(map);
     mapRef.current = map;
     setTimeout(() => map.invalidateSize(), 60);
     return () => {

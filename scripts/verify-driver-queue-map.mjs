@@ -1,4 +1,4 @@
-import { chromium } from "/home/user/.tools/node_modules/playwright/index.mjs";
+import { chromium } from "playwright";
 import fs from "node:fs";
 
 const BASE = process.env.BASE_URL || "http://localhost:3000";
@@ -14,7 +14,9 @@ page.on("console", (msg) => { if (msg.type() === "error") errors.push(`console: 
 const check = (name, ok, note = "") => console.log(`${ok ? "✓" : "✗"} ${name}${note ? ` — ${note}` : ""}`);
 
 await page.goto(`${BASE}/auth`, { waitUntil: "networkidle" });
-await page.click('button:has-text("Entrar como conductor")');
+await page.fill('input[type="email"]', "conductor@taximun.app");
+await page.fill('input[type="password"]', "Taximun-Demo-2026");
+await page.click('button:has-text("Continuar")');
 await page.waitForURL("**/driver**", { timeout: 20000 });
 await page.waitForSelector(".leaflet-container", { timeout: 20000 });
 check("mapa de cola presente en /driver", true);

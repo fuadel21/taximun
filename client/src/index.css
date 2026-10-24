@@ -177,3 +177,20 @@
     }
   }
 }
+
+/* Impresión del recibo: solo se imprime el área del recibo. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .taximun-receipt-print,
+  .taximun-receipt-print * {
+    visibility: visible;
+  }
+  .taximun-receipt-print {
+    position: absolute;
+    inset: 0;
+    border: none !important;
+    padding: 0 !important;
+  }
+}

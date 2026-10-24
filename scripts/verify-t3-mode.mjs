@@ -2,7 +2,7 @@
  * Validación T3: etiqueta y componente de tiempo en la reserva, y control
  * del modo de tarifa (T3 ↔ T1/T2) desde administración.
  */
-import { chromium } from "/home/user/.tools/node_modules/playwright/index.mjs";
+import { chromium } from "playwright";
 import fs from "node:fs";
 
 const BASE = process.env.BASE_URL || "http://localhost:3000";
@@ -16,13 +16,10 @@ const check = (name, ok, note = "") => console.log(`${ok ? "✓" : "✗"} ${name
 
 async function login(page, email) {
   await page.goto(`${BASE}/auth`, { waitUntil: "networkidle" });
-  if (email === "conductor") {
-    await page.click('button:has-text("Entrar como conductor")');
-  } else {
-    await page.fill('input[type="email"]', email);
-    await page.fill('input[type="password"]', "Taximun-Demo-2026");
-    await page.click('button:has-text("Continuar")');
-  }
+  const resolved = email === "conductor" ? "conductor@taximun.app" : email;
+  await page.fill('input[type="email"]', resolved);
+  await page.fill('input[type="password"]', "Taximun-Demo-2026");
+  await page.click('button:has-text("Continuar")');
   await page.waitForURL(/passenger|driver|admin/, { timeout: 20000 });
 }
 

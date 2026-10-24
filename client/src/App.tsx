@@ -25,6 +25,8 @@ import AdminOperationsCenterPage from "./pages/AdminOperationsCenterPage";
 import AdminPromotionsPage from "./pages/AdminPromotionsPage";
 import AdminTariffsPage from "./pages/AdminTariffsPage";
 import SharedTripTrackingPage from "./pages/SharedTripTrackingPage";
+import LegalTermsPage from "./pages/LegalTermsPage";
+import LegalPrivacyPage from "./pages/LegalPrivacyPage";
 
 const passenger = (node: ReactNode) => <RoleRouteGuard allowed={["passenger", "admin"]}>{node}</RoleRouteGuard>;
 const driver = (node: ReactNode) => <RoleRouteGuard allowed={["driver", "admin"]}>{node}</RoleRouteGuard>;
@@ -34,7 +36,7 @@ const adminInternal = (node: ReactNode) => admin(<AdminPremiumShell>{node}</Admi
 
 function Router() {
   return <Switch>
-    <Route path="/" component={Home} /><Route path="/auth" component={AuthReal} /><Route path="/track/:token" component={SharedTripTrackingPage} />
+    <Route path="/" component={Home} /><Route path="/auth" component={AuthReal} /><Route path="/track/:token" component={SharedTripTrackingPage} /><Route path="/legal/terminos" component={LegalTermsPage} /><Route path="/legal/privacidad" component={LegalPrivacyPage} />
     <Route path="/notifications">{signedIn(<NotificationsPage />)}</Route>
     <Route path="/passenger">{passenger(<PassengerApp />)}</Route><Route path="/passenger/rides">{passenger(<PassengerApp />)}</Route><Route path="/passenger/book">{passenger(<PassengerApp />)}</Route><Route path="/passenger/security">{passenger(<PassengerApp />)}</Route><Route path="/passenger/profile">{passenger(<PassengerApp />)}</Route>
     <Route path="/driver">{driver(<DriverApp />)}</Route><Route path="/driver/queue">{driver(<DriverApp />)}</Route><Route path="/driver/navigation">{driver(<DriverApp />)}</Route><Route path="/driver/earnings">{driver(<DriverApp />)}</Route><Route path="/driver/security">{driver(<DriverApp />)}</Route><Route path="/driver/profile">{driver(<DriverApp />)}</Route>

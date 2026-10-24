@@ -1,5 +1,6 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
+import { AdminClientErrorsCard } from "@/components/AdminClientErrorsCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -49,6 +50,8 @@ export default function AdminSystemHealthPage() {
 
         {!data && !health.isLoading && !health.error && <div className="rounded-[2rem] border border-dashed border-black/20 bg-white p-10 text-center"><Server className="mx-auto h-12 w-12" /><p className="mt-4 font-black">Ejecuta el diagnóstico para comprobar todos los servicios.</p></div>}
         {health.isLoading && <div className="rounded-[2rem] bg-white p-10 text-center font-bold text-zinc-500"><Loader2 className="mx-auto mb-3 h-7 w-7 animate-spin" />Comprobando servicios reales…</div>}
+
+        <AdminClientErrorsCard />
 
         {data && <>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">

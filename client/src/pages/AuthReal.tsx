@@ -433,6 +433,14 @@ export default function AuthReal() {
           </div>
         </div>
       </section>
+
+      <footer className="border-t border-zinc-200 bg-white py-6">
+        <div className="mx-auto flex max-w-md flex-wrap items-center justify-center gap-x-6 gap-y-2 px-4 text-xs font-bold text-zinc-500">
+          <span>© {new Date().getFullYear()} Taximun</span>
+          <a href="/legal/terminos" className="hover:text-black">Términos y condiciones</a>
+          <a href="/legal/privacidad" className="hover:text-black">Privacidad</a>
+        </div>
+      </footer>
     </main>
   );
 }
